@@ -21,6 +21,7 @@ boundary that铁律 ② / ③ enforce.
 
 Outline §10.7 compliance: nothing here touches ``app/harness/``.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -102,119 +103,149 @@ def _build_default_registry() -> ToolRegistry:
     registry = ToolRegistry()
 
     # ----- read: scan / hash / preview ------------------------------------
-    registry.register(ToolSpec(
-        name="file_scan.scan_workspace",
-        callable_ref=file_scan.scan_workspace,
-        module="app.tools.file_scan",
-        category="read",
-        description="Walk a directory and return a WorkspaceSnapshot of every file (with optional SHA-256 + text previews).",
-    ))
-    registry.register(ToolSpec(
-        name="file_scan.classify",
-        callable_ref=file_scan.classify,
-        module="app.tools.file_scan",
-        category="read",
-        description="Classify a path by extension into a file category (pdf/excel/text/...).",
-    ))
-    registry.register(ToolSpec(
-        name="hash_ops.sha256_file",
-        callable_ref=hash_ops.sha256_file,
-        module="app.tools.hash_ops",
-        category="read",
-        description="Streaming SHA-256 of a file; returns the hex digest.",
-    ))
+    registry.register(
+        ToolSpec(
+            name="file_scan.scan_workspace",
+            callable_ref=file_scan.scan_workspace,
+            module="app.tools.file_scan",
+            category="read",
+            description="Walk a directory and return a WorkspaceSnapshot of every file (with optional SHA-256 + text previews).",
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="file_scan.classify",
+            callable_ref=file_scan.classify,
+            module="app.tools.file_scan",
+            category="read",
+            description="Classify a path by extension into a file category (pdf/excel/text/...).",
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="hash_ops.sha256_file",
+            callable_ref=hash_ops.sha256_file,
+            module="app.tools.hash_ops",
+            category="read",
+            description="Streaming SHA-256 of a file; returns the hex digest.",
+        )
+    )
 
     # ----- read: text / pdf previews --------------------------------------
-    registry.register(ToolSpec(
-        name="pdf_ops.extract_text_preview",
-        callable_ref=pdf_ops.extract_text_preview,
-        module="app.tools.pdf_ops",
-        category="read",
-        description="Extract a text preview from the first pages of a PDF (graceful return None on encoded/scanned/broken PDFs).",
-    ))
-    registry.register(ToolSpec(
-        name="text_ops.extract_text_preview",
-        callable_ref=text_ops.extract_text_preview,
-        module="app.tools.text_ops",
-        category="read",
-        description="Read the first ~2000 chars of a text/code/structured/tabular file (refuses binary).",
-    ))
-    registry.register(ToolSpec(
-        name="text_ops.can_preview_as_text",
-        callable_ref=text_ops.can_preview_as_text,
-        module="app.tools.text_ops",
-        category="read",
-        description="True if a file_type is text-like and previewable as text.",
-    ))
+    registry.register(
+        ToolSpec(
+            name="pdf_ops.extract_text_preview",
+            callable_ref=pdf_ops.extract_text_preview,
+            module="app.tools.pdf_ops",
+            category="read",
+            description="Extract a text preview from the first pages of a PDF (graceful return None on encoded/scanned/broken PDFs).",
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="text_ops.extract_text_preview",
+            callable_ref=text_ops.extract_text_preview,
+            module="app.tools.text_ops",
+            category="read",
+            description="Read the first ~2000 chars of a text/code/structured/tabular file (refuses binary).",
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="text_ops.can_preview_as_text",
+            callable_ref=text_ops.can_preview_as_text,
+            module="app.tools.text_ops",
+            category="read",
+            description="True if a file_type is text-like and previewable as text.",
+        )
+    )
 
     # ----- read / transform: tabular --------------------------------------
-    registry.register(ToolSpec(
-        name="data_ops.is_csv_like",
-        callable_ref=data_ops.is_csv_like,
-        module="app.tools.data_ops",
-        category="read",
-        description="True if the path is a CSV/TSV-shaped file we can read with pandas.",
-    ))
-    registry.register(ToolSpec(
-        name="data_ops.is_excel_like",
-        callable_ref=data_ops.is_excel_like,
-        module="app.tools.data_ops",
-        category="read",
-        description="True if the path is a workbook-shaped file (.xlsx/.xls/.ods) we can read.",
-    ))
-    registry.register(ToolSpec(
-        name="data_ops.is_supported_tabular",
-        callable_ref=data_ops.is_supported_tabular,
-        module="app.tools.data_ops",
-        category="read",
-        description="True if the path is any supported tabular format.",
-    ))
-    registry.register(ToolSpec(
-        name="data_ops.read_tabular",
-        callable_ref=data_ops.read_tabular,
-        module="app.tools.data_ops",
-        category="read",
-        description="Read a CSV/TSV/XLSX into one or more TabularRead records (one per sheet for workbooks).",
-    ))
-    registry.register(ToolSpec(
-        name="data_ops.read_and_describe",
-        callable_ref=data_ops.read_and_describe,
-        module="app.tools.data_ops",
-        category="read",
-        description="Read and produce JSON-safe DataFrameSummary records (thin wrapper around read_tabular + summarize_dataframe).",
-    ))
-    registry.register(ToolSpec(
-        name="data_ops.summarize_dataframe",
-        callable_ref=data_ops.summarize_dataframe,
-        module="app.tools.data_ops",
-        category="transform",
-        description="Compute schema + numeric stats + sample rows from an in-memory DataFrame.",
-    ))
+    registry.register(
+        ToolSpec(
+            name="data_ops.is_csv_like",
+            callable_ref=data_ops.is_csv_like,
+            module="app.tools.data_ops",
+            category="read",
+            description="True if the path is a CSV/TSV-shaped file we can read with pandas.",
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="data_ops.is_excel_like",
+            callable_ref=data_ops.is_excel_like,
+            module="app.tools.data_ops",
+            category="read",
+            description="True if the path is a workbook-shaped file (.xlsx/.xls/.ods) we can read.",
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="data_ops.is_supported_tabular",
+            callable_ref=data_ops.is_supported_tabular,
+            module="app.tools.data_ops",
+            category="read",
+            description="True if the path is any supported tabular format.",
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="data_ops.read_tabular",
+            callable_ref=data_ops.read_tabular,
+            module="app.tools.data_ops",
+            category="read",
+            description="Read a CSV/TSV/XLSX into one or more TabularRead records (one per sheet for workbooks).",
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="data_ops.read_and_describe",
+            callable_ref=data_ops.read_and_describe,
+            module="app.tools.data_ops",
+            category="read",
+            description="Read and produce JSON-safe DataFrameSummary records (thin wrapper around read_tabular + summarize_dataframe).",
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="data_ops.summarize_dataframe",
+            callable_ref=data_ops.summarize_dataframe,
+            module="app.tools.data_ops",
+            category="transform",
+            description="Compute schema + numeric stats + sample rows from an in-memory DataFrame.",
+        )
+    )
 
     # ----- transform: typed analysis --------------------------------------
-    registry.register(ToolSpec(
-        name="data_analysis.execute_analysis",
-        callable_ref=data_analysis.execute_analysis,
-        module="app.tools.data_analysis",
-        category="transform",
-        description="Run a typed AnalysisSpec (filter → groupby+agg → sort → limit → chart) against a DataFrame.",
-    ))
+    registry.register(
+        ToolSpec(
+            name="data_analysis.execute_analysis",
+            callable_ref=data_analysis.execute_analysis,
+            module="app.tools.data_analysis",
+            category="transform",
+            description="Run a typed AnalysisSpec (filter → groupby+agg → sort → limit → chart) against a DataFrame.",
+        )
+    )
 
     # ----- render: chart bytes --------------------------------------------
-    registry.register(ToolSpec(
-        name="chart_ops.histogram_png",
-        callable_ref=chart_ops.histogram_png,
-        module="app.tools.chart_ops",
-        category="render",
-        description="Render a histogram of a numeric Series to PNG bytes (matplotlib Agg backend).",
-    ))
-    registry.register(ToolSpec(
-        name="chart_ops.bar_png",
-        callable_ref=chart_ops.bar_png,
-        module="app.tools.chart_ops",
-        category="render",
-        description="Render a bar chart of a counts dict to PNG bytes (matplotlib Agg backend).",
-    ))
+    registry.register(
+        ToolSpec(
+            name="chart_ops.histogram_png",
+            callable_ref=chart_ops.histogram_png,
+            module="app.tools.chart_ops",
+            category="render",
+            description="Render a histogram of a numeric Series to PNG bytes (matplotlib Agg backend).",
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="chart_ops.bar_png",
+            callable_ref=chart_ops.bar_png,
+            module="app.tools.chart_ops",
+            category="render",
+            description="Render a bar chart of a counts dict to PNG bytes (matplotlib Agg backend).",
+        )
+    )
 
     return registry
 

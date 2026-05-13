@@ -10,6 +10,7 @@ Architectural note (per outline §7.1 / §3.7):
     Harness Kernel writes the markdown via the same path used by
     ``pdf_indexer``.
 """
+
 from __future__ import annotations
 
 import base64
@@ -72,10 +73,14 @@ def plan_data_report(
     for meta in sorted(data_files, key=lambda f: f.path):
         abs_path = workspace_root / meta.path
         if not is_supported_tabular(abs_path):
-            table_reads.append(TabularRead(
-                display_path=meta.path, df=None, rows_truncated=False,
-                error=f"unsupported format: {abs_path.suffix}",
-            ))
+            table_reads.append(
+                TabularRead(
+                    display_path=meta.path,
+                    df=None,
+                    rows_truncated=False,
+                    error=f"unsupported format: {abs_path.suffix}",
+                )
+            )
             continue
         table_reads.extend(read_tabular(abs_path, meta.path))
 
@@ -84,8 +89,10 @@ def plan_data_report(
     # for chart_ops. Keeping them paired avoids re-reading from disk.
     summaries: list[DataFrameSummary] = [
         summarize_dataframe(
-            tr.display_path, tr.df,
-            truncated=tr.rows_truncated, error=tr.error,
+            tr.display_path,
+            tr.df,
+            truncated=tr.rows_truncated,
+            error=tr.error,
         )
         for tr in table_reads
     ]
@@ -103,7 +110,9 @@ def plan_data_report(
         action_counter += 1
         action_id = f"a-{action_counter:03d}"
         chart_rel = f"{CHARTS_DIR}/{_chart_filename(summary.path, chart['column'], chart['kind'])}"
-        chart_actions.append(_chart_action(action_id, chart_rel, chart["png_bytes"], chart, summary))
+        chart_actions.append(
+            _chart_action(action_id, chart_rel, chart["png_bytes"], chart, summary)
+        )
         chart_links[summary.path] = chart_rel
 
     content = _render_data_report_md(workspace_root, summaries, chart_links)
@@ -182,10 +191,7 @@ def _pick_chart_for_table(df: Any, summary: DataFrameSummary) -> dict[str, Any] 
                 pass
 
     # Fall back: low-cardinality string column → bar of counts
-    cat_cols = [
-        c for c in summary.columns
-        if not c.numeric_stats and 1 < c.unique <= 20
-    ]
+    cat_cols = [c for c in summary.columns if not c.numeric_stats and 1 < c.unique <= 20]
     if cat_cols:
         cat_cols.sort(key=lambda c: -c.unique)
         best = cat_cols[0]
@@ -219,8 +225,11 @@ def _slug(s: str) -> str:
 
 
 def _chart_action(
-    action_id: str, target_rel: str, png_bytes: bytes,
-    chart: dict[str, Any], summary: DataFrameSummary,
+    action_id: str,
+    target_rel: str,
+    png_bytes: bytes,
+    chart: dict[str, Any],
+    summary: DataFrameSummary,
 ) -> Action:
     return Action(
         action_id=action_id,
@@ -276,7 +285,7 @@ def _render_data_report_md(
 
     for s in summaries:
         anchor = _anchor_for(s.path)
-        lines.append(f"### `{s.path}` <a id=\"{anchor}\"></a>")
+        lines.append(f'### `{s.path}` <a id="{anchor}"></a>')
         lines.append("")
         if s.error:
             lines.append(f"**Read error**: {s.error}")
@@ -285,9 +294,7 @@ def _render_data_report_md(
         if s.path in chart_links:
             lines.append(f"![chart for {s.path}]({chart_links[s.path]})")
             lines.append("")
-        truncated_note = (
-            f" _(truncated to first {s.rows_read} rows)_" if s.rows_truncated else ""
-        )
+        truncated_note = f" _(truncated to first {s.rows_read} rows)_" if s.rows_truncated else ""
         lines.append(f"- **Shape**: {s.rows_read} rows × {s.cols} cols{truncated_note}")
         lines.append("")
         lines.append("#### Schema & basic stats")
@@ -325,13 +332,7 @@ def _fmt_numeric_stats(stats: dict[str, float] | None) -> str:
 
 
 def _anchor_for(path: str) -> str:
-    return (
-        path.lower()
-        .replace("/", "-")
-        .replace(".", "")
-        .replace(" ", "-")
-        .replace("_", "-")
-    )
+    return path.lower().replace("/", "-").replace(".", "").replace(" ", "-").replace("_", "-")
 
 
 def _build_provenance(

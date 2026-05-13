@@ -29,6 +29,7 @@ Two safety contracts:
 Outline §10.7: zero references to ``app/harness/*`` internals here —
 only public entry points (``control_loop.run_*``).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -89,9 +90,7 @@ def _require(args: dict[str, Any], key: str, kind: type) -> Any:
         raise ValueError(f"missing required argument: {key!r}")
     value = args[key]
     if not isinstance(value, kind):
-        raise ValueError(
-            f"argument {key!r} must be {kind.__name__}, got {type(value).__name__}"
-        )
+        raise ValueError(f"argument {key!r} must be {kind.__name__}, got {type(value).__name__}")
     return value
 
 
@@ -135,23 +134,21 @@ def handle_list_skills(args: dict[str, Any]) -> dict[str, Any]:
     for name in registry.list_names():
         s = registry.require(name)
         m = s.manifest
-        origin = (
-            "built-in"
-            if type(s).__module__.startswith("app.skills.")
-            else "external"
+        origin = "built-in" if type(s).__module__.startswith("app.skills.") else "external"
+        skills.append(
+            {
+                "name": m.name,
+                "version": m.version,
+                "description": m.description,
+                "origin": origin,
+                "supports_llm": s.supports_llm(),
+                "allowed_actions": list(m.allowed_actions),
+                "required_tools": list(m.required_tools),
+                "supports_dry_run": m.supports_dry_run,
+                "supports_rollback": m.supports_rollback,
+                "supports_verify": m.supports_verify,
+            }
         )
-        skills.append({
-            "name": m.name,
-            "version": m.version,
-            "description": m.description,
-            "origin": origin,
-            "supports_llm": s.supports_llm(),
-            "allowed_actions": list(m.allowed_actions),
-            "required_tools": list(m.required_tools),
-            "supports_dry_run": m.supports_dry_run,
-            "supports_rollback": m.supports_rollback,
-            "supports_verify": m.supports_verify,
-        })
     return {
         "skills": skills,
         "load_findings": to_jsonable(get_load_findings()),
@@ -393,6 +390,7 @@ def handle_execute_plan(args: dict[str, Any]) -> dict[str, Any]:
     outcome = control_loop.run_execute(task, plan, store, approved=True)
     verification = control_loop.run_verify(task, plan, store, outcome, snapshot)
     from app.schemas import ExecutionStatus
+
     successful = sum(1 for r in outcome.records if r.status == ExecutionStatus.SUCCESS)
     failed = sum(1 for r in outcome.records if r.status == ExecutionStatus.FAILED)
     skipped = sum(1 for r in outcome.records if r.status == ExecutionStatus.SKIPPED)
@@ -409,8 +407,13 @@ def handle_execute_plan(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def handle_rollback_run(args: dict[str, Any]) -> dict[str, Any]:
-    """Undo a previously-executed run."""
+def handle_rollback_preview(args: dict[str, Any]) -> dict[str, Any]:
+    """Read-only preview of what ``rollback_run`` would do.
+
+    For each entry: the inverse op, the target it would touch, and a
+    ``drift`` field (None = clean, str = mismatch reason). Lets an MCP
+    client present a confirmation page before the destructive call.
+    """
     task_id = _require(args, "task_id", str)
     store = RunStore(task_id=task_id)
     if not store.exists(store.ROLLBACK_JSON):
@@ -418,12 +421,41 @@ def handle_rollback_run(args: dict[str, Any]) -> dict[str, Any]:
     manifest = store.load_rollback()
     task = store.load_task()
     rb = Rollback(workspace_root=Path(task.workspace_root), run_store=store)
-    outcome = rb.run(manifest)
+    preview = rb.preview(manifest)
+    return {
+        "task_id": task_id,
+        "run_id": preview.run_id,
+        "entry_count": len(preview.entries),
+        "has_conflicts": preview.has_conflicts,
+        "entries": preview.entries,
+    }
+
+
+def handle_rollback_run(args: dict[str, Any]) -> dict[str, Any]:
+    """Undo a previously-executed run.
+
+    Phase 7.1: by default refuses entries whose target file's current
+    hash differs from the executor-recorded ``after_hash`` (i.e., the
+    user edited the file after execute). Drifted entries are reported
+    as ``conflicts`` and skipped. Pass ``force=true`` to override —
+    your manual edits will be lost. Call ``rollback_preview`` first to
+    see which entries would conflict.
+    """
+    task_id = _require(args, "task_id", str)
+    force = bool(args.get("force", False))
+    store = RunStore(task_id=task_id)
+    if not store.exists(store.ROLLBACK_JSON):
+        raise ValueError(f"no rollback manifest for task_id={task_id!r}")
+    manifest = store.load_rollback()
+    task = store.load_task()
+    rb = Rollback(workspace_root=Path(task.workspace_root), run_store=store)
+    outcome = rb.run(manifest, force=force)
     return {
         "task_id": task_id,
         "success": outcome.success,
         "undone": list(outcome.undone),
         "failed": list(outcome.failed),
+        "conflicts": list(outcome.conflicts),
     }
 
 
@@ -468,7 +500,10 @@ TOOLS: list[ToolDef] = [
         input_schema={
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Absolute path to the workspace directory."},
+                "path": {
+                    "type": "string",
+                    "description": "Absolute path to the workspace directory.",
+                },
                 "compute_hash": {"type": "boolean", "default": True},
                 "compute_preview": {"type": "boolean", "default": True},
             },
@@ -531,10 +566,7 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="read_memory_audit",
-        description=(
-            "Read the memory mutation audit log. Pass limit=0 or null "
-            "for the full log."
-        ),
+        description=("Read the memory mutation audit log. Pass limit=0 or null for the full log."),
         input_schema={
             "type": "object",
             "properties": {"limit": {"type": "integer", "default": 20}},
@@ -609,14 +641,44 @@ TOOLS: list[ToolDef] = [
         handler=handle_execute_plan,
     ),
     ToolDef(
-        name="rollback_run",
+        name="rollback_preview",
         description=(
-            "Undo a previously-executed run using its rollback manifest. "
-            "Returns success + lists of undone / failed action_ids."
+            "Read-only preview of what rollback_run would do. For each "
+            "manifest entry: the inverse op, the file it would touch, "
+            "and a ``drift`` flag (None = clean; string = the user has "
+            "modified the file since execute and rollback would clobber "
+            "their changes). Always call this before rollback_run to "
+            "give the user a confirmation page."
         ),
         input_schema={
             "type": "object",
             "properties": {"task_id": {"type": "string"}},
+            "required": ["task_id"],
+        },
+        handler=handle_rollback_preview,
+    ),
+    ToolDef(
+        name="rollback_run",
+        description=(
+            "Undo a previously-executed run using its rollback manifest. "
+            "Phase 7.1: by default refuses entries whose target file has "
+            "drifted from the executor-recorded hash (user edits after "
+            "execute). Pass ``force=true`` to override (manual edits "
+            "will be lost). Use rollback_preview first."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "force": {
+                    "type": "boolean",
+                    "description": (
+                        "Override drift detection. WARNING: clobbers any "
+                        "manual edits made after execute. Default false."
+                    ),
+                    "default": False,
+                },
+            },
             "required": ["task_id"],
         },
         handler=handle_rollback_run,

@@ -3,6 +3,7 @@
 Uses Typer's CliRunner so we exercise the actual command callbacks and
 their argument parsing, not just the underlying MemoryStore.
 """
+
 from __future__ import annotations
 
 import json

@@ -120,11 +120,10 @@ def _action(action_id: str, **overrides) -> Action:
 def test_forbidden_paths_blocks_target_under_dir(workspace: Path) -> None:
     """Phase 5: an action whose target is under a forbidden directory
     is rejected even when allowed_actions / target_path itself are valid."""
-    action = _action("a-1", target_path="secrets/leaked.md", source_path=None,
-                     action_type=ActionType.INDEX)
-    decision = evaluate_action(
-        workspace, action, forbidden_paths=("secrets",)
+    action = _action(
+        "a-1", target_path="secrets/leaked.md", source_path=None, action_type=ActionType.INDEX
     )
+    decision = evaluate_action(workspace, action, forbidden_paths=("secrets",))
     assert not decision.allowed
     assert any("forbidden_paths" in r for r in decision.reasons)
     assert any("'secrets'" in r for r in decision.reasons)
@@ -134,20 +133,15 @@ def test_forbidden_paths_blocks_source_under_dir(workspace: Path) -> None:
     """Move out of a forbidden directory is also blocked — the user
     said 'don't touch X', which includes moving things out of X."""
     action = _action("a-1", source_path="secrets/old.md", target_path="papers/old.md")
-    decision = evaluate_action(
-        workspace, action, forbidden_paths=("secrets",)
-    )
+    decision = evaluate_action(workspace, action, forbidden_paths=("secrets",))
     assert not decision.allowed
     assert any("source_path" in r and "forbidden_paths" in r for r in decision.reasons)
 
 
 def test_forbidden_paths_blocks_exact_file_match(workspace: Path) -> None:
     """Forbidding a specific file (not just a directory) works too."""
-    action = _action("a-1", target_path="creds.txt", source_path=None,
-                     action_type=ActionType.INDEX)
-    decision = evaluate_action(
-        workspace, action, forbidden_paths=("creds.txt",)
-    )
+    action = _action("a-1", target_path="creds.txt", source_path=None, action_type=ActionType.INDEX)
+    decision = evaluate_action(workspace, action, forbidden_paths=("creds.txt",))
     assert not decision.allowed
 
 
@@ -161,9 +155,7 @@ def test_forbidden_paths_default_empty_is_backwards_compat(workspace: Path) -> N
 
 def test_forbidden_paths_unrelated_target_allowed(workspace: Path) -> None:
     action = _action("a-1", target_path="papers/a.pdf")
-    decision = evaluate_action(
-        workspace, action, forbidden_paths=("secrets", "creds.txt")
-    )
+    decision = evaluate_action(workspace, action, forbidden_paths=("secrets", "creds.txt"))
     assert decision.allowed
 
 
@@ -172,16 +164,13 @@ def test_forbidden_paths_invalid_entry_silently_ignored(workspace: Path) -> None
     meaningless — we ignore it rather than throw, so a bogus prefs.json
     can't lock everyone out of every workspace."""
     action = _action("a-1")
-    decision = evaluate_action(
-        workspace, action, forbidden_paths=("../etc/passwd", "secrets")
-    )
+    decision = evaluate_action(workspace, action, forbidden_paths=("../etc/passwd", "secrets"))
     # The good entry doesn't match papers/a.pdf, the bad entry is ignored
     assert decision.allowed
 
 
 def test_assess_plan_propagates_forbidden_paths(workspace: Path) -> None:
-    bad = _action("x-1", target_path="secrets/x.md", source_path=None,
-                  action_type=ActionType.INDEX)
+    bad = _action("x-1", target_path="secrets/x.md", source_path=None, action_type=ActionType.INDEX)
     plan = ActionPlan(plan_id="p", task_id="t", summary="s", actions=[bad])
     assessment = assess_plan(workspace, plan, forbidden_paths=("secrets",))
     assert not assessment.passed

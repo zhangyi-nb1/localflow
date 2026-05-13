@@ -11,6 +11,7 @@ Each function returns PNG bytes. The data_reporter planner base64-encodes
 these into ``metadata.binary_content_b64`` so plan.json stays JSON-safe;
 the executor decodes back to bytes when writing.
 """
+
 from __future__ import annotations
 
 import io

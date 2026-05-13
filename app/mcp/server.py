@@ -12,6 +12,7 @@ Rich console prints in CLI commands are NOT reached because
 ``cmd_mcp_serve`` is the lone entry point and does no console output
 after server start.
 """
+
 from __future__ import annotations
 
 import json

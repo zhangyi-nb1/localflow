@@ -13,6 +13,7 @@ Mirrors the architecture of ``app.agent.planner.LLMPlanner``:
 
 The LLM never writes Python; it emits typed schema only.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -88,9 +89,7 @@ def plan_analysis_with_llm(
                 on_delta=on_delta,
             )
         except LLMClientError as exc:
-            raise AnalysisPlannerFailure(
-                f"LLM call failed on attempt {attempt}: {exc}"
-            ) from exc
+            raise AnalysisPlannerFailure(f"LLM call failed on attempt {attempt}: {exc}") from exc
 
         # Translate the LLM-friendly payload back into AnalysisSpec.
         spec, errors = _coerce_payload_to_spec(response.payload)
@@ -164,7 +163,9 @@ def _coerce_payload_to_spec(payload: dict[str, Any]) -> tuple[AnalysisSpec | Non
                 aggs_dict: dict[str, AggregationOp] = {}
                 for entry in aggs_list:
                     if not isinstance(entry, dict):
-                        errors.append(f"aggregations entry must be an object, got {type(entry).__name__}")
+                        errors.append(
+                            f"aggregations entry must be an object, got {type(entry).__name__}"
+                        )
                         continue
                     col = entry.get("column")
                     op = entry.get("op")
@@ -257,9 +258,7 @@ def _semantic_validate(
 # --------------------------------------------------------------------- engine glue
 
 
-def _execute_spec_against_workspace(
-    spec: AnalysisSpec, workspace_root: Path
-) -> AnalysisResult:
+def _execute_spec_against_workspace(spec: AnalysisSpec, workspace_root: Path) -> AnalysisResult:
     """Load the file the LLM chose and run the engine."""
     from app.tools import data_analysis, data_ops
 

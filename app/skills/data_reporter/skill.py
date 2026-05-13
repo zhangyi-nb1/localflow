@@ -68,6 +68,4 @@ class DataReporterSkill(Skill):
         outcome,
         verification: VerificationResult,
     ) -> str:
-        return render_data_report(
-            task=task, plan=plan, outcome=outcome, verification=verification
-        )
+        return render_data_report(task=task, plan=plan, outcome=outcome, verification=verification)

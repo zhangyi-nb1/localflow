@@ -15,6 +15,7 @@ Outline §13.7 maps skills to reference projects:
 Adding a new skill is the third implementation of outline §10.7's
 extensibility rule: it must work without touching ``app/harness/``.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -152,9 +153,7 @@ class SkillRegistry:
         if tool_registry is not None:
             for tool_name in skill.manifest.required_tools:
                 if not tool_registry.has(tool_name):
-                    raise SkillError(
-                        f"skill {name!r} requires unknown tool {tool_name!r}"
-                    )
+                    raise SkillError(f"skill {name!r} requires unknown tool {tool_name!r}")
         self._skills[name] = skill
 
     def get(self, name: str) -> Skill | None:
@@ -163,9 +162,7 @@ class SkillRegistry:
     def require(self, name: str) -> Skill:
         skill = self.get(name)
         if skill is None:
-            raise SkillError(
-                f"unknown skill: {name!r}; available: {', '.join(self.list_names())}"
-            )
+            raise SkillError(f"unknown skill: {name!r}; available: {', '.join(self.list_names())}")
         return skill
 
     def list_names(self) -> list[str]:

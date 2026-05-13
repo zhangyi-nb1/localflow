@@ -1,5 +1,6 @@
 """End-to-end tests for the pdf_indexer skill (Phase 2.3 / outline §13.7
 DocumentOps reference)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -117,6 +118,7 @@ def test_validator_accepts_well_formed_plan(pdf_workspace, pdf_task) -> None:
 
 def test_validator_accepts_empty_plan() -> None:
     from app.schemas import ActionPlan
+
     plan = ActionPlan(plan_id="p", task_id="t", summary="empty", actions=[])
     validate_pdf_index_plan(plan)
 

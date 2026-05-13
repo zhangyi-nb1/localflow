@@ -12,6 +12,7 @@ CJK / unicode characters: kept verbatim. Only ASCII whitespace and
 common ASCII punctuation (parens, brackets, plus, ampersand etc.) are
 folded into the separator character.
 """
+
 from __future__ import annotations
 
 import re

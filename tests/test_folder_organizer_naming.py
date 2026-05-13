@@ -1,4 +1,5 @@
 """Phase 5 — folder_organizer.plan() applies naming_style preference."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -74,7 +75,9 @@ def test_renamed_action_reason_mentions_style(styled_workspace: Path) -> None:
     task = _task(styled_workspace, naming_style="snake_case")
     snap = scan_workspace(styled_workspace, task.task_id, compute_hash=False)
     plan = FolderOrganizerSkill().plan(task, snap)
-    renamed = [a for a in _move_actions(plan) if a.target_path != f"papers/{Path(a.source_path).name}"]
+    renamed = [
+        a for a in _move_actions(plan) if a.target_path != f"papers/{Path(a.source_path).name}"
+    ]
     # at least one of the moves actually got renamed
     assert any("naming style: snake_case" in a.reason for a in renamed)
 

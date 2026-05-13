@@ -9,6 +9,7 @@ purpose is to exercise:
   * dispatch: ``DataAnalyzerSkill.plan_with_llm`` actually calls the
     LLM planner (CLI integration sanity check)
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -34,8 +35,7 @@ def sales_workspace(tmp_path: Path) -> Path:
     ws = tmp_path / "ws"
     ws.mkdir()
     (ws / "sales.csv").write_text(
-        "region,product,amount\n"
-        "N,A,10\nN,B,20\nS,A,30\nS,B,40\nE,A,50\nW,B,60\n",
+        "region,product,amount\nN,A,10\nN,B,20\nS,A,30\nS,B,40\nE,A,50\nW,B,60\n",
         encoding="utf-8",
     )
     return ws
@@ -89,7 +89,10 @@ def test_llm_happy_path_produces_plan(sales_snapshot_and_task) -> None:
     assert len(plan.actions) >= 1
     report = next(a for a in plan.actions if a.target_path == "analysis_report.md")
     assert "content" in report.metadata
-    assert "Mean amount by region" in report.metadata["content"] or "amount" in report.metadata["content"]
+    assert (
+        "Mean amount by region" in report.metadata["content"]
+        or "amount" in report.metadata["content"]
+    )
 
 
 def test_llm_picks_correct_source_file(sales_snapshot_and_task) -> None:
@@ -190,7 +193,10 @@ def test_aggregations_list_unpacked_to_dict(sales_snapshot_and_task) -> None:
     payload = _valid_payload()
     payload["groupby"]["aggregations"] = [
         {"column": "amount", "op": "sum"},
-        {"column": "amount", "op": "max"},  # multi-agg same column not supported, but coercion still runs
+        {
+            "column": "amount",
+            "op": "max",
+        },  # multi-agg same column not supported, but coercion still runs
     ]
     client = FakeLLMClient(payloads=[payload])
     plan = plan_analysis_with_llm(task, snap, client=client)
@@ -216,8 +222,10 @@ def test_llm_plan_runs_through_executor(sales_workspace, sales_snapshot_and_task
     os.environ["LOCALFLOW_HOME"] = str(tmp_path / ".lf")
     store = RunStore.create()
     task = TaskSpec(
-        task_id=store.task_id, user_goal=task.user_goal,
-        workspace_root=task.workspace_root, skill="data_analyzer",
+        task_id=store.task_id,
+        user_goal=task.user_goal,
+        workspace_root=task.workspace_root,
+        skill="data_analyzer",
     )
     store.save_task(task)
     store.save_workspace(snap)
@@ -242,9 +250,13 @@ def test_llm_plan_runs_through_executor(sales_workspace, sales_snapshot_and_task
     verifier = Verifier(workspace_root=sales_workspace)
     executed = {r.action_id for r in outcome.records if r.status == ExecutionStatus.SUCCESS}
     vresult = verifier.verify(
-        task_id=task.task_id, run_id=outcome.run_id, plan=plan,
-        manifest=outcome.manifest, executed_action_ids=executed,
-        skipped_action_ids=set(), failed_action_ids=set(),
+        task_id=task.task_id,
+        run_id=outcome.run_id,
+        plan=plan,
+        manifest=outcome.manifest,
+        executed_action_ids=executed,
+        skipped_action_ids=set(),
+        failed_action_ids=set(),
         original_snapshot=snap,
     )
     assert vresult.passed, vresult.failed_checks

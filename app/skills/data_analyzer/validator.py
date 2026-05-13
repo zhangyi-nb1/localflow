@@ -6,6 +6,7 @@ data_analyzer: ``analysis_report.md`` must be present, charts must live
 under ``analysis_charts/``, every action must be ``index`` (no destructive
 operations belong in a read-only analysis skill).
 """
+
 from __future__ import annotations
 
 from app.schemas import ActionPlan

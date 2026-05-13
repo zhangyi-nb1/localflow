@@ -69,9 +69,17 @@ console = Console()
 
 @app.command("inspect")
 def cmd_inspect(
-    workspace: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
-    no_hash: bool = typer.Option(False, "--no-hash", help="Skip SHA-256 hashing (faster, but no duplicate detection)."),
-    no_preview: bool = typer.Option(False, "--no-preview", help="Skip content extraction (faster, no Phase 2 semantic awareness)."),
+    workspace: Path = typer.Argument(
+        ..., exists=True, file_okay=False, dir_okay=True, resolve_path=True
+    ),
+    no_hash: bool = typer.Option(
+        False, "--no-hash", help="Skip SHA-256 hashing (faster, but no duplicate detection)."
+    ),
+    no_preview: bool = typer.Option(
+        False,
+        "--no-preview",
+        help="Skip content extraction (faster, no Phase 2 semantic awareness).",
+    ),
 ) -> None:
     """Scan a workspace and print a summary. No writes."""
     snapshot = control_loop.run_inspect(
@@ -108,8 +116,12 @@ def cmd_inspect(
 
 @app.command("plan")
 def cmd_plan(
-    workspace: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
-    goal: str = typer.Option(..., "--goal", "-g", help="Natural-language description of what to do."),
+    workspace: Path = typer.Argument(
+        ..., exists=True, file_okay=False, dir_okay=True, resolve_path=True
+    ),
+    goal: str = typer.Option(
+        ..., "--goal", "-g", help="Natural-language description of what to do."
+    ),
     skill: str = typer.Option(
         "folder_organizer",
         "--skill",
@@ -135,7 +147,9 @@ def cmd_plan(
         "--llm-model",
         help="Override default model. Falls back to env var or code default.",
     ),
-    no_hash: bool = typer.Option(False, "--no-hash", help="Skip SHA-256 hashing (no duplicate detection)."),
+    no_hash: bool = typer.Option(
+        False, "--no-hash", help="Skip SHA-256 hashing (no duplicate detection)."
+    ),
     no_preview: bool = typer.Option(
         False,
         "--no-preview",
@@ -145,7 +159,9 @@ def cmd_plan(
             "Rule planner is unaffected."
         ),
     ),
-    max_repair: int = typer.Option(3, "--max-repair", help="Max LLM repair attempts (llm planner only)."),
+    max_repair: int = typer.Option(
+        3, "--max-repair", help="Max LLM repair attempts (llm planner only)."
+    ),
 ) -> None:
     """Create a task, scan the workspace, and produce a structured ActionPlan."""
     registry = get_default_registry()
@@ -161,7 +177,9 @@ def cmd_plan(
             f"(or pick a skill that does)"
         )
     if llm_provider not in {"anthropic", "openai"}:
-        raise typer.BadParameter(f"llm-provider must be 'anthropic' or 'openai', got {llm_provider!r}")
+        raise typer.BadParameter(
+            f"llm-provider must be 'anthropic' or 'openai', got {llm_provider!r}"
+        )
 
     store = RunStore.create()
 
@@ -259,16 +277,18 @@ def cmd_plan(
     )
 
     planner_label = planner if planner == "rule" else f"llm:{llm_provider}"
-    console.print(Panel.fit(
-        f"[bold green]Task created[/]: [cyan]{task.task_id}[/]\n"
-        f"Planner: [cyan]{planner_label}[/]  ·  "
-        f"Plan: [cyan]{plan.plan_id}[/]  ·  "
-        f"Actions: [bold]{len(plan.actions)}[/]  ·  "
-        f"Risk: [bold]{assessment.risk_level.value}[/]\n"
-        f"Files scanned: {snapshot.total_files}  ·  Goal: {goal}",
-        title="LocalFlow",
-        border_style="green",
-    ))
+    console.print(
+        Panel.fit(
+            f"[bold green]Task created[/]: [cyan]{task.task_id}[/]\n"
+            f"Planner: [cyan]{planner_label}[/]  ·  "
+            f"Plan: [cyan]{plan.plan_id}[/]  ·  "
+            f"Actions: [bold]{len(plan.actions)}[/]  ·  "
+            f"Risk: [bold]{assessment.risk_level.value}[/]\n"
+            f"Files scanned: {snapshot.total_files}  ·  Goal: {goal}",
+            title="LocalFlow",
+            border_style="green",
+        )
+    )
     if assessment.warnings:
         console.print("[yellow]Warnings:[/]")
         for w in assessment.warnings:
@@ -305,7 +325,9 @@ def cmd_dry_run(
 def cmd_execute(
     task_id: str = typer.Option(..., "--task-id", help="Task identifier."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip interactive approval prompt."),
-    resume: bool = typer.Option(False, "--resume", help="Resume from checkpoint, skipping completed actions."),
+    resume: bool = typer.Option(
+        False, "--resume", help="Resume from checkpoint, skipping completed actions."
+    ),
 ) -> None:
     """Approve and execute the plan. Records every change for rollback."""
     store = RunStore(task_id=task_id)
@@ -347,9 +369,7 @@ def cmd_execute(
 
     # Skill-specific final_report: each Skill renders its own markdown.
     skill_obj = get_default_registry().require(task.skill)
-    report = skill_obj.report(
-        task=task, plan=plan, outcome=outcome, verification=verification
-    )
+    report = skill_obj.report(task=task, plan=plan, outcome=outcome, verification=verification)
     store.write_text(store.final_report_path, report)
 
     badge = "[green]OK[/]" if outcome.success and verification.passed else "[red]FAIL[/]"
@@ -391,10 +411,26 @@ def cmd_verify(
 
 @app.command("rollback")
 def cmd_rollback(
-    run_id: str = typer.Option(..., "--run-id", help="Run identifier (same as task_id in Phase 0)."),
+    run_id: str = typer.Option(
+        ..., "--run-id", help="Run identifier (same as task_id in Phase 0)."
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help=(
+            "Proceed even if files have been modified since execute "
+            "(hash drift). Use with care — this clobbers your manual edits."
+        ),
+    ),
 ) -> None:
-    """Undo a previously-executed run using its rollback manifest."""
+    """Undo a previously-executed run using its rollback manifest.
+
+    Phase 7.1: by default, rollback refuses to clobber files the user
+    has edited since execute (detected via sha256 drift against the
+    executor's recorded ``after_hash``). Drifted entries are reported
+    as **conflicts** and skipped. Pass ``--force`` to override.
+    """
     store = RunStore(task_id=run_id)
     if not store.rollback_path.exists():
         raise typer.BadParameter(f"no rollback manifest for run {run_id}")
@@ -410,13 +446,25 @@ def cmd_rollback(
             raise typer.Exit(code=1)
 
     rollback = Rollback(workspace_root=Path(task.workspace_root), run_store=store)
-    outcome = rollback.run(manifest)
+    outcome = rollback.run(manifest, force=force)
     badge = "[green]OK[/]" if outcome.success else "[red]PARTIAL[/]"
     console.print(
-        f"{badge}  undone: {len(outcome.undone)}  ·  failed: {len(outcome.failed)}"
+        f"{badge}  undone: {len(outcome.undone)}  ·  "
+        f"failed: {len(outcome.failed)}  ·  conflicts: {len(outcome.conflicts)}"
     )
     for failure in outcome.failed:
-        console.print(f"  • {failure}")
+        console.print(f"  [red]• failed:[/] {failure}")
+    for conflict in outcome.conflicts:
+        console.print(
+            f"  [yellow]• conflict:[/] {conflict['action_id']} ({conflict['op']}) "
+            f"on {conflict['target_path']!r} — {conflict['reason']}"
+        )
+    if outcome.conflicts and not force:
+        console.print(
+            "\n[yellow]Conflicts above were skipped to protect your edits.[/]\n"
+            "[dim]Pass [bold]--force[/] to override and rollback anyway "
+            "(your manual edits will be lost).[/]"
+        )
 
 
 # --------------------------------------------------------------------- status
@@ -478,7 +526,8 @@ def cmd_status(
 @app.command("skills")
 def cmd_skills(
     show_findings: bool = typer.Option(
-        True, "--findings/--no-findings",
+        True,
+        "--findings/--no-findings",
         help="Show the external skill discovery audit (where LocalFlow looked, what it found).",
     ),
 ) -> None:
@@ -563,7 +612,8 @@ def cmd_skills(
 @app.command("tools")
 def cmd_tools(
     category: Optional[str] = typer.Option(
-        None, "--category",
+        None,
+        "--category",
         help="Filter by category (read / transform / render).",
     ),
 ) -> None:
@@ -764,7 +814,9 @@ def cmd_memory_unforbid(
 @memory_app.command("set")
 def cmd_memory_set(
     key: str = typer.Argument(..., help="Preference key (currently: 'naming_style')."),
-    value: str = typer.Argument(..., help="Value (for naming_style: original / snake_case / kebab-case / lower)."),
+    value: str = typer.Argument(
+        ..., help="Value (for naming_style: original / snake_case / kebab-case / lower)."
+    ),
 ) -> None:
     """Set a scalar preference. Rejects unknown keys / values."""
     store = MemoryStore()
@@ -791,9 +843,7 @@ def cmd_memory_unset(
     """Reset a scalar preference to its default."""
     store = MemoryStore()
     if key != "naming_style":
-        console.print(
-            f"[red]unknown preference key {key!r}.[/] Supported: naming_style."
-        )
+        console.print(f"[red]unknown preference key {key!r}.[/] Supported: naming_style.")
         raise typer.Exit(code=2)
     result = store.clear_naming_style()
     style = "green" if result.changed else "dim"
@@ -802,7 +852,9 @@ def cmd_memory_unset(
 
 @memory_app.command("audit")
 def cmd_memory_audit(
-    limit: int = typer.Option(20, "--limit", help="Number of most recent entries (use --all for everything)."),
+    limit: int = typer.Option(
+        20, "--limit", help="Number of most recent entries (use --all for everything)."
+    ),
     all_: bool = typer.Option(False, "--all", help="Show every audit entry."),
 ) -> None:
     """Tail the memory mutation audit log."""
@@ -899,6 +951,7 @@ def _stream_plan(
         return Group(header, Text(""), body)
 
     with Live(render(), console=console, refresh_per_second=12, transient=True) as live:
+
         def on_delta(chunk: str) -> None:
             streamed.append(chunk)
             live.update(render())
@@ -926,6 +979,7 @@ def _stream_plan(
             # planner (folder_organizer → ActionPlan, data_analyzer →
             # AnalysisSpec → ActionPlan, …).
             from app.agent import plan_with_llm as _legacy_plan
+
             plan = _legacy_plan(
                 task,
                 snapshot,
@@ -939,7 +993,7 @@ def _stream_plan(
     total = sum(len(c) for c in streamed)
     console.print(
         f"[dim]stream complete:[/] {total} chars  ·  "
-        f"{elapsed:.1f}s  ·  ~{int(total/max(elapsed, 0.001))} chars/s"
+        f"{elapsed:.1f}s  ·  ~{int(total / max(elapsed, 0.001))} chars/s"
     )
     return plan
 

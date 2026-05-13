@@ -13,6 +13,7 @@ Deferred to Phase 5.x: folder structure pref, report template, common
 task recipes — each adds a new field to MemoryPreferences plus one
 consumer wiring.
 """
+
 from app.memory._schema import MemoryPreferences, NamingStyle
 from app.memory._store import (
     MemoryStore,

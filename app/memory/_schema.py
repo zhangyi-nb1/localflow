@@ -17,6 +17,7 @@ folder_organizer reads ``naming_style`` from TaskSpec.preferences). The
 CLI logs every applied preference so users see when memory is influencing
 a run.
 """
+
 from __future__ import annotations
 
 from enum import Enum
@@ -62,7 +63,4 @@ class MemoryPreferences(BaseModel):
     def is_default(self) -> bool:
         """True iff the preferences match factory defaults — used by the
         CLI to decide whether to print the 'Applied preferences' header."""
-        return (
-            not self.forbidden_paths
-            and self.naming_style == NamingStyle.ORIGINAL
-        )
+        return not self.forbidden_paths and self.naming_style == NamingStyle.ORIGINAL

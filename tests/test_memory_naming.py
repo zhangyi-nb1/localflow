@@ -1,4 +1,5 @@
 """Phase 5 — naming style transform unit tests."""
+
 from __future__ import annotations
 
 import pytest
@@ -25,14 +26,17 @@ def test_unknown_style_is_treated_as_original() -> None:
 # --------------------------------------------------------------- snake_case
 
 
-@pytest.mark.parametrize("inp,expected", [
-    ("Report (Final).pdf", "report_final.pdf"),
-    ("My Notes.txt", "my_notes.txt"),
-    ("data-set v2.csv", "data_set_v2.csv"),
-    ("ALREADY_SNAKE.md", "already_snake.md"),
-    ("[draft] paper.pdf", "draft_paper.pdf"),
-    ("Q1+Q2 results.xlsx", "q1_q2_results.xlsx"),
-])
+@pytest.mark.parametrize(
+    "inp,expected",
+    [
+        ("Report (Final).pdf", "report_final.pdf"),
+        ("My Notes.txt", "my_notes.txt"),
+        ("data-set v2.csv", "data_set_v2.csv"),
+        ("ALREADY_SNAKE.md", "already_snake.md"),
+        ("[draft] paper.pdf", "draft_paper.pdf"),
+        ("Q1+Q2 results.xlsx", "q1_q2_results.xlsx"),
+    ],
+)
 def test_snake_case_examples(inp: str, expected: str) -> None:
     assert apply_naming_style(inp, "snake_case") == expected
 
@@ -66,11 +70,14 @@ def test_snake_case_strips_edge_underscores() -> None:
 # --------------------------------------------------------------- kebab-case
 
 
-@pytest.mark.parametrize("inp,expected", [
-    ("Report (Final).pdf", "report-final.pdf"),
-    ("snake_case_name.md", "snake-case-name.md"),
-    ("Q1+Q2 results.xlsx", "q1-q2-results.xlsx"),
-])
+@pytest.mark.parametrize(
+    "inp,expected",
+    [
+        ("Report (Final).pdf", "report-final.pdf"),
+        ("snake_case_name.md", "snake-case-name.md"),
+        ("Q1+Q2 results.xlsx", "q1-q2-results.xlsx"),
+    ],
+)
 def test_kebab_examples(inp: str, expected: str) -> None:
     assert apply_naming_style(inp, "kebab-case") == expected
 

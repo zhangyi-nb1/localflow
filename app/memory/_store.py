@@ -18,6 +18,7 @@ mutation manually).
 The store is **independent of TaskSpec / run_store**. Memory lives
 across tasks; it is not part of any single run's state.
 """
+
 from __future__ import annotations
 
 import json
@@ -105,17 +106,13 @@ class MemoryStore:
             data = json.loads(raw)
             return MemoryPreferences.model_validate(data)
         except (json.JSONDecodeError, ValidationError) as exc:
-            raise MemoryStoreError(
-                f"corrupt prefs.json at {self.prefs_path}: {exc}"
-            ) from exc
+            raise MemoryStoreError(f"corrupt prefs.json at {self.prefs_path}: {exc}") from exc
 
     def save(self, prefs: MemoryPreferences) -> None:
         """Atomic write: temp file in same dir, then rename."""
         payload = prefs.model_dump(mode="json")
         text = json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
-        fd, tmp_path = tempfile.mkstemp(
-            prefix=".prefs_", suffix=".tmp", dir=str(self.home)
-        )
+        fd, tmp_path = tempfile.mkstemp(prefix=".prefs_", suffix=".tmp", dir=str(self.home))
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(text)
@@ -232,9 +229,7 @@ class MemoryStore:
             new_style = NamingStyle(style)
         except ValueError:
             valid = ", ".join(s.value for s in NamingStyle)
-            raise ValueError(
-                f"unknown naming_style {style!r}; valid: {valid}"
-            ) from None
+            raise ValueError(f"unknown naming_style {style!r}; valid: {valid}") from None
         prefs = self.load()
         if prefs.naming_style == new_style:
             return MutationResult(

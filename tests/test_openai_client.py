@@ -2,6 +2,7 @@
 
 Uses a stubbed openai.OpenAI so no network calls happen.
 """
+
 from __future__ import annotations
 
 import json
@@ -331,7 +332,7 @@ class _StreamingStubOpenAI:
     def _make_stream(self):
         full = json.dumps(self.payload)
         size = max(1, len(full) // self.chunk_count)
-        pieces = [full[i:i + size] for i in range(0, len(full), size)]
+        pieces = [full[i : i + size] for i in range(0, len(full), size)]
         # First chunk: tool_call ID + initial empty arguments fragment
         first = SimpleNamespace(
             choices=[
@@ -397,9 +398,7 @@ def test_openai_client_streaming_calls_on_delta(monkeypatch, task, snapshot) -> 
     client._openai = SimpleNamespace(APIError=_StreamingStubOpenAI.APIError)
 
     received: list[str] = []
-    plan = plan_with_llm(
-        task, snapshot, client=client, on_delta=received.append
-    )
+    plan = plan_with_llm(task, snapshot, client=client, on_delta=received.append)
 
     assert plan.task_id == task.task_id
     assert len(plan.actions) == 4

@@ -36,9 +36,7 @@ def render_pdf_index_report(
         lines.append("")
         for src in sources:
             marker = "preview" if src.get("has_preview") else "filename-only"
-            lines.append(
-                f"- `{src['path']}` — title: \"{src['title']}\" ({marker})"
-            )
+            lines.append(f'- `{src["path"]}` — title: "{src["title"]}" ({marker})')
         lines.append("")
         lines.append(f"## Output\n\n- `{action.target_path}` (written; rollback restores)")
         lines.append("")

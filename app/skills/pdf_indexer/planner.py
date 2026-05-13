@@ -11,6 +11,7 @@ The planner produces ONE action — an ``index`` write — whose
 ``metadata.content`` is the rendered markdown and whose
 ``metadata.provenance`` records which source PDFs contributed.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -171,7 +172,7 @@ def _render_index_markdown(workspace_root: str, entries: list[dict[str, Any]]) -
     lines.append("")
     for e in entries:
         anchor = e["name"].lower().replace(".", "").replace("/", "-").replace(" ", "-")
-        lines.append(f"### {e['title']} <a id=\"{anchor}\"></a>")
+        lines.append(f'### {e["title"]} <a id="{anchor}"></a>')
         lines.append("")
         lines.append(f"- **Source**: `{e['path']}`")
         lines.append(f"- **Title source**: {e['title_source']}")

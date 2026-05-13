@@ -11,6 +11,7 @@ Public API:
   * ``run_mcp_server()`` — async entry point that boots stdio transport
   * ``to_jsonable(obj)`` — serialization helper used by handlers
 """
+
 from app.mcp._serialize import to_jsonable
 from app.mcp.tools import TOOLS, ToolDef, get_tool
 

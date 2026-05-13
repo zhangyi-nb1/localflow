@@ -1,4 +1,5 @@
 """Phase 3.1 / outline §14 DataOps — tests for data_ops + data_reporter."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -74,7 +75,7 @@ def test_data_ops_handles_unicode(tmp_path: Path) -> None:
 
 def test_data_ops_caps_long_files(tmp_path: Path) -> None:
     p = tmp_path / "big.csv"
-    lines = ["a,b"] + [f"{i},{i*2}" for i in range(500)]
+    lines = ["a,b"] + [f"{i},{i * 2}" for i in range(500)]
     p.write_text("\n".join(lines), encoding="utf-8")
     summaries = data_ops.read_and_describe(p, "big.csv", max_rows=100)
     s = summaries[0]
@@ -285,8 +286,12 @@ def test_planner_includes_excel_sheets(tmp_path: Path) -> None:
     ws.mkdir()
     (ws / "users.csv").write_text("id,name\n1,alice\n2,bob\n", encoding="utf-8")
     with pd.ExcelWriter(ws / "report.xlsx") as w:
-        pd.DataFrame({"month": ["Jan", "Feb"], "rev": [100, 200]}).to_excel(w, sheet_name="Q1", index=False)
-        pd.DataFrame({"month": ["Apr", "May"], "rev": [300, 400]}).to_excel(w, sheet_name="Q2", index=False)
+        pd.DataFrame({"month": ["Jan", "Feb"], "rev": [100, 200]}).to_excel(
+            w, sheet_name="Q1", index=False
+        )
+        pd.DataFrame({"month": ["Apr", "May"], "rev": [300, 400]}).to_excel(
+            w, sheet_name="Q2", index=False
+        )
     snap = scan_workspace(ws, "t", compute_preview=False)
     task = TaskSpec(task_id="t", user_goal="profile", workspace_root=str(ws), skill="data_reporter")
     plan = plan_data_report(task, snap)

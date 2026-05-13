@@ -6,9 +6,7 @@ DEFAULT_MAX_CHARS = 2000
 
 # File types whose contents are inherently text. Anything else
 # (image, audio, archive, etc.) we skip — there's no readable text.
-TEXT_FILE_TYPES: frozenset[str] = frozenset(
-    {"text", "structured", "tabular", "code"}
-)
+TEXT_FILE_TYPES: frozenset[str] = frozenset({"text", "structured", "tabular", "code"})
 
 
 def can_preview_as_text(file_type: str) -> bool:

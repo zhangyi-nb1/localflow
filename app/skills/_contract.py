@@ -44,6 +44,7 @@ Outline §10.7: this module touches NO ``app/harness/*`` code. It treats
 Executor/Verifier/Rollback as black boxes — exactly what the kernel
 contract is supposed to make possible.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -67,7 +68,9 @@ class StageResult:
 
     def __str__(self) -> str:
         status = "PASS" if self.passed else "FAIL"
-        return f"[{status}] {self.name}: {self.detail}" if self.detail else f"[{status}] {self.name}"
+        return (
+            f"[{status}] {self.name}: {self.detail}" if self.detail else f"[{status}] {self.name}"
+        )
 
 
 @dataclass
@@ -83,7 +86,9 @@ class ContractReport:
         return [s for s in self.stages if not s.passed]
 
     def __str__(self) -> str:
-        header = f"ContractReport({self.skill_name}): {'ALL PASSED' if self.all_passed else 'FAILURES'}"
+        header = (
+            f"ContractReport({self.skill_name}): {'ALL PASSED' if self.all_passed else 'FAILURES'}"
+        )
         lines = [header] + [f"  {s}" for s in self.stages]
         return "\n".join(lines)
 
@@ -163,9 +168,7 @@ def run_skill_contract(
         tool_reg = get_default_tool_registry()
         for tool_name in manifest.required_tools:
             if not tool_reg.has(tool_name):
-                raise AssertionError(
-                    f"required_tool {tool_name!r} not in Tool Registry"
-                )
+                raise AssertionError(f"required_tool {tool_name!r} not in Tool Registry")
         return f"name={manifest.name}, allowed={manifest.allowed_actions}, tools={len(manifest.required_tools)}"
 
     _record("manifest_valid", _check_manifest)
@@ -237,8 +240,7 @@ def run_skill_contract(
                 target.relative_to(workspace_root)
             except ValueError:
                 raise AssertionError(
-                    f"action {a.action_id!r} target_path={a.target_path!r} "
-                    f"escapes workspace"
+                    f"action {a.action_id!r} target_path={a.target_path!r} escapes workspace"
                 )
         plan_holder["plan"] = plan
         return f"{len(plan.actions)} action(s), all types ⊆ allowed"
@@ -255,10 +257,13 @@ def run_skill_contract(
     if plan_ok:
         _record("validate_accepts_own_plan", _check_validate_self)
     else:
-        report.stages.append(StageResult(
-            name="validate_accepts_own_plan", passed=False,
-            detail="skipped (plan_happy_path failed)"
-        ))
+        report.stages.append(
+            StageResult(
+                name="validate_accepts_own_plan",
+                passed=False,
+                detail="skipped (plan_happy_path failed)",
+            )
+        )
 
     # ------------------------------------------------------------- 5. validate rejects garbage
     def _check_validate_garbage() -> str:
@@ -312,10 +317,13 @@ def run_skill_contract(
     if plan_ok:
         _record("validate_rejects_garbage", _check_validate_garbage)
     else:
-        report.stages.append(StageResult(
-            name="validate_rejects_garbage", passed=False,
-            detail="skipped (plan_happy_path failed)"
-        ))
+        report.stages.append(
+            StageResult(
+                name="validate_rejects_garbage",
+                passed=False,
+                detail="skipped (plan_happy_path failed)",
+            )
+        )
 
     # ------------------------------------------------------------- 6. execute + verify
     outcome_holder: dict = {}
@@ -352,10 +360,11 @@ def run_skill_contract(
     if plan_ok:
         exec_ok = _record("execute_and_verify", _check_execute_verify)
     else:
-        report.stages.append(StageResult(
-            name="execute_and_verify", passed=False,
-            detail="skipped (plan_happy_path failed)"
-        ))
+        report.stages.append(
+            StageResult(
+                name="execute_and_verify", passed=False, detail="skipped (plan_happy_path failed)"
+            )
+        )
 
     # ------------------------------------------------------------- 7. rollback restores
     def _check_rollback() -> str:
@@ -377,10 +386,11 @@ def run_skill_contract(
     if exec_ok:
         _record("rollback_restores", _check_rollback)
     else:
-        report.stages.append(StageResult(
-            name="rollback_restores", passed=False,
-            detail="skipped (execute_and_verify failed)"
-        ))
+        report.stages.append(
+            StageResult(
+                name="rollback_restores", passed=False, detail="skipped (execute_and_verify failed)"
+            )
+        )
 
     # ------------------------------------------------------------- 8. report non-empty
     def _check_report() -> str:
@@ -398,9 +408,10 @@ def run_skill_contract(
     if exec_ok:
         _record("report_non_empty", _check_report)
     else:
-        report.stages.append(StageResult(
-            name="report_non_empty", passed=False,
-            detail="skipped (execute_and_verify failed)"
-        ))
+        report.stages.append(
+            StageResult(
+                name="report_non_empty", passed=False, detail="skipped (execute_and_verify failed)"
+            )
+        )
 
     return report

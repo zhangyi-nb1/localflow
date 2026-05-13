@@ -8,6 +8,7 @@ fully-typed Pydantic model describing WHAT to compute. LocalFlow's
 This file defines the contract. The engine lives in
 ``app/tools/data_analysis.py``.
 """
+
 from __future__ import annotations
 
 from enum import Enum
@@ -73,7 +74,7 @@ class GroupBy(BaseModel):
     aggregations: dict[str, AggregationOp] = Field(
         ...,
         description="Map of column → aggregation. Keys may include the same column "
-                    "appearing with different ops by suffixing _2, _3 (e.g. amount_2).",
+        "appearing with different ops by suffixing _2, _3 (e.g. amount_2).",
     )
 
     @field_validator("aggregations")
@@ -93,7 +94,8 @@ class ChartRequest(BaseModel):
     """
 
     kind: Literal["bar", "histogram", "line"] = Field(
-        ..., description="Chart type. 'bar' requires y; 'histogram' uses only x.",
+        ...,
+        description="Chart type. 'bar' requires y; 'histogram' uses only x.",
     )
     x: str = Field(..., description="Column for the X axis.")
     y: str | None = Field(default=None, description="Required for 'bar' and 'line'.")

@@ -10,6 +10,7 @@ Verifies the contracts that make Phase 4 a real plug-in system:
   * private dirs: subdirs starting with ``_`` / ``.`` are ignored
   * env var: LOCALFLOW_SKILLS_DIR is honored
 """
+
 from __future__ import annotations
 
 import os
@@ -23,7 +24,7 @@ from app.skills._loader import (
     discover_and_register_external,
 )
 
-SKILL_PY_TEMPLATE = '''
+SKILL_PY_TEMPLATE = """
 from app.schemas import ActionPlan, SkillManifest, TaskSpec, WorkspaceSnapshot, VerificationResult
 from app.skills._base import Skill
 
@@ -42,7 +43,7 @@ class {class_name}(Skill):
 
     def report(self, *, task, plan, outcome, verification) -> str:
         return "ok"
-'''
+"""
 
 
 def _write_skill(skills_dir: Path, dirname: str, class_name: str, skill_name: str) -> Path:
@@ -77,10 +78,12 @@ def test_multiple_skills_in_one_file_all_register(tmp_path: Path) -> None:
     sub = skills_dir / "duo"
     sub.mkdir(parents=True)
     # Two Skill subclasses in one skill.py
-    body = "\n\n".join([
-        SKILL_PY_TEMPLATE.format(class_name="OneSkill", skill_name="one"),
-        SKILL_PY_TEMPLATE.format(class_name="TwoSkill", skill_name="two"),
-    ])
+    body = "\n\n".join(
+        [
+            SKILL_PY_TEMPLATE.format(class_name="OneSkill", skill_name="one"),
+            SKILL_PY_TEMPLATE.format(class_name="TwoSkill", skill_name="two"),
+        ]
+    )
     (sub / "skill.py").write_text(body, encoding="utf-8")
 
     registry = SkillRegistry()
@@ -127,7 +130,9 @@ def test_private_dirs_are_ignored(tmp_path: Path) -> None:
 
     assert registry.list_names() == []
     # No findings either — private dirs are ignored entirely.
-    assert all(f.source_dir.endswith("skills") or "_" not in Path(f.source_dir).name[:1] for f in findings)
+    assert all(
+        f.source_dir.endswith("skills") or "_" not in Path(f.source_dir).name[:1] for f in findings
+    )
 
 
 def test_nonexistent_path_recorded_not_fatal(tmp_path: Path) -> None:
@@ -165,7 +170,7 @@ def test_skill_py_with_instantiation_error_does_not_crash(tmp_path: Path) -> Non
     sub = skills_dir / "broken_init"
     sub.mkdir(parents=True)
     (sub / "skill.py").write_text(
-        '''
+        """
 from app.skills._base import Skill
 
 class BadInit(Skill):
@@ -180,7 +185,7 @@ class BadInit(Skill):
     def plan(self, task, snapshot): ...
     def validate(self, plan): ...
     def report(self, *, task, plan, outcome, verification): return ""
-''',
+""",
         encoding="utf-8",
     )
 
@@ -237,7 +242,7 @@ def test_env_var_supports_multiple_paths(tmp_path: Path, monkeypatch: pytest.Mon
 # --------------------------------------------------------------- Phase 4.2
 
 
-SKILL_PY_WITH_BAD_TOOL = '''
+SKILL_PY_WITH_BAD_TOOL = """
 from app.schemas import ActionPlan, SkillManifest, TaskSpec, WorkspaceSnapshot, VerificationResult
 from app.skills._base import Skill
 
@@ -258,7 +263,7 @@ class BadToolDecl(Skill):
 
     def report(self, *, task, plan, outcome, verification) -> str:
         return ""
-'''
+"""
 
 
 def test_external_skill_with_bogus_required_tools_is_recorded_as_error(tmp_path: Path) -> None:
@@ -281,10 +286,7 @@ def test_external_skill_with_bogus_required_tools_is_recorded_as_error(tmp_path:
 
     assert "bad_tool_decl" not in registry.list_names()
     assert "good_decl" in registry.list_names()
-    assert any(
-        f.status == "error" and "requires unknown tool" in (f.error or "")
-        for f in findings
-    )
+    assert any(f.status == "error" and "requires unknown tool" in (f.error or "") for f in findings)
 
 
 def test_external_skill_without_tool_registry_param_skips_validation(tmp_path: Path) -> None:
@@ -301,3 +303,72 @@ def test_external_skill_without_tool_registry_param_skips_validation(tmp_path: P
     # Skill registered because no tool_registry was passed.
     assert "bad_tool_decl" in registry.list_names()
     assert any(f.status == "registered" for f in findings)
+
+
+# --------------------------------------------------------------- v0.6.3: kill switch + warning
+
+
+def test_disable_env_skips_all_loading(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """LOCALFLOW_DISABLE_EXTERNAL_SKILLS=1 must short-circuit before any
+    skill.py is imported. Even a perfectly valid skill must NOT register."""
+    skills_dir = tmp_path / "skills"
+    _write_skill(skills_dir, "would_load", "WouldLoad", "would_load")
+
+    monkeypatch.setenv("LOCALFLOW_DISABLE_EXTERNAL_SKILLS", "1")
+
+    registry = SkillRegistry()
+    findings = discover_and_register_external(registry, [skills_dir])
+
+    assert registry.list_names() == []
+    assert any(
+        f.status == "skipped" and "LOCALFLOW_DISABLE_EXTERNAL_SKILLS" in (f.error or "")
+        for f in findings
+    )
+
+
+def test_kill_switch_truthy_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.skills._loader import _external_skills_disabled
+
+    for value in ("1", "true", "True", "yes", "on", "TRUE"):
+        monkeypatch.setenv("LOCALFLOW_DISABLE_EXTERNAL_SKILLS", value)
+        assert _external_skills_disabled(), f"value {value!r} should disable"
+    for value in ("0", "false", "no", "off", ""):
+        monkeypatch.setenv("LOCALFLOW_DISABLE_EXTERNAL_SKILLS", value)
+        assert not _external_skills_disabled(), f"value {value!r} should NOT disable"
+
+
+def test_loading_external_skill_prints_warning_to_stderr(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Loading at least one external skill must emit a warning to stderr
+    naming the trust caveat. stdout must NOT be touched (MCP framing
+    safety: MCP server uses stdout for JSON-RPC frames)."""
+    monkeypatch.delenv("LOCALFLOW_DISABLE_EXTERNAL_SKILLS", raising=False)
+    skills_dir = tmp_path / "skills"
+    _write_skill(skills_dir, "harmless", "Harmless", "harmless")
+
+    registry = SkillRegistry()
+    discover_and_register_external(registry, [skills_dir])
+
+    captured = capsys.readouterr()
+    assert "harmless" in captured.err
+    assert "TRUSTED Python code" in captured.err
+    assert "LOCALFLOW_DISABLE_EXTERNAL_SKILLS" in captured.err
+    assert "TRUSTED" not in captured.out, "stderr warning leaked to stdout"
+
+
+def test_no_warning_when_no_external_skills_load(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Don't spam stderr when the user has no external skills installed."""
+    monkeypatch.delenv("LOCALFLOW_DISABLE_EXTERNAL_SKILLS", raising=False)
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    registry = SkillRegistry()
+    discover_and_register_external(registry, [empty])
+    captured = capsys.readouterr()
+    assert "TRUSTED" not in captured.err

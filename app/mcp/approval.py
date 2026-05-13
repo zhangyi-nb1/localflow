@@ -40,6 +40,7 @@ The CLI ``execute --yes`` path doesn't use tokens — the human at the
 keyboard *is* the approval. CLI calls ``control_loop.run_execute``
 directly without going through this module.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -224,9 +225,7 @@ def validate_and_consume(
 def _write_atomic(path: Path, data: dict[str, Any]) -> None:
     """Temp-file + rename. Atomic on Windows (Python 3.3+) and POSIX."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(
-        prefix=".approval_", suffix=".tmp", dir=str(path.parent)
-    )
+    fd, tmp = tempfile.mkstemp(prefix=".approval_", suffix=".tmp", dir=str(path.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)

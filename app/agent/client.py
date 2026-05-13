@@ -37,8 +37,7 @@ class LLMClient(Protocol):
         tool_description: str,
         tool_schema: dict[str, Any],
         on_delta: Callable[[str], None] | None = None,
-    ) -> "StructuredResponse":
-        ...
+    ) -> "StructuredResponse": ...
 
 
 @dataclass
@@ -169,14 +168,14 @@ class AnthropicClient:
             "input_tokens": getattr(response.usage, "input_tokens", 0) or 0,
             "output_tokens": getattr(response.usage, "output_tokens", 0) or 0,
             "cache_read_input_tokens": getattr(response.usage, "cache_read_input_tokens", 0) or 0,
-            "cache_creation_input_tokens": getattr(
-                response.usage, "cache_creation_input_tokens", 0
-            ) or 0,
+            "cache_creation_input_tokens": getattr(response.usage, "cache_creation_input_tokens", 0)
+            or 0,
         }
 
         payload = dict(tool_use.input)
         if on_delta is not None:
             import json as _json
+
             on_delta(_json.dumps(payload, ensure_ascii=False))
 
         return StructuredResponse(
@@ -268,6 +267,7 @@ class FakeLLMClient:
         tool_use_id = f"toolu_fake_{self._next_id:03d}"
         if on_delta is not None:
             import json as _json
+
             on_delta(_json.dumps(item, ensure_ascii=False))
         return StructuredResponse(
             tool_use_id=tool_use_id,
@@ -280,6 +280,11 @@ class FakeLLMClient:
                     "input": dict(item),
                 }
             ],
-            usage={"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0},
+            usage={
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0,
+            },
             stop_reason="tool_use",
         )

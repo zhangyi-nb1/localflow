@@ -147,8 +147,7 @@ class Verifier:
 
         # Generated files exist (e.g. index.md).
         missing_generated = [
-            p for p in manifest.generated_files
-            if not (self.workspace_root / p).exists()
+            p for p in manifest.generated_files if not (self.workspace_root / p).exists()
         ]
         checks.append(
             VerificationCheck(

@@ -5,6 +5,7 @@ the planner — that's where the analysis is run. This file produces the
 shorter ``final_report.md`` that lives under ``.localflow/runs/<tid>/``
 summarizing the run for the audit trail (per outline §10.6).
 """
+
 from __future__ import annotations
 
 from app.harness.executor import ExecutionOutcome

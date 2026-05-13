@@ -1,4 +1,5 @@
 """Phase 5 — MemoryStore unit tests."""
+
 from __future__ import annotations
 
 import json
@@ -29,10 +30,12 @@ def test_load_returns_defaults_when_no_prefs_file(tmp_path: Path) -> None:
 
 def test_save_then_load_roundtrip(tmp_path: Path) -> None:
     s = _store(tmp_path)
-    s.save(MemoryPreferences(
-        forbidden_paths=["secrets", "private/docs"],
-        naming_style=NamingStyle.SNAKE_CASE,
-    ))
+    s.save(
+        MemoryPreferences(
+            forbidden_paths=["secrets", "private/docs"],
+            naming_style=NamingStyle.SNAKE_CASE,
+        )
+    )
     prefs = s.load()
     assert prefs.forbidden_paths == ["secrets", "private/docs"]
     assert prefs.naming_style == NamingStyle.SNAKE_CASE

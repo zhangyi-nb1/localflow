@@ -1,5 +1,6 @@
 """Tests for the Skill ABC + SkillRegistry (Phase 2.3 / outline §10.7
 extensibility rule + §13.5 'Skill 不应侵入 Harness Kernel')."""
+
 from __future__ import annotations
 
 import pytest
@@ -163,12 +164,15 @@ def test_register_without_tool_registry_skips_validation() -> None:
     assert "anything" in registry
 
 
-@pytest.mark.parametrize("skill_name", [
-    "folder_organizer",
-    "pdf_indexer",
-    "data_reporter",
-    "data_analyzer",
-])
+@pytest.mark.parametrize(
+    "skill_name",
+    [
+        "folder_organizer",
+        "pdf_indexer",
+        "data_reporter",
+        "data_analyzer",
+    ],
+)
 def test_builtin_required_tools_resolve_in_default_tool_registry(skill_name: str) -> None:
     """The whole point of Phase 4.2's validation: typos / drift fail at
     registration. The 4 built-ins' declared tools MUST resolve."""
@@ -177,9 +181,7 @@ def test_builtin_required_tools_resolve_in_default_tool_registry(skill_name: str
     skill = get_default_registry().require(skill_name)
     tool_reg = get_default_tool_registry()
     for tool in skill.manifest.required_tools:
-        assert tool_reg.has(tool), (
-            f"built-in skill {skill_name!r} declares unknown tool {tool!r}"
-        )
+        assert tool_reg.has(tool), f"built-in skill {skill_name!r} declares unknown tool {tool!r}"
 
 
 # --------------------------------------------------------------- Phase 4.3 ---

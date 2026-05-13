@@ -13,6 +13,7 @@ This file's only requirement to be picked up by LocalFlow:
 Everything else (planner.py, validator.py, reporter.py, skill.yaml) is
 optional — they only help YOU stay organized.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -103,9 +104,7 @@ class WorkspaceStatsSkill(Skill):
             raise ValueError("workspace_stats only emits one action")
         for a in plan.actions:
             if a.action_type != ActionType.INDEX:
-                raise ValueError(
-                    f"workspace_stats only emits index actions; got {a.action_type}"
-                )
+                raise ValueError(f"workspace_stats only emits index actions; got {a.action_type}")
 
     def report(
         self,

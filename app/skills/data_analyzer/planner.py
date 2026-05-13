@@ -9,6 +9,7 @@ Phase 3.3b will add an ``LLMAnalysisPlanner`` that emits AnalysisSpec(s)
 from natural language. The rule planner stays as the fallback / fast
 path / test fixture / dev mode.
 """
+
 from __future__ import annotations
 
 import re
@@ -76,7 +77,9 @@ def plan_data_analysis(
                 results.append(_error_result(tr.display_path, tr.error or "unreadable"))
                 continue
 
-            spec = _choose_default_spec(tr.display_path, tr.df, _sheet_name_or_none(tr.display_path))
+            spec = _choose_default_spec(
+                tr.display_path, tr.df, _sheet_name_or_none(tr.display_path)
+            )
             if spec is None:
                 results.append(_skip_result(tr.display_path, "no analyzable columns"))
                 continue
@@ -112,9 +115,7 @@ def build_plan_from_results(
     action per result that produced a chart.
     """
     chart_b64_by_result_idx: dict[int, str] = {
-        idx: r.chart_png_b64
-        for idx, r in enumerate(results)
-        if r.chart_png_b64 is not None
+        idx: r.chart_png_b64 for idx, r in enumerate(results) if r.chart_png_b64 is not None
     }
 
     # Build the chart write actions BEFORE the report action so the
@@ -128,7 +129,9 @@ def build_plan_from_results(
         result = results[idx]
         chart_x = result.spec.chart.x if result.spec.chart else "x"
         chart_kind = result.spec.chart.kind if result.spec.chart else "bar"
-        chart_rel = f"{CHARTS_DIR}/{_slug(result.spec.source_file)}__{_slug(chart_x)}__{chart_kind}.png"
+        chart_rel = (
+            f"{CHARTS_DIR}/{_slug(result.spec.source_file)}__{_slug(chart_x)}__{chart_kind}.png"
+        )
         chart_actions.append(_chart_action(action_id, chart_rel, b64, result))
         chart_paths_by_result_idx[idx] = chart_rel
 
@@ -176,7 +179,9 @@ def build_plan_from_results(
 
 
 def _choose_default_spec(
-    source_file: str, df: Any, sheet: str | None,
+    source_file: str,
+    df: Any,
+    sheet: str | None,
 ) -> AnalysisSpec | None:
     """Pick a sensible default analysis for a DataFrame.
 
@@ -267,8 +272,7 @@ def _chart_action(action_id: str, target_rel: str, png_b64: str, result: Analysi
         action_type=ActionType.INDEX,
         target_path=target_rel,
         reason=(
-            f"Render {result.spec.chart.kind} chart for analysis of "
-            f"{result.spec.source_file}."
+            f"Render {result.spec.chart.kind} chart for analysis of {result.spec.source_file}."
         ),
         risk_level=RiskLevel.LOW,
         reversible=True,
@@ -305,7 +309,7 @@ def _render_report_md(
 
     for idx, r in enumerate(results):
         anchor = _anchor_for(r.spec.source_file, idx + 1)
-        lines.append(f"### `{r.spec.source_file}` <a id=\"{anchor}\"></a>")
+        lines.append(f'### `{r.spec.source_file}` <a id="{anchor}"></a>')
         lines.append("")
         lines.append(f"**Outcome**: `{r.outcome.value}`")
         if r.error and r.outcome.value not in ("ok",):

@@ -80,9 +80,7 @@ def _check_path_fields(
         else:
             hit = _is_under_forbidden(workspace_root, src_abs, forbidden_paths)
             if hit is not None:
-                reasons.append(
-                    f"source_path: blocked by forbidden_paths ({hit!r})"
-                )
+                reasons.append(f"source_path: blocked by forbidden_paths ({hit!r})")
     if action.target_path is not None:
         try:
             tgt_abs = resolve_inside(workspace_root, action.target_path)
@@ -91,9 +89,7 @@ def _check_path_fields(
         else:
             hit = _is_under_forbidden(workspace_root, tgt_abs, forbidden_paths)
             if hit is not None:
-                reasons.append(
-                    f"target_path: blocked by forbidden_paths ({hit!r})"
-                )
+                reasons.append(f"target_path: blocked by forbidden_paths ({hit!r})")
 
 
 def _check_required_fields(action: Action, reasons: list[str]) -> None:

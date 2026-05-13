@@ -35,7 +35,9 @@ def test_verifier_passes_after_clean_execution(workspace: Path, task, snapshot, 
     assert result.passed, result.failed_checks
 
 
-def test_verifier_detects_missing_generated_file(workspace: Path, task, snapshot, run_store) -> None:
+def test_verifier_detects_missing_generated_file(
+    workspace: Path, task, snapshot, run_store
+) -> None:
     run_store.save_task(task)
     run_store.save_workspace(snapshot)
     plan = plan_organization(task, snapshot)

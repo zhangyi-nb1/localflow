@@ -1,6 +1,6 @@
 [project]
 name = "localflow-agent"
-version = "0.6.2"
+version = "0.6.3"
 description = "LocalFlow Agent: Personal Automation Agent Harness"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,13 +18,21 @@ dependencies = [
     "openpyxl>=3.1",
     "matplotlib>=3.7",
 ]
-# NOTE on the dep set above: LocalFlow's core skills (data_reporter,
-# data_analyzer, pdf_indexer) eagerly import pandas / openpyxl /
-# matplotlib / pypdf at module-load time, so these are pinned to the
-# base install — splitting them into extras would break SkillRegistry
-# bootstrap. Honest known-limitation; lazy-loading skill imports is
-# tracked as future work. Use the lighter ``localflow-agent[mcp]``
-# install if you only want the harness + folder_organizer.
+# NOTE on the dep set above (known limitation, tracked for v0.7.0):
+#
+# LocalFlow's data + PDF skills eagerly import pandas / openpyxl /
+# matplotlib / pypdf at module-load time via ``app/skills/__init__.py``
+# wiring the SkillRegistry, so those heavy packages are pinned in the
+# BASE install. Splitting them into ``[data]`` / ``[pdf]`` extras
+# requires refactoring the skill loader to be lazy:
+#   1. SkillRegistry only loads the manifest at startup (cheap).
+#   2. The skill's planner module is imported on first ``plan()`` call.
+#   3. Missing-dep on import → clear error pointing at the right extra.
+# That's ~half a day of refactor + test updates; out of scope for the
+# v0.6.x line. If you only need the harness + folder_organizer, you
+# can omit pandas/matplotlib/pypdf from your environment and the
+# folder_organizer skill still works (the others raise ImportError on
+# registration today; the v0.7.0 refactor will skip them gracefully).
 
 [project.optional-dependencies]
 dev = [

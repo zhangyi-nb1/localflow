@@ -26,11 +26,7 @@ def validate_plan_structure(plan: ActionPlan) -> None:
         ids.add(action.action_id)
 
         if action.action_type == ActionType.MKDIR and action.source_path is not None:
-            raise PlanValidationError(
-                f"{action.action_id}: mkdir must not have source_path"
-            )
+            raise PlanValidationError(f"{action.action_id}: mkdir must not have source_path")
         if action.action_type in {ActionType.MOVE, ActionType.RENAME, ActionType.COPY}:
             if action.source_path == action.target_path:
-                raise PlanValidationError(
-                    f"{action.action_id}: source_path equals target_path"
-                )
+                raise PlanValidationError(f"{action.action_id}: source_path equals target_path")

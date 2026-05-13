@@ -5,6 +5,7 @@ Usage::
     python examples/seed.py            # writes to examples/messy_downloads
     python examples/seed.py --dest X   # writes to X
 """
+
 from __future__ import annotations
 
 import argparse

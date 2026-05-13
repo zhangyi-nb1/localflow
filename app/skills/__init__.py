@@ -7,6 +7,7 @@ To add a new skill:
 That's the whole contract — ``app/harness/`` and ``app/cli.py`` stay
 untouched. This is the third proof of outline §10.7's extensibility rule.
 """
+
 from app.skills._base import Skill, SkillError, SkillRegistry
 from app.skills._contract import (
     ContractReport,

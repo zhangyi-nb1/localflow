@@ -5,6 +5,7 @@ This is a thin adapter — the actual logic stays in planner.py /
 validator.py / reporter.py for backward compatibility with existing
 callers and tests.
 """
+
 from __future__ import annotations
 
 from app.schemas import (
@@ -29,8 +30,7 @@ class FolderOrganizerSkill(Skill):
         return SkillManifest(
             name="folder_organizer",
             description=(
-                "Organize a local folder by file category with dry-run, "
-                "rollback, and verification."
+                "Organize a local folder by file category with dry-run, rollback, and verification."
             ),
             version="0.1.0",
             capabilities=[
@@ -75,6 +75,4 @@ class FolderOrganizerSkill(Skill):
         outcome,
         verification: VerificationResult,
     ) -> str:
-        return render_final_report(
-            task=task, plan=plan, outcome=outcome, verification=verification
-        )
+        return render_final_report(task=task, plan=plan, outcome=outcome, verification=verification)

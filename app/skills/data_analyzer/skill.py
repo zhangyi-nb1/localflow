@@ -5,6 +5,7 @@ shape as ``pdf_indexer`` / ``data_reporter``: rule-based plan() that
 walks the workspace and emits ``analysis_report.md`` plus N chart PNGs
 under ``analysis_charts/``.
 """
+
 from __future__ import annotations
 
 from app.schemas import ActionPlan, SkillManifest, TaskSpec, VerificationResult, WorkspaceSnapshot
@@ -84,5 +85,8 @@ class DataAnalyzerSkill(Skill):
         verification: VerificationResult,
     ) -> str:
         return render_final_report(
-            task=task, plan=plan, outcome=outcome, verification=verification,
+            task=task,
+            plan=plan,
+            outcome=outcome,
+            verification=verification,
         )

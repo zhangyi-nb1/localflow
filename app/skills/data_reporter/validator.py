@@ -11,18 +11,20 @@ class DataReporterValidationError(SkillError):
 
 def validate_data_report_plan(plan: ActionPlan) -> None:
     """data_reporter plan invariants (Phase 3.2):
-      * Either empty (no tabular files) OR
-      * Exactly 1 markdown report action (the synthesis) PLUS zero or
-        more chart actions (one per table that had a chartable column).
-      * All chart actions must be ``index`` type with binary content.
+    * Either empty (no tabular files) OR
+    * Exactly 1 markdown report action (the synthesis) PLUS zero or
+      more chart actions (one per table that had a chartable column).
+    * All chart actions must be ``index`` type with binary content.
     """
     if not plan.actions:
         return  # legitimate no-op
 
     # Find the markdown report — must be exactly one with text content.
     text_actions = [
-        a for a in plan.actions
-        if a.action_type == ActionType.INDEX and a.metadata.get("content") is not None
+        a
+        for a in plan.actions
+        if a.action_type == ActionType.INDEX
+        and a.metadata.get("content") is not None
         and a.metadata.get("binary_content_b64") is None
     ]
     if len(text_actions) != 1:

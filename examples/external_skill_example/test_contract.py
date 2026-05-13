@@ -14,6 +14,7 @@ This works whether or not the skill is installed under
 ``.localflow/skills/`` — the test imports ``skill.py`` by file path so
 external authors can run their tests before they install.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -34,9 +35,7 @@ def _load_skill_module():
     standalone-readable for external authors.
     """
     here = Path(__file__).parent
-    spec = importlib.util.spec_from_file_location(
-        "_workspace_stats_under_test", here / "skill.py"
-    )
+    spec = importlib.util.spec_from_file_location("_workspace_stats_under_test", here / "skill.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module

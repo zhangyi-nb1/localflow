@@ -9,11 +9,7 @@ from app.tools.hash_ops import sha256_file
 
 
 def _hashes(root: Path) -> dict[str, str]:
-    return {
-        p.relative_to(root).as_posix(): sha256_file(p)
-        for p in root.rglob("*")
-        if p.is_file()
-    }
+    return {p.relative_to(root).as_posix(): sha256_file(p) for p in root.rglob("*") if p.is_file()}
 
 
 def test_rollback_restores_hashes(workspace: Path, task, snapshot, run_store) -> None:
@@ -109,9 +105,7 @@ def test_overwrite_existing_backs_up_then_rollback_restores(
     assert target.read_bytes() == original_bytes
 
 
-def test_no_backup_when_target_does_not_exist(
-    workspace: Path, task, snapshot, run_store
-) -> None:
+def test_no_backup_when_target_does_not_exist(workspace: Path, task, snapshot, run_store) -> None:
     """If the target file is brand new (no prior version), overwrite_existing
     must NOT create an empty backup — it's a no-op compared to the default
     write path. Rollback then deletes the new file rather than restoring."""
@@ -256,7 +250,9 @@ def test_rollback_sweeps_empty_subdirs_from_nested_targets(
     assert (workspace / "subdir" / "a_copy.pdf").exists()
 
 
-def test_rollback_refuses_to_remove_nonempty_dir(workspace: Path, task, snapshot, run_store) -> None:
+def test_rollback_refuses_to_remove_nonempty_dir(
+    workspace: Path, task, snapshot, run_store
+) -> None:
     run_store.save_task(task)
     run_store.save_workspace(snapshot)
     plan = plan_organization(task, snapshot)

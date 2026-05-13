@@ -10,6 +10,7 @@ audit surface:
     declare in their required_tools, with the expected categories
   * ``file_ops.*`` is intentionally NOT registered (kernel-only IO)
 """
+
 from __future__ import annotations
 
 import pytest

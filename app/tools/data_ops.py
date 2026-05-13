@@ -7,6 +7,7 @@ Per outline §7.1 / §3.7 design constraint #5: the model never writes
 arbitrary code; these are LocalFlow-owned pandas calls invoked from the
 skill's deterministic planner.
 """
+
 from __future__ import annotations
 
 import logging
@@ -104,25 +105,42 @@ def read_tabular(
     get a JSON-safe summary for the markdown report.
     """
     if not abs_path.exists() or not abs_path.is_file():
-        return [TabularRead(display_path=rel_path, df=None, rows_truncated=False, error="file not found")]
+        return [
+            TabularRead(
+                display_path=rel_path, df=None, rows_truncated=False, error="file not found"
+            )
+        ]
 
     try:
         size = abs_path.stat().st_size
     except OSError as exc:
-        return [TabularRead(display_path=rel_path, df=None, rows_truncated=False, error=f"stat failed: {exc}")]
+        return [
+            TabularRead(
+                display_path=rel_path, df=None, rows_truncated=False, error=f"stat failed: {exc}"
+            )
+        ]
 
     if size > max_bytes:
-        return [TabularRead(
-            display_path=rel_path,
-            df=None,
-            rows_truncated=False,
-            error=f"file too large to summarize ({size / 1_048_576:.1f} MB > {max_bytes / 1_048_576:.0f} MB cap)",
-        )]
+        return [
+            TabularRead(
+                display_path=rel_path,
+                df=None,
+                rows_truncated=False,
+                error=f"file too large to summarize ({size / 1_048_576:.1f} MB > {max_bytes / 1_048_576:.0f} MB cap)",
+            )
+        ]
 
     try:
         import pandas as pd  # noqa: F401
     except ImportError as exc:
-        return [TabularRead(display_path=rel_path, df=None, rows_truncated=False, error=f"pandas not installed: {exc}")]
+        return [
+            TabularRead(
+                display_path=rel_path,
+                df=None,
+                rows_truncated=False,
+                error=f"pandas not installed: {exc}",
+            )
+        ]
 
     if is_excel_like(abs_path):
         return _read_excel_sheets(abs_path, rel_path, max_rows)
@@ -144,8 +162,11 @@ def read_and_describe(
     """
     return [
         summarize_dataframe(
-            tr.display_path, tr.df,
-            sample_n=sample_n, truncated=tr.rows_truncated, error=tr.error,
+            tr.display_path,
+            tr.df,
+            sample_n=sample_n,
+            truncated=tr.rows_truncated,
+            error=tr.error,
         )
         for tr in read_tabular(abs_path, rel_path, max_rows=max_rows, max_bytes=max_bytes)
     ]
@@ -196,7 +217,9 @@ def _read_csv_one(abs_path: Path, rel_path: str, max_rows: int) -> TabularRead:
         df = pd.read_csv(abs_path, sep=sep, nrows=max_rows + 1)
     except Exception as exc:
         return TabularRead(
-            display_path=rel_path, df=None, rows_truncated=False,
+            display_path=rel_path,
+            df=None,
+            rows_truncated=False,
             error=f"{type(exc).__name__}: {exc}",
         )
 
@@ -212,24 +235,34 @@ def _read_excel_sheets(abs_path: Path, rel_path: str, max_rows: int) -> list[Tab
     try:
         sheets = pd.read_excel(abs_path, sheet_name=None, nrows=max_rows + 1)
     except Exception as exc:
-        return [TabularRead(
-            display_path=rel_path, df=None, rows_truncated=False,
-            error=f"{type(exc).__name__}: {exc}",
-        )]
+        return [
+            TabularRead(
+                display_path=rel_path,
+                df=None,
+                rows_truncated=False,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+        ]
 
     if not sheets:
-        return [TabularRead(display_path=rel_path, df=None, rows_truncated=False, error="workbook has no sheets")]
+        return [
+            TabularRead(
+                display_path=rel_path, df=None, rows_truncated=False, error="workbook has no sheets"
+            )
+        ]
 
     out: list[TabularRead] = []
     for sheet_name, df in sheets.items():
         truncated = len(df) > max_rows
         if truncated:
             df = df.iloc[:max_rows]
-        out.append(TabularRead(
-            display_path=f"{rel_path}  (sheet: {sheet_name})",
-            df=df,
-            rows_truncated=truncated,
-        ))
+        out.append(
+            TabularRead(
+                display_path=f"{rel_path}  (sheet: {sheet_name})",
+                df=df,
+                rows_truncated=truncated,
+            )
+        )
     return out
 
 

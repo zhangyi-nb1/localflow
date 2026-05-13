@@ -22,6 +22,7 @@ still load. The findings list returned by
 :func:`discover_and_register_external` is exposed via the ``localflow
 skills`` CLI command so users can debug load failures.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -90,6 +91,15 @@ def default_external_skill_dirs() -> list[Path]:
     return dirs
 
 
+DISABLE_ENV = "LOCALFLOW_DISABLE_EXTERNAL_SKILLS"
+
+
+def _external_skills_disabled() -> bool:
+    """Read the kill-switch env var with the usual truthy semantics."""
+    raw = os.environ.get(DISABLE_ENV, "")
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 def discover_and_register_external(
     registry: "SkillRegistry",
     dirs: list[Path],
@@ -100,6 +110,18 @@ def discover_and_register_external(
     Import each, register every Skill subclass found, and return an
     audit list. Failures don't propagate — they're recorded and the
     next skill is tried.
+
+    Phase 7.1 (v0.6.3) security note: external skills are **trusted
+    Python code**, not sandboxed. A malicious skill could ``import os``
+    and bypass the harness. See docs/SECURITY.md. Two safety knobs:
+
+      * ``LOCALFLOW_DISABLE_EXTERNAL_SKILLS=1`` kill switch — when set,
+        this function refuses to load anything and returns one finding
+        per skipped dir.
+      * A one-line **warning** is emitted (via stderr) the first time
+        any external skill registers in a process, listing the source
+        dir and the trust caveat. Visible in ``localflow skills``
+        audit table.
 
     Subdirs whose name starts with ``_`` or ``.`` are skipped (so
     ``_base.py``-style helpers under user skill dirs are ignored).
@@ -113,20 +135,42 @@ def discover_and_register_external(
 
     findings: list[LoadFinding] = []
 
+    if _external_skills_disabled():
+        # Kill switch is set — record one finding per searched dir so the
+        # audit table is still informative, then return without importing.
+        for skills_dir in dirs:
+            findings.append(
+                LoadFinding(
+                    source_dir=str(skills_dir),
+                    status="skipped",
+                    error=f"disabled by {DISABLE_ENV}=1",
+                )
+            )
+        return findings
+
+    # Buffered warning — emit ONCE per process at the end, only if any
+    # external skill actually registered. Avoids spamming stderr for
+    # users who never installed any external skills.
+    registered_count = 0
+
     for skills_dir in dirs:
         if not skills_dir.exists():
-            findings.append(LoadFinding(
-                source_dir=str(skills_dir),
-                status="skipped",
-                error="path does not exist",
-            ))
+            findings.append(
+                LoadFinding(
+                    source_dir=str(skills_dir),
+                    status="skipped",
+                    error="path does not exist",
+                )
+            )
             continue
         if not skills_dir.is_dir():
-            findings.append(LoadFinding(
-                source_dir=str(skills_dir),
-                status="skipped",
-                error="path is not a directory",
-            ))
+            findings.append(
+                LoadFinding(
+                    source_dir=str(skills_dir),
+                    status="skipped",
+                    error="path is not a directory",
+                )
+            )
             continue
 
         for entry in sorted(skills_dir.iterdir()):
@@ -137,22 +181,26 @@ def discover_and_register_external(
 
             skill_py = entry / "skill.py"
             if not skill_py.exists():
-                findings.append(LoadFinding(
-                    source_dir=str(entry),
-                    status="skipped",
-                    error="no skill.py",
-                ))
+                findings.append(
+                    LoadFinding(
+                        source_dir=str(entry),
+                        status="skipped",
+                        error="no skill.py",
+                    )
+                )
                 continue
 
             module = None
             try:
                 module = _load_module(skill_py, entry.name)
             except Exception as exc:
-                findings.append(LoadFinding(
-                    source_dir=str(entry),
-                    status="error",
-                    error=f"import failed: {type(exc).__name__}: {exc}",
-                ))
+                findings.append(
+                    LoadFinding(
+                        source_dir=str(entry),
+                        status="error",
+                        error=f"import failed: {type(exc).__name__}: {exc}",
+                    )
+                )
                 logger.warning("failed to import external skill %s: %s", entry, exc)
                 continue
 
@@ -170,41 +218,64 @@ def discover_and_register_external(
                 try:
                     instance = cls()
                 except Exception as exc:
-                    findings.append(LoadFinding(
-                        source_dir=str(entry),
-                        status="error",
-                        class_name=cls_name,
-                        error=f"instantiate failed: {type(exc).__name__}: {exc}",
-                    ))
+                    findings.append(
+                        LoadFinding(
+                            source_dir=str(entry),
+                            status="error",
+                            class_name=cls_name,
+                            error=f"instantiate failed: {type(exc).__name__}: {exc}",
+                        )
+                    )
                     logger.warning("failed to instantiate %s in %s: %s", cls_name, entry, exc)
                     continue
                 try:
                     registry.register(instance, tool_registry=tool_registry)
                 except SkillError as exc:
-                    findings.append(LoadFinding(
+                    findings.append(
+                        LoadFinding(
+                            source_dir=str(entry),
+                            status="error",
+                            class_name=cls_name,
+                            skill_name=instance.manifest.name,
+                            error=f"register failed: {exc}",
+                        )
+                    )
+                    continue
+                findings.append(
+                    LoadFinding(
                         source_dir=str(entry),
-                        status="error",
+                        status="registered",
                         class_name=cls_name,
                         skill_name=instance.manifest.name,
-                        error=f"register failed: {exc}",
-                    ))
-                    continue
-                findings.append(LoadFinding(
-                    source_dir=str(entry),
-                    status="registered",
-                    class_name=cls_name,
-                    skill_name=instance.manifest.name,
-                ))
+                    )
+                )
                 registered_any = True
+                registered_count += 1
 
             if not registered_any and not any(
                 f.source_dir == str(entry) and f.status == "error" for f in findings
             ):
-                findings.append(LoadFinding(
-                    source_dir=str(entry),
-                    status="skipped",
-                    error="no Skill subclass found in skill.py",
-                ))
+                findings.append(
+                    LoadFinding(
+                        source_dir=str(entry),
+                        status="skipped",
+                        error="no Skill subclass found in skill.py",
+                    )
+                )
+
+    if registered_count > 0:
+        # One-time, end-of-load warning. Goes to stderr so it doesn't
+        # corrupt MCP stdio framing or pollute regular CLI output.
+        names = sorted(
+            {f.skill_name for f in findings if f.status == "registered" and f.skill_name}
+        )
+        sys.stderr.write(
+            f"⚠ LocalFlow loaded {registered_count} external skill(s): "
+            f"{', '.join(names)}. External skills are TRUSTED Python code and "
+            f"are NOT sandboxed — they can bypass the harness via direct "
+            f"imports. To disable, set {DISABLE_ENV}=1 in your environment "
+            f"(see docs/SECURITY.md).\n"
+        )
 
     return findings
 

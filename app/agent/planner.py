@@ -219,10 +219,7 @@ class LLMPlanner:
         # exact match with the run's task.
         if plan.task_id != task.task_id:
             return (
-                [
-                    f"plan.task_id must be exactly '{task.task_id}' "
-                    f"(you returned '{plan.task_id}')."
-                ],
+                [f"plan.task_id must be exactly '{task.task_id}' (you returned '{plan.task_id}')."],
                 "schema_invalid",
             )
 

@@ -232,10 +232,14 @@ class Executor:
             return None, None, None
         rel = self._rel(target_abs)
         manifest.created_dirs.append(rel)
-        return None, None, RollbackEntry(
-            action_id=action.action_id,
-            op=RollbackOpType.DELETE_CREATED_DIR,
-            target_path=rel,
+        return (
+            None,
+            None,
+            RollbackEntry(
+                action_id=action.action_id,
+                op=RollbackOpType.DELETE_CREATED_DIR,
+                target_path=rel,
+            ),
         )
 
     def _do_move(
@@ -250,11 +254,16 @@ class Executor:
         manifest.file_hashes_before[self._rel(source_abs)] = hash_before or ""
         final = file_ops.move(source_abs, chosen)
         hash_after = sha256_file(final) if final.is_file() else None
-        return hash_before, hash_after, RollbackEntry(
-            action_id=action.action_id,
-            op=RollbackOpType.MOVE_BACK,
-            source_path=self._rel(final),
-            target_path=self._rel(source_abs),
+        return (
+            hash_before,
+            hash_after,
+            RollbackEntry(
+                action_id=action.action_id,
+                op=RollbackOpType.MOVE_BACK,
+                source_path=self._rel(final),
+                target_path=self._rel(source_abs),
+                metadata={"after_hash": hash_after} if hash_after else {},
+            ),
         )
 
     def _do_copy(
@@ -270,10 +279,15 @@ class Executor:
         hash_after = sha256_file(final) if final.is_file() else None
         rel = self._rel(final)
         manifest.generated_files.append(rel)
-        return hash_before, hash_after, RollbackEntry(
-            action_id=action.action_id,
-            op=RollbackOpType.DELETE_CREATED_FILE,
-            target_path=rel,
+        return (
+            hash_before,
+            hash_after,
+            RollbackEntry(
+                action_id=action.action_id,
+                op=RollbackOpType.DELETE_CREATED_FILE,
+                target_path=rel,
+                metadata={"after_hash": hash_after} if hash_after else {},
+            ),
         )
 
     def _do_index(
@@ -290,12 +304,12 @@ class Executor:
         binary_b64 = action.metadata.get("binary_content_b64")
         if binary_b64 is not None:
             import base64
+
             try:
                 payload_bytes: bytes = base64.b64decode(binary_b64)
             except Exception as exc:
                 raise ValueError(
-                    f"action {action.action_id}: binary_content_b64 is not "
-                    f"valid base64: {exc}"
+                    f"action {action.action_id}: binary_content_b64 is not valid base64: {exc}"
                 ) from exc
             writer = lambda p: file_ops.write_bytes(p, payload_bytes)  # noqa: E731
         else:
@@ -325,11 +339,16 @@ class Executor:
             hash_after = sha256_file(target_abs) if target_abs.is_file() else None
             rel = self._rel(target_abs)
             manifest.generated_files.append(rel)
-            return None, hash_after, RollbackEntry(
-                action_id=action.action_id,
-                op=RollbackOpType.RESTORE_FROM_BACKUP,
-                target_path=rel,
-                backup_path=str(backup_abs.relative_to(self.run_store.run_dir).as_posix()),
+            return (
+                None,
+                hash_after,
+                RollbackEntry(
+                    action_id=action.action_id,
+                    op=RollbackOpType.RESTORE_FROM_BACKUP,
+                    target_path=rel,
+                    backup_path=str(backup_abs.relative_to(self.run_store.run_dir).as_posix()),
+                    metadata={"after_hash": hash_after} if hash_after else {},
+                ),
             )
 
         # Default (and the path for first-time writes): refuse to clobber.
@@ -339,10 +358,15 @@ class Executor:
         hash_after = sha256_file(chosen) if chosen.is_file() else None
         rel = self._rel(chosen)
         manifest.generated_files.append(rel)
-        return None, hash_after, RollbackEntry(
-            action_id=action.action_id,
-            op=RollbackOpType.DELETE_CREATED_FILE,
-            target_path=rel,
+        return (
+            None,
+            hash_after,
+            RollbackEntry(
+                action_id=action.action_id,
+                op=RollbackOpType.DELETE_CREATED_FILE,
+                target_path=rel,
+                metadata={"after_hash": hash_after} if hash_after else {},
+            ),
         )
 
     def _record_implicit_parents(
@@ -377,11 +401,13 @@ class Executor:
         for d in new_dirs:
             rel_d = self._rel(d)
             manifest.created_dirs.append(rel_d)
-            manifest.entries.append(RollbackEntry(
-                action_id=action_id,
-                op=RollbackOpType.DELETE_CREATED_DIR,
-                target_path=rel_d,
-            ))
+            manifest.entries.append(
+                RollbackEntry(
+                    action_id=action_id,
+                    op=RollbackOpType.DELETE_CREATED_DIR,
+                    target_path=rel_d,
+                )
+            )
 
     def _rel(self, abs_path: Path) -> str:
         try:

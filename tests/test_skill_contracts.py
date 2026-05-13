@@ -17,6 +17,7 @@ coverage (the existing folder_organizer tests only exercise
 planner / validator in isolation — execute / verify / rollback were
 covered indirectly via the harness tests).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -40,7 +41,9 @@ from tests.test_content_extraction import _make_real_pdf
 
 def seed_folder_organizer(root: Path) -> None:
     """Mixed-type workspace: triggers classify + propose_moves."""
-    (root / "report.pdf").write_text("not really a pdf but classify uses extension", encoding="utf-8")
+    (root / "report.pdf").write_text(
+        "not really a pdf but classify uses extension", encoding="utf-8"
+    )
     (root / "data.csv").write_text("col1,col2\n1,2\n3,4\n", encoding="utf-8")
     (root / "notes.txt").write_text("notes\n", encoding="utf-8")
     (root / "image.jpg").write_bytes(b"\xff\xd8fakejpg")
@@ -116,6 +119,7 @@ class _AlwaysGreenSkill:
     @property
     def manifest(self):
         from app.schemas import SkillManifest
+
         return SkillManifest(
             name="contract_test_green",
             description="contract runner test fixture",
@@ -131,6 +135,7 @@ class _AlwaysGreenSkill:
     def plan(self, task, snapshot):
         from app.schemas import ActionPlan
         from app.schemas.action import Action, ActionType, RiskLevel
+
         # Always emit ONE index action that writes a tiny markdown file.
         if not snapshot.files:
             return ActionPlan(plan_id="p-empty", task_id=task.task_id, summary="empty")
@@ -173,6 +178,7 @@ class _MissingPlanSkill(_AlwaysGreenSkill):
     @property
     def manifest(self):
         from app.schemas import SkillManifest
+
         return SkillManifest(
             name="contract_test_broken",
             required_tools=[],
@@ -190,6 +196,7 @@ class _NoRollbackSkill(_AlwaysGreenSkill):
     @property
     def manifest(self):
         from app.schemas import SkillManifest
+
         return SkillManifest(
             name="contract_test_no_rollback",
             required_tools=[],

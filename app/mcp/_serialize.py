@@ -11,6 +11,7 @@ This module is **read-only** with respect to the harness — it never
 mutates objects, only inspects them. Stays out of ``app/harness/`` /
 ``app/schemas/`` to keep Phase 6.1 a zero-kernel-change phase.
 """
+
 from __future__ import annotations
 
 import dataclasses

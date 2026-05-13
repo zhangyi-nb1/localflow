@@ -164,7 +164,14 @@ def build_action_plan_tool_schema() -> dict[str, Any]:
                 },
             },
         },
-        "required": ["plan_id", "task_id", "summary", "actions", "expected_outputs", "risk_summary"],
+        "required": [
+            "plan_id",
+            "task_id",
+            "summary",
+            "actions",
+            "expected_outputs",
+            "risk_summary",
+        ],
     }
 
 
@@ -194,9 +201,7 @@ def render_workspace_summary(
     )
     with_preview = sum(1 for f in snapshot.files if f.text_preview)
     if with_preview:
-        lines.append(
-            f"Text previews available for {with_preview}/{snapshot.total_files} file(s)."
-        )
+        lines.append(f"Text previews available for {with_preview}/{snapshot.total_files} file(s).")
     lines.append("")
 
     by_type: dict[str, list] = {}
@@ -212,10 +217,8 @@ def render_workspace_summary(
             if seen >= max_files:
                 truncated = True
                 break
-            sha_prefix = (f.sha256[:12] if f.sha256 else "—")
-            lines.append(
-                f"- `{f.path}`  ·  {_fmt_bytes(f.size_bytes)}  ·  sha256:{sha_prefix}"
-            )
+            sha_prefix = f.sha256[:12] if f.sha256 else "—"
+            lines.append(f"- `{f.path}`  ·  {_fmt_bytes(f.size_bytes)}  ·  sha256:{sha_prefix}")
             if f.text_preview:
                 preview = _clip_preview(f.text_preview, preview_chars_per_file)
                 # Indent the preview so it visually attaches to the file

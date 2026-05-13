@@ -57,7 +57,7 @@ class OpenAIClient:
         except ImportError as exc:
             raise LLMClientError(
                 "the `openai` package is not installed; "
-                "run `pip install \"openai>=1.50\"` or `pip install -e \".[openai]\"`"
+                'run `pip install "openai>=1.50"` or `pip install -e ".[openai]"`'
             ) from exc
 
         if api_key is None:
@@ -129,9 +129,7 @@ class OpenAIClient:
 
     # -- non-streaming path ------------------------------------------
 
-    def _generate_blocking(
-        self, kwargs: dict[str, Any], tool_name: str
-    ) -> StructuredResponse:
+    def _generate_blocking(self, kwargs: dict[str, Any], tool_name: str) -> StructuredResponse:
         try:
             response = self._client.chat.completions.create(**kwargs)
         except self._openai.APIError as exc:
@@ -208,10 +206,10 @@ class OpenAIClient:
             for chunk in stream:
                 # Some chunks (especially the trailing usage one) have
                 # an empty choices list — skip those for the delta loop.
-                for choice in (getattr(chunk, "choices", None) or []):
+                for choice in getattr(chunk, "choices", None) or []:
                     delta = getattr(choice, "delta", None)
                     if delta is not None:
-                        for tc in (getattr(delta, "tool_calls", None) or []):
+                        for tc in getattr(delta, "tool_calls", None) or []:
                             if getattr(tc, "id", None):
                                 tool_call_id = tc.id
                             fn = getattr(tc, "function", None)
@@ -230,8 +228,7 @@ class OpenAIClient:
 
         if tool_call_id is None or not args_parts:
             raise LLMClientError(
-                f"stream produced no tool call for {tool_name!r}; "
-                f"finish_reason={finish_reason!r}"
+                f"stream produced no tool call for {tool_name!r}; finish_reason={finish_reason!r}"
             )
 
         full_args = "".join(args_parts)
@@ -239,8 +236,7 @@ class OpenAIClient:
             payload = json.loads(full_args)
         except json.JSONDecodeError as exc:
             raise LLMClientError(
-                f"streamed tool call arguments are not valid JSON: {exc}; "
-                f"raw={full_args[:200]!r}"
+                f"streamed tool call arguments are not valid JSON: {exc}; raw={full_args[:200]!r}"
             ) from exc
 
         raw_assistant_content = [

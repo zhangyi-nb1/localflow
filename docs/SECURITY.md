@@ -159,13 +159,22 @@ LocalFlow lifecycle. It does NOT confirm the skill is *safe*.
 
 **Mitigations available now**:
 
-1. **Inspect the skill source** before dropping it into
+1. **Kill switch (Phase 7.1)** — set `LOCALFLOW_DISABLE_EXTERNAL_SKILLS=1`
+   in your environment to refuse all external skill loading. The
+   built-ins still work; the registry's load audit records each
+   directory as "skipped (disabled by env)".
+2. **Startup warning (Phase 7.1)** — whenever at least one external
+   skill registers, LocalFlow prints a one-line warning to **stderr**
+   naming the loaded skill(s) and the trust caveat. Visible every
+   time you start the CLI or MCP server.
+3. **Inspect the skill source** before dropping it into
    `~/.localflow/skills/`. Skills are short (~50-200 lines typically).
-2. **Don't accept skills from unknown authors**. Same threat model as
+4. **Don't accept skills from unknown authors**. Same threat model as
    pip packages.
-3. **Check the load audit** with `localflow skills` — every load
-   attempt appears in the table, including where the file came from.
-4. **Use a clean `$LOCALFLOW_SKILLS_DIR`** for testing third-party
+5. **Check the load audit** with `localflow skills` — every load
+   attempt appears in the table, including where the file came from
+   and whether the kill switch was the reason for a skip.
+6. **Use a clean `$LOCALFLOW_SKILLS_DIR`** for testing third-party
    skills instead of the default `~/.localflow/skills/` so you can
    pull the rug out by unsetting the env var.
 
@@ -220,6 +229,35 @@ What's NOT mitigated:
   line of defense here.
 
 ---
+
+## Rollback hash guard (Phase 7.1)
+
+By default the rollback path refuses to clobber files that the user
+has manually modified after `execute`. Implementation:
+
+- The Executor computes `sha256_file(target)` after every successful
+  write op and stores it in the corresponding `RollbackEntry.metadata`
+  under the key `after_hash`.
+- Before applying any file-touching rollback op (`MOVE_BACK`,
+  `DELETE_CREATED_FILE`, `RESTORE_FROM_BACKUP`), `Rollback._check_drift`
+  re-hashes the current state. If it differs from the recorded
+  `after_hash`, the entry is recorded in `RollbackOutcome.conflicts`
+  and **skipped**.
+- The CLI `localflow rollback --force` opt-in lets the user proceed
+  anyway. The drift is then logged to the run's `execution_log.jsonl`
+  with status `force_override`, so it's audit-recoverable.
+- MCP exposes a separate **`rollback_preview`** tool that is read-only —
+  it returns every entry's `drift` flag without touching the
+  filesystem. Clients should always call `rollback_preview` before
+  `rollback_run` and surface any conflicts to the user.
+
+This closes the asymmetry the v0.6.2 review flagged: `execute_plan`
+required `approval_token` because external clients couldn't be trusted
+to dry-run first; `rollback_run` now provides the symmetric guarantee
+that the user won't lose mid-execute edits to a careless rollback call.
+
+See [security_test_matrix.md](security_test_matrix.md) section "Rollback
+hash guard" for the test list pinning this behavior.
 
 ## Reporting security issues
 

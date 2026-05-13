@@ -44,9 +44,7 @@ def run_inspect(
     )
 
 
-def run_risk_check(
-    task: TaskSpec, plan: ActionPlan
-) -> RiskAssessment:
+def run_risk_check(task: TaskSpec, plan: ActionPlan) -> RiskAssessment:
     validate_plan_structure(plan)
     return assess_plan(
         Path(task.workspace_root),

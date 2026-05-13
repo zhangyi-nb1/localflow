@@ -8,6 +8,7 @@ them directly is the highest-value, lowest-flake check.
 Test isolation: every test uses ``LOCALFLOW_HOME`` pointed at a
 tmp_path so we never mutate the real ``~/.localflow/`` state.
 """
+
 from __future__ import annotations
 
 import json
@@ -42,8 +43,8 @@ def mini_workspace(tmp_path: Path) -> Path:
 
 
 def test_all_tools_registered() -> None:
-    """We claim 15 MCP tools in the plan. If someone adds/removes one,
-    update the plan + this test."""
+    """We claim 16 MCP tools (15 from Phase 6.1 + 1 rollback_preview
+    from Phase 7.1). If someone adds/removes one, update this test."""
     names = {t.name for t in TOOLS}
     assert len(names) == len(TOOLS), "duplicate tool names"
     expected = {
@@ -59,6 +60,7 @@ def test_all_tools_registered() -> None:
         "create_plan",
         "dry_run",
         "execute_plan",
+        "rollback_preview",  # Phase 7.1
         "rollback_run",
         # memory mutations
         "memory_forbid_path",
@@ -151,11 +153,13 @@ def test_create_plan_dry_run_execute_rollback_roundtrip(
     Phase 7 / Issue 2 fix: execute_plan now requires an approval_token
     minted by dry_run (not just `approved=true`).
     """
-    create = get_tool("create_plan").handler({
-        "workspace": str(mini_workspace),
-        "goal": "organize my files",
-        "skill": "folder_organizer",
-    })
+    create = get_tool("create_plan").handler(
+        {
+            "workspace": str(mini_workspace),
+            "goal": "organize my files",
+            "skill": "folder_organizer",
+        }
+    )
     assert "task_id" in create
     assert create["action_count"] > 0
     assert create["risk_passed"] is True
@@ -175,10 +179,12 @@ def test_create_plan_dry_run_execute_rollback_roundtrip(
         get_tool("execute_plan").handler({"task_id": task_id})
 
     # Execute with token → succeeds.
-    exec_result = get_tool("execute_plan").handler({
-        "task_id": task_id,
-        "approval_token": token,
-    })
+    exec_result = get_tool("execute_plan").handler(
+        {
+            "task_id": task_id,
+            "approval_token": token,
+        }
+    )
     assert exec_result["success"] is True
     assert exec_result["verification_passed"] is True
     # At least the move actions ran.
@@ -190,10 +196,12 @@ def test_create_plan_dry_run_execute_rollback_roundtrip(
 
     # Token is one-shot — second execute with same token must fail.
     with pytest.raises(ValueError, match="no approval token found"):
-        get_tool("execute_plan").handler({
-            "task_id": task_id,
-            "approval_token": token,
-        })
+        get_tool("execute_plan").handler(
+            {
+                "task_id": task_id,
+                "approval_token": token,
+            }
+        )
 
     # Rollback restores them
     rb = get_tool("rollback_run").handler({"task_id": task_id})
@@ -204,36 +212,36 @@ def test_create_plan_dry_run_execute_rollback_roundtrip(
     assert not (mini_workspace / "papers" / "report.pdf").exists()
 
 
-def test_create_plan_rejects_unknown_skill(
-    isolated_home: Path, mini_workspace: Path
-) -> None:
+def test_create_plan_rejects_unknown_skill(isolated_home: Path, mini_workspace: Path) -> None:
     with pytest.raises(ValueError, match="unknown skill"):
-        get_tool("create_plan").handler({
+        get_tool("create_plan").handler(
+            {
+                "workspace": str(mini_workspace),
+                "goal": "x",
+                "skill": "nonexistent_skill",
+            }
+        )
+
+
+def test_list_runs_shows_created_runs(isolated_home: Path, mini_workspace: Path) -> None:
+    create = get_tool("create_plan").handler(
+        {
             "workspace": str(mini_workspace),
-            "goal": "x",
-            "skill": "nonexistent_skill",
-        })
-
-
-def test_list_runs_shows_created_runs(
-    isolated_home: Path, mini_workspace: Path
-) -> None:
-    create = get_tool("create_plan").handler({
-        "workspace": str(mini_workspace),
-        "goal": "organize",
-    })
+            "goal": "organize",
+        }
+    )
     listing = get_tool("list_runs").handler({})
     ids = {r["task_id"] for r in listing["runs"]}
     assert create["task_id"] in ids
 
 
-def test_read_run_returns_artifacts(
-    isolated_home: Path, mini_workspace: Path
-) -> None:
-    create = get_tool("create_plan").handler({
-        "workspace": str(mini_workspace),
-        "goal": "organize",
-    })
+def test_read_run_returns_artifacts(isolated_home: Path, mini_workspace: Path) -> None:
+    create = get_tool("create_plan").handler(
+        {
+            "workspace": str(mini_workspace),
+            "goal": "organize",
+        }
+    )
     task_id = create["task_id"]
     run = get_tool("read_run").handler({"task_id": task_id})
     assert run["task"]["task_id"] == task_id
@@ -335,9 +343,7 @@ def test_memory_unforbid_visible_when_opted_in(
     assert get_tool("memory_unforbid_path") is not None
 
 
-def test_safe_tools_always_visible(
-    isolated_home: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_safe_tools_always_visible(isolated_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Read-only + adds-restriction tools must remain visible
     regardless of the env flag."""
     from app.mcp.tools import visible_tools
@@ -370,6 +376,115 @@ def test_dangerous_env_flag_truthy_values(
     for value in ("0", "false", "no", "off", "", "anything-else"):
         monkeypatch.setenv("LOCALFLOW_MCP_ALLOW_DANGEROUS", value)
         assert not _dangerous_enabled(), f"value {value!r} should NOT enable"
+
+
+# --------------------------------------------------------------- rollback hash guard (Phase 7.1, P1-2)
+
+
+def test_rollback_preview_lists_entries_with_drift_field(
+    isolated_home: Path, mini_workspace: Path
+) -> None:
+    """rollback_preview is read-only and returns one entry per manifest
+    item with a ``drift`` field — None means clean, str means the file
+    has been modified since execute."""
+    create = get_tool("create_plan").handler(
+        {
+            "workspace": str(mini_workspace),
+            "goal": "organize",
+            "skill": "folder_organizer",
+        }
+    )
+    task_id = create["task_id"]
+    dry = get_tool("dry_run").handler({"task_id": task_id})
+    get_tool("execute_plan").handler(
+        {
+            "task_id": task_id,
+            "approval_token": dry["approval_token"],
+        }
+    )
+
+    preview = get_tool("rollback_preview").handler({"task_id": task_id})
+    assert preview["task_id"] == task_id
+    assert preview["entry_count"] > 0
+    assert preview["has_conflicts"] is False  # nothing modified yet
+    for entry in preview["entries"]:
+        assert "op" in entry and "target_path" in entry
+        assert entry["drift"] is None
+
+
+def test_rollback_run_refuses_drifted_file_without_force(
+    isolated_home: Path, mini_workspace: Path
+) -> None:
+    """The whole point of Phase 7.1 P1-2: if the user edits a file
+    after execute, rollback must NOT silently clobber those edits."""
+    # Plan + dry-run + execute on mini_workspace.
+    create = get_tool("create_plan").handler(
+        {
+            "workspace": str(mini_workspace),
+            "goal": "organize",
+            "skill": "folder_organizer",
+        }
+    )
+    task_id = create["task_id"]
+    dry = get_tool("dry_run").handler({"task_id": task_id})
+    get_tool("execute_plan").handler(
+        {
+            "task_id": task_id,
+            "approval_token": dry["approval_token"],
+        }
+    )
+
+    # User edits one of the moved files post-execute.
+    edited = mini_workspace / "notes" / "notes.txt"
+    assert edited.exists()
+    edited.write_text("USER EDITED THIS AFTER EXECUTE", encoding="utf-8")
+
+    # Preview must flag the drift.
+    preview = get_tool("rollback_preview").handler({"task_id": task_id})
+    assert preview["has_conflicts"] is True
+    drifted = [e for e in preview["entries"] if e["drift"] is not None]
+    assert any(
+        "notes.txt" in (e["target_path"] or "") or "notes.txt" in (e.get("source_path") or "")
+        for e in drifted
+    )
+
+    # Run rollback WITHOUT force — must report conflict and skip.
+    outcome = get_tool("rollback_run").handler({"task_id": task_id})
+    assert outcome["success"] is False  # not fully clean
+    assert len(outcome["conflicts"]) >= 1
+    # User's edited content is preserved.
+    assert edited.read_text(encoding="utf-8") == "USER EDITED THIS AFTER EXECUTE"
+
+
+def test_rollback_run_force_overrides_drift(isolated_home: Path, mini_workspace: Path) -> None:
+    """force=true acknowledges the user's manual edits will be lost."""
+    create = get_tool("create_plan").handler(
+        {
+            "workspace": str(mini_workspace),
+            "goal": "organize",
+            "skill": "folder_organizer",
+        }
+    )
+    task_id = create["task_id"]
+    dry = get_tool("dry_run").handler({"task_id": task_id})
+    get_tool("execute_plan").handler(
+        {
+            "task_id": task_id,
+            "approval_token": dry["approval_token"],
+        }
+    )
+    edited = mini_workspace / "notes" / "notes.txt"
+    edited.write_text("USER EDIT", encoding="utf-8")
+
+    outcome = get_tool("rollback_run").handler({"task_id": task_id, "force": True})
+    # With force, the drifted entry IS rolled back (file moved back).
+    # The user's edited content is gone — but they consented.
+    assert outcome["success"] is True
+    assert outcome["conflicts"] == []
+    # File is back at root location with edited content (because the
+    # rollback only moves the file, it doesn't restore the original
+    # bytes from before execute; that's a separate concern).
+    assert (mini_workspace / "notes.txt").exists()
 
 
 # --------------------------------------------------------------- serialization
@@ -413,16 +528,15 @@ def test_create_plan_inherits_forbidden_paths_from_memory(
     (secrets_dir / "creds.txt").write_text("apikey", encoding="utf-8")
 
     get_tool("memory_forbid_path").handler({"path": "secrets"})
-    create = get_tool("create_plan").handler({
-        "workspace": str(mini_workspace),
-        "goal": "organize",
-    })
+    create = get_tool("create_plan").handler(
+        {
+            "workspace": str(mini_workspace),
+            "goal": "organize",
+        }
+    )
     assert "secrets" in create["applied_preferences"]["forbidden_paths"]
     assert create["risk_passed"] is False
-    assert any(
-        "forbidden_paths" in w and "secrets" in w
-        for w in create["warnings"]
-    )
+    assert any("forbidden_paths" in w and "secrets" in w for w in create["warnings"])
 
 
 # --------------------------------------------------------------- approval tokens
@@ -439,11 +553,13 @@ def test_create_plan_inherits_forbidden_paths_from_memory(
 
 def _plan_with_token(workspace: Path) -> tuple[str, str]:
     """Helper: create_plan + dry_run, return (task_id, token)."""
-    create = get_tool("create_plan").handler({
-        "workspace": str(workspace),
-        "goal": "organize",
-        "skill": "folder_organizer",
-    })
+    create = get_tool("create_plan").handler(
+        {
+            "workspace": str(workspace),
+            "goal": "organize",
+            "skill": "folder_organizer",
+        }
+    )
     dry = get_tool("dry_run").handler({"task_id": create["task_id"]})
     return create["task_id"], dry["approval_token"]
 
@@ -454,15 +570,15 @@ def test_execute_plan_requires_token(isolated_home: Path, mini_workspace: Path) 
         get_tool("execute_plan").handler({"task_id": task_id})
 
 
-def test_execute_plan_rejects_wrong_token(
-    isolated_home: Path, mini_workspace: Path
-) -> None:
+def test_execute_plan_rejects_wrong_token(isolated_home: Path, mini_workspace: Path) -> None:
     task_id, _ = _plan_with_token(mini_workspace)
     with pytest.raises(ValueError, match="approval token rejected"):
-        get_tool("execute_plan").handler({
-            "task_id": task_id,
-            "approval_token": "not-the-real-token-just-some-junk-string",
-        })
+        get_tool("execute_plan").handler(
+            {
+                "task_id": task_id,
+                "approval_token": "not-the-real-token-just-some-junk-string",
+            }
+        )
 
 
 def test_execute_plan_rejects_token_after_plan_modification(
@@ -481,15 +597,16 @@ def test_execute_plan_rejects_token_after_plan_modification(
     plan_dict = plan.model_dump(mode="json")
     plan_dict["summary"] = plan_dict["summary"] + " (modified)"
     import json
-    store.plan_path.write_text(
-        json.dumps(plan_dict, indent=2), encoding="utf-8"
-    )
+
+    store.plan_path.write_text(json.dumps(plan_dict, indent=2), encoding="utf-8")
 
     with pytest.raises(ValueError, match="plan.json has changed"):
-        get_tool("execute_plan").handler({
-            "task_id": task_id,
-            "approval_token": token,
-        })
+        get_tool("execute_plan").handler(
+            {
+                "task_id": task_id,
+                "approval_token": token,
+            }
+        )
 
 
 def test_execute_plan_rejects_expired_token(
@@ -504,19 +621,17 @@ def test_execute_plan_rejects_expired_token(
 
     # Patch _utc_now to return a time 11 minutes in the future.
     real_now = datetime.now(timezone.utc)
-    monkeypatch.setattr(
-        approval, "_utc_now", lambda: real_now + timedelta(minutes=11)
-    )
+    monkeypatch.setattr(approval, "_utc_now", lambda: real_now + timedelta(minutes=11))
     with pytest.raises(ValueError, match="expired"):
-        get_tool("execute_plan").handler({
-            "task_id": task_id,
-            "approval_token": token,
-        })
+        get_tool("execute_plan").handler(
+            {
+                "task_id": task_id,
+                "approval_token": token,
+            }
+        )
 
 
-def test_dry_run_minted_token_includes_expiry(
-    isolated_home: Path, mini_workspace: Path
-) -> None:
+def test_dry_run_minted_token_includes_expiry(isolated_home: Path, mini_workspace: Path) -> None:
     """The dry_run response must include both the token and its
     expiry, so the client can decide if it's stale before retrying."""
     task_id, _ = _plan_with_token(mini_workspace)
@@ -525,14 +640,14 @@ def test_dry_run_minted_token_includes_expiry(
     assert "approval_expires_at" in dry
     # Expiry must be a parseable ISO string in the future.
     from datetime import datetime
+
     expires = datetime.fromisoformat(dry["approval_expires_at"])
     from datetime import timezone
+
     assert expires > datetime.now(timezone.utc)
 
 
-def test_dry_run_remints_token_when_called_again(
-    isolated_home: Path, mini_workspace: Path
-) -> None:
+def test_dry_run_remints_token_when_called_again(isolated_home: Path, mini_workspace: Path) -> None:
     """Calling dry_run twice should issue a fresh token; the old one
     becomes invalid (file overwritten)."""
     task_id, first_token = _plan_with_token(mini_workspace)
@@ -542,14 +657,18 @@ def test_dry_run_remints_token_when_called_again(
 
     # First token now points at a file containing the second token's data.
     with pytest.raises(ValueError, match="approval token rejected"):
-        get_tool("execute_plan").handler({
-            "task_id": task_id,
-            "approval_token": first_token,
-        })
+        get_tool("execute_plan").handler(
+            {
+                "task_id": task_id,
+                "approval_token": first_token,
+            }
+        )
 
     # Second token works.
-    result = get_tool("execute_plan").handler({
-        "task_id": task_id,
-        "approval_token": second_token,
-    })
+    result = get_tool("execute_plan").handler(
+        {
+            "task_id": task_id,
+            "approval_token": second_token,
+        }
+    )
     assert result["success"] is True

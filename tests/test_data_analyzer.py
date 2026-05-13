@@ -4,6 +4,7 @@ All tests are LLM-free: we construct AnalysisSpec instances directly
 and exercise the engine. Phase 3.3b will add LLM-planner tests using
 FakeLLMClient.
 """
+
 from __future__ import annotations
 
 import base64
@@ -39,13 +40,15 @@ from app.tools.file_scan import scan_workspace
 @pytest.fixture
 def sales_df() -> pd.DataFrame:
     """A small but realistic transaction-shaped DataFrame."""
-    return pd.DataFrame({
-        "region": ["N", "S", "N", "S", "N", "W", "W", "S", "E", "E"],
-        "product": ["A", "A", "B", "B", "B", "A", "B", "A", "B", "B"],
-        "qty":     [1, 5, 2, 3, 4, 1, 6, 2, 1, 7],
-        "amount":  [10.0, 50.5, 22.0, 30.0, 40.0, 11.0, 66.0, 21.0, 12.0, 70.0],
-        "broken":  [None, None, None, None, None, None, None, None, None, None],
-    })
+    return pd.DataFrame(
+        {
+            "region": ["N", "S", "N", "S", "N", "W", "W", "S", "E", "E"],
+            "product": ["A", "A", "B", "B", "B", "A", "B", "A", "B", "B"],
+            "qty": [1, 5, 2, 3, 4, 1, 6, 2, 1, 7],
+            "amount": [10.0, 50.5, 22.0, 30.0, 40.0, 11.0, 66.0, 21.0, 12.0, 70.0],
+            "broken": [None, None, None, None, None, None, None, None, None, None],
+        }
+    )
 
 
 # --------------------------------------------------------------------- engine: filter
@@ -69,7 +72,7 @@ def test_filter_gt_numeric(sales_df: pd.DataFrame) -> None:
     )
     result = execute_analysis(sales_df, spec)
     assert result.outcome == AnalysisOutcome.OK
-    assert result.row_count == 4   # 50.5, 40.0, 66.0, 70.0
+    assert result.row_count == 4  # 50.5, 40.0, 66.0, 70.0
     assert all(float(row["amount"]) > 30.0 for row in result.rows)
 
 
@@ -146,7 +149,7 @@ def test_groupby_with_filter_and_limit(sales_df: pd.DataFrame) -> None:
     result = execute_analysis(sales_df, spec)
     assert result.outcome == AnalysisOutcome.OK
     assert result.row_count == 2  # 2 products before limit
-    assert len(result.rows) == 1   # limit=1 caps display
+    assert len(result.rows) == 1  # limit=1 caps display
     assert result.rows_truncated is True
 
 
@@ -189,7 +192,9 @@ def test_planner_produces_plan_for_csv_workspace(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     snap = scan_workspace(ws, "t1", compute_preview=False)
-    task = TaskSpec(task_id="t1", user_goal="analyze", workspace_root=str(ws), skill="data_analyzer")
+    task = TaskSpec(
+        task_id="t1", user_goal="analyze", workspace_root=str(ws), skill="data_analyzer"
+    )
 
     plan = plan_data_analysis(task, snap)
     assert len(plan.actions) >= 1
@@ -248,10 +253,13 @@ def test_skill_runs_through_executor(tmp_path: Path) -> None:
     )
 
     import os
+
     os.environ["LOCALFLOW_HOME"] = str(tmp_path / ".lf")
     store = RunStore.create()
     snap = scan_workspace(ws, store.task_id, compute_preview=False)
-    task = TaskSpec(task_id=store.task_id, user_goal="analyze", workspace_root=str(ws), skill="data_analyzer")
+    task = TaskSpec(
+        task_id=store.task_id, user_goal="analyze", workspace_root=str(ws), skill="data_analyzer"
+    )
     store.save_task(task)
     store.save_workspace(snap)
 

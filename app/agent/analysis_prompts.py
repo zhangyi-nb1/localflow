@@ -9,6 +9,7 @@ mode (every property in ``required``; nullable types for optionals).
 Filenames in spec.source_file are the workspace-relative paths the
 planner already showed the model — same convention as everywhere else.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -68,7 +69,19 @@ def build_analysis_spec_tool_schema() -> dict[str, Any]:
             "column": {"type": "string", "description": "Column name in the source file."},
             "op": {
                 "type": "string",
-                "enum": ["==", "!=", ">", "<", ">=", "<=", "in", "not_in", "is_null", "not_null", "contains"],
+                "enum": [
+                    "==",
+                    "!=",
+                    ">",
+                    "<",
+                    ">=",
+                    "<=",
+                    "in",
+                    "not_in",
+                    "is_null",
+                    "not_null",
+                    "contains",
+                ],
                 "description": "Comparison operator. is_null/not_null ignore value.",
             },
             "value": {
@@ -105,7 +118,19 @@ def build_analysis_spec_tool_schema() -> dict[str, Any]:
                         "column": {"type": "string"},
                         "op": {
                             "type": "string",
-                            "enum": ["sum", "mean", "median", "min", "max", "count", "nunique", "std", "var", "first", "last"],
+                            "enum": [
+                                "sum",
+                                "mean",
+                                "median",
+                                "min",
+                                "max",
+                                "count",
+                                "nunique",
+                                "std",
+                                "var",
+                                "first",
+                                "last",
+                            ],
                         },
                     },
                     "required": ["column", "op"],

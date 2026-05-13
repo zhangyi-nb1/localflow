@@ -9,6 +9,7 @@ The engine is pure: ``execute_analysis(df, spec) -> AnalysisResult``.
 Read I/O lives in ``data_ops.read_tabular``; chart rendering lives in
 ``chart_ops``. We just glue them together by interpreting the spec.
 """
+
 from __future__ import annotations
 
 import base64
@@ -53,7 +54,8 @@ def execute_analysis(df: Any, spec: AnalysisSpec) -> AnalysisResult:
     missing = _missing_columns(df, spec)
     if missing:
         return _err(
-            spec, AnalysisOutcome.INVALID_SPEC,
+            spec,
+            AnalysisOutcome.INVALID_SPEC,
             f"columns referenced by spec but absent from source: {sorted(missing)}; "
             f"available: {list(df.columns)}",
         )
@@ -80,9 +82,7 @@ def execute_analysis(df: Any, spec: AnalysisSpec) -> AnalysisResult:
         if spec.sort_by:
             sort_keys = [k for k in spec.sort_by if k in working.columns]
             if sort_keys:
-                working = working.sort_values(
-                    by=sort_keys, ascending=not spec.sort_descending
-                )
+                working = working.sort_values(by=sort_keys, ascending=not spec.sort_descending)
     except Exception as exc:
         return _err(spec, AnalysisOutcome.EXECUTION_ERROR, f"sort step failed: {exc}")
 
@@ -191,9 +191,7 @@ def _apply_groupby(df: Any, g: GroupBy) -> tuple[Any, list[str]]:
 # --------------------------------------------------------------------- chart
 
 
-def _render_chart(
-    df: Any, req: ChartRequest, group_keys: list[str] | None
-) -> bytes | None:
+def _render_chart(df: Any, req: ChartRequest, group_keys: list[str] | None) -> bytes | None:
     """Bridge from AnalysisSpec's chart request to chart_ops calls.
 
     Histogram → ``chart_ops.histogram_png(series)`` directly on x column.
@@ -286,7 +284,11 @@ def _missing_columns(df: Any, spec: AnalysisSpec) -> set[str]:
     # because they might reference aggregated columns that only exist
     # AFTER groupby. We can't statically validate without simulating
     # the pipeline; accept them at this step.
-    return {c for c in referenced if c not in have and c not in (spec.groupby.by if spec.groupby else [])}
+    return {
+        c
+        for c in referenced
+        if c not in have and c not in (spec.groupby.by if spec.groupby else [])
+    }
 
 
 def _frame_to_rows(df: Any) -> list[dict[str, Any]]:
