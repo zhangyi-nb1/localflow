@@ -72,6 +72,13 @@ class RollbackPreview:
     entries: list[dict] = field(default_factory=list)
     has_conflicts: bool = False
 
+    @property
+    def entry_count(self) -> int:
+        """Number of reverse-ops the rollback would attempt. Mirrors the
+        ``entry_count`` field returned by the MCP ``rollback_preview``
+        tool so UI / CLI / MCP callers share one idiom."""
+        return len(self.entries)
+
 
 class Rollback:
     """Replays a RollbackManifest in reverse to restore the workspace.

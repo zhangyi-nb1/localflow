@@ -272,3 +272,20 @@ def test_rollback_refuses_to_remove_nonempty_dir(
     # Should be partial: extra file's presence blocks dir removal.
     assert not result.success
     assert (workspace / created[0] / "extra.txt").exists()  # user data preserved
+
+
+# --------------------------------------------------------------- v0.7.3 regression
+
+
+def test_rollback_preview_has_entry_count_property() -> None:
+    """v0.7.3 regression: the UI Rollback page reads
+    ``preview.entry_count``; an earlier release exposed only
+    ``preview.entries`` so the page crashed with AttributeError. Pin the
+    property here so it never regresses."""
+    from app.harness.rollback import RollbackPreview
+
+    pv = RollbackPreview(run_id="x")
+    assert pv.entry_count == 0
+    pv.entries.append({"action_id": "a1"})
+    pv.entries.append({"action_id": "a2"})
+    assert pv.entry_count == 2
