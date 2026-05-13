@@ -1,4 +1,4 @@
-# LocalFlow UI (Streamlit) — v0.8.0
+# LocalFlow UI (Streamlit) — v0.8.1
 
 A localhost-only browser UI that wraps the same harness the CLI and
 MCP server use. Built for users who'd rather click than memorize 5
@@ -173,6 +173,7 @@ of 3 commands.
 | Sidebar shows no workspaces | Create `./sandbox/something/` with some files in it, then click **🔄 Refresh** |
 | "workspace outside the soft sandbox" error | Either move the workspace under `./sandbox/`, or visit `?unsafe=1` and pick **Custom path** in the sidebar Source radio |
 | Custom path radio option missing | Visit `?unsafe=1`; without it the option is hidden by design |
+| Custom workspace silently reverts to sandbox after clicking a page | Fixed in v0.8.1 — unsafe mode now latches into session_state so page navigation no longer drops the opt-in |
 | Custom path input rejects a path | Make sure it's an absolute path to an existing directory. The error message under the input names the exact reason. |
 | Auto-detected skill is wrong | Expand `▶ Override (advanced)` on the Plan page and pick the skill / planner manually |
 | Strings show up as `!!key.something!!` | A translation key is missing — file an issue. UI keeps rendering with the sentinel rather than crashing. |

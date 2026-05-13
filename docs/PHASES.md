@@ -422,6 +422,36 @@ reason line so users know exactly what's being chosen.
 
 ---
 
+## Phase 8.1.1 — Sticky unsafe mode (v0.8.1)
+
+**Bug**: in v0.8.0, after the user opted into unsafe path mode with
+``?unsafe=1`` and picked a custom workspace outside `./sandbox/`, the
+first page navigation (e.g. clicking "Plan" in the sidebar) silently
+reverted the workspace to a sandbox subdir. Custom path was no longer
+visible in the Source radio either.
+
+**Root cause**: Streamlit's multi-page navigation **strips URL query
+parameters**. ``render_unsafe_banner`` and ``render_sandbox_sidebar``
+both read ``?unsafe=1`` fresh from ``st.query_params`` on every
+render, so a page change → unsafe=False → Custom-path radio hidden →
+sandbox dropdown picker runs → ``SESSION_WORKSPACE_KEY`` overwritten.
+
+**Fix**: new ``_resolve_unsafe()`` helper in ``app/ui/_layout.py``
+latches ``unsafe=True`` to ``st.session_state["unsafe_mode_enabled"]``
+on first detection. Once a session opts in, the bit sticks through
+every page render until the tab is closed. A fresh tab without
+``?unsafe=1`` still starts in safe mode — the latch is per-session,
+not global.
+
+**Test**: ``test_resolve_unsafe_latches_to_session_state`` in
+``tests/test_ui_sandbox.py`` mocks ``st.query_params`` +
+``st.session_state`` and verifies all three cases (first-visit latch,
+post-nav persistence, fresh-session reset). Total 318 → 319.
+
+**Kernel touch**: NO.
+
+---
+
 ## Outline §10.7 final ledger
 
 | Phase | Kernel-touch | Notes |
@@ -440,8 +470,9 @@ reason line so users know exactly what's being chosen.
 | **8.0 (v0.7.0)** | NO | new package `app/ui/`, 1 CLI command (`ui-serve`) |
 | 8.0.1–8.0.4 (v0.7.1–v0.7.4) | NO | UI bug-fix sequence |
 | **8.1 (v0.8.0)** | NO | UI UX overhaul: i18n + autodetect + sidebar rewrite |
+| 8.1.1 (v0.8.1) | NO | Sticky unsafe mode (Streamlit page-nav drops query params) |
 
-**Score**: 1 deliberate exception across 13 deliveries. The rule held.
+**Score**: 1 deliberate exception across 14 deliveries. The rule held.
 
 ---
 

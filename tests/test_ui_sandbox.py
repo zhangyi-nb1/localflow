@@ -149,3 +149,46 @@ def test_eligible_choices_safe_mode_is_sandbox_subdirs(tmp_path: Path) -> None:
     out = list(find_eligible_workspace_choices(unsafe_mode=False, cwd=tmp_path))
     assert len(out) == 1
     assert out[0].name == "demo_a"
+
+
+# ---------------------------------------------------- v0.8.1 unsafe sticky regression
+
+
+def test_resolve_unsafe_latches_to_session_state(monkeypatch) -> None:
+    """v0.8.1 regression: Streamlit multi-page navigation strips URL
+    query parameters. Without persistence, the user lands on /Plan
+    with ``unsafe=False`` and the custom workspace silently reverts
+    to a sandbox subdir. ``_resolve_unsafe`` must latch to a
+    session-state bit once seen so the opt-in survives nav.
+    """
+
+    # Pure-Python fake of the bits of streamlit _layout reads.
+    class _FakeStreamlit:
+        def __init__(self) -> None:
+            self.query_params: dict = {}
+            self.session_state: dict = {}
+
+    import sys
+
+    fake_st = _FakeStreamlit()
+    monkeypatch.setitem(sys.modules, "streamlit", fake_st)
+
+    from app.ui import _layout
+
+    monkeypatch.setattr(_layout, "st", fake_st)
+
+    # 1. First visit with ?unsafe=1 → returns True AND latches.
+    fake_st.query_params = {"unsafe": "1"}
+    assert _layout._resolve_unsafe() is True
+    assert fake_st.session_state[_layout.SESSION_UNSAFE_KEY] is True
+
+    # 2. Page nav drops the query param. Without latch this would
+    #    return False; with latch it stays True.
+    fake_st.query_params = {}
+    assert _layout._resolve_unsafe() is True
+
+    # 3. Sanity: a fresh session (empty session_state, no query param)
+    #    is NOT in unsafe mode. The latch is per-session, not global.
+    fake_st.session_state = {}
+    fake_st.query_params = {}
+    assert _layout._resolve_unsafe() is False

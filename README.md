@@ -112,10 +112,10 @@ Skills:          folder_organizer · pdf_indexer · data_reporter · data_analyz
 Tool Registry:   15 declarable callable helpers, manifest-validated at register time
 Memory:          forbidden_paths (kernel-side) + naming_style (skill-side)
 MCP server:      stdio JSON-RPC, 16 tools, approval-token gated execute
-UI (v0.8.0):     Streamlit browser UI · EN/中文 toggle · goal-only Plan page
+UI (v0.8.1):     Streamlit browser UI · EN/中文 toggle · goal-only Plan page
                  with skill+planner auto-detect · radio-driven workspace picker
-                 · soft-sandboxed to ./sandbox/, ?unsafe=1 escape hatch
-Tests:           318 passing across 5 OS × Python matrix in CI
+                 with sticky ?unsafe=1 · soft-sandboxed to ./sandbox/
+Tests:           319 passing across 5 OS × Python matrix in CI
 ```
 
 Three equivalent driver layers, same kernel:
@@ -214,7 +214,7 @@ python -m build
 
 Releases (with verified wheel artifacts) under [**GitHub Releases**](https://github.com/zhangyi-nb1/localflow/releases).
 
-Version scheme: `0.<highest_phase>.<sub>`. Current `0.8.0` = Phase 6.1 + Phase 7 hardening + Phase 8.0 UI + Phase 8.1 UX overhaul.
+Version scheme: `0.<highest_phase>.<sub>`. Current `0.8.1` = Phase 6.1 + Phase 7 hardening + Phase 8.0 UI + Phase 8.1 UX overhaul + 8.1.1 sticky unsafe fix.
 
 ---
 

@@ -36,6 +36,28 @@ SESSION_TASK_KEY = "current_task_id"
 SESSION_TOKEN_KEY = "last_minted_token"
 SESSION_DRY_RUN_KEY = "dry_run_markdown"
 SESSION_WS_SOURCE_KEY = "ws_source_mode"  # "sandbox" | "custom"
+SESSION_UNSAFE_KEY = "unsafe_mode_enabled"  # sticky across page navigations
+
+
+def _resolve_unsafe() -> bool:
+    """Return True if unsafe mode is active for this session.
+
+    Streamlit's multi-page navigation **drops URL query parameters** —
+    so a user who lands on ``/?unsafe=1``, picks a custom workspace,
+    and then clicks "Plan" in the sidebar lands on ``/Plan`` with
+    ``unsafe`` no longer in the URL. Without persistence the custom
+    workspace silently reverts to a sandbox subdir.
+
+    Fix: latch the bit. Once ``?unsafe=1`` is seen in any page's URL
+    during this Streamlit session, it stays enabled until the tab is
+    closed (session_state is per-tab). Opening a fresh tab without
+    ``?unsafe=1`` still starts in safe mode — this only stops a single
+    session from accidentally losing its opt-in.
+    """
+    if get_unsafe_mode_from_query(dict(st.query_params)):
+        st.session_state[SESSION_UNSAFE_KEY] = True
+        return True
+    return bool(st.session_state.get(SESSION_UNSAFE_KEY, False))
 
 
 def configure_page(title_key: str, icon: str = "🌀") -> None:
@@ -61,9 +83,10 @@ def render_header(title_key: str, subtitle_key: str | None = None) -> None:
 
 
 def render_unsafe_banner() -> bool:
-    """Show the yellow banner if ``?unsafe=1`` is set. Returns the
-    parsed unsafe-mode bool for the page to use downstream."""
-    unsafe = get_unsafe_mode_from_query(dict(st.query_params))
+    """Show the yellow banner if unsafe mode is active for this session
+    (either ``?unsafe=1`` in the current URL OR previously enabled in
+    the same session). Returns the resolved bool for downstream use."""
+    unsafe = _resolve_unsafe()
     if unsafe:
         st.warning(t("unsafe.banner"), icon="⚠️")
     return unsafe
@@ -81,7 +104,7 @@ def render_sandbox_sidebar() -> Path | None:
         ``st.session_state[SESSION_WS_SOURCE_KEY]`` so it persists
         across page switches.
     """
-    unsafe = get_unsafe_mode_from_query(dict(st.query_params))
+    unsafe = _resolve_unsafe()
 
     with st.sidebar:
         # Language toggle first — affects every label rendered below.
