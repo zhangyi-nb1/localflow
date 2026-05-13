@@ -9,6 +9,7 @@ import streamlit as st
 
 from app.harness.rollback import Rollback
 from app.storage.run_store import RunStore, localflow_home
+from app.ui._i18n import t
 from app.ui._layout import (
     configure_page,
     render_header,
@@ -19,8 +20,8 @@ from app.ui._layout import (
 
 
 def main() -> None:
-    configure_page("Rollback", icon="↺")
-    render_header("Rollback", "Replay the rollback manifest — with hash-drift guard.")
+    configure_page("app.page_title.rollback", icon="↺")
+    render_header("app.page_title.rollback", "rollback.subtitle")
     render_unsafe_banner()
     render_sandbox_sidebar()
 
@@ -34,72 +35,78 @@ def main() -> None:
 
     rb = Rollback(workspace_root=Path(task.workspace_root), run_store=store)
 
-    st.subheader(f"Preview rollback for `{task_id}`")
-    if st.button("🔍 Preview", type="primary"):
+    st.subheader(t("rollback.preview.title", task_id=task_id))
+    if st.button(t("rollback.preview.button"), type="primary"):
         st.session_state["_rb_preview"] = rb.preview(manifest)
 
     preview = st.session_state.get("_rb_preview")
     if not preview:
-        st.info("Click **Preview** to compute drift status for each rollback entry.")
+        st.info(t("rollback.preview.hint"))
         return
 
     col1, col2 = st.columns(2)
-    col1.metric("Entries", preview.entry_count)
+    col1.metric(t("rollback.preview.metric.entries"), preview.entry_count)
     col2.markdown(
-        f"**State:**<br>{status_badge(not preview.has_conflicts, label_ok='CLEAN', label_fail='CONFLICTS')}",
+        f"{t('rollback.preview.state_label')}<br>"
+        + status_badge(
+            not preview.has_conflicts,
+            label_ok=t("common.status.clean"),
+            label_fail=t("common.status.conflicts"),
+        ),
         unsafe_allow_html=True,
     )
 
     if preview.has_conflicts:
-        st.warning(
-            "⚠️ One or more files have been modified since execute. "
-            "Safe rollback will **skip** those entries to protect your edits."
-        )
+        st.warning(t("rollback.preview.warn_conflicts"))
 
     rows = []
+    clean_label = t("rollback.table.status.clean")
+    drift_label = t("rollback.table.status.drift")
     for e in preview.entries:
         drift = e.get("drift")
         rows.append(
             {
-                "action_id": e["action_id"],
-                "op": e["op"],
-                "target": e.get("target_path") or e.get("source_path") or "—",
-                "status": "✅ clean" if drift is None else "⚠️ drift",
-                "reason": ""
-                if drift is None
-                else (drift[:120] + ("…" if len(drift) > 120 else "")),
+                t("rollback.table.col.action_id"): e["action_id"],
+                t("rollback.table.col.op"): e["op"],
+                t("rollback.table.col.target"): (
+                    e.get("target_path") or e.get("source_path") or "—"
+                ),
+                t("rollback.table.col.status"): clean_label if drift is None else drift_label,
+                t("rollback.table.col.reason"): (
+                    "" if drift is None else (drift[:120] + ("…" if len(drift) > 120 else ""))
+                ),
             }
         )
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
     st.divider()
-    st.subheader("Run rollback")
+    st.subheader(t("rollback.run.header"))
 
     if not preview.has_conflicts:
-        if st.button("↺ Rollback now (clean)", type="primary"):
-            with st.spinner("Rolling back..."):
+        if st.button(t("rollback.btn.clean"), type="primary"):
+            with st.spinner(t("rollback.spinner.clean")):
                 outcome = rb.run(manifest, force=False)
             _render_outcome(outcome)
             st.session_state.pop("_rb_preview", None)
     else:
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("↺ Safe rollback (skip conflicts)"):
-                with st.spinner("Rolling back (skipping drifted entries)..."):
+            if st.button(t("rollback.btn.safe")):
+                with st.spinner(t("rollback.spinner.safe")):
                     outcome = rb.run(manifest, force=False)
                 _render_outcome(outcome)
                 st.session_state.pop("_rb_preview", None)
         with col2:
             confirm = st.checkbox(
-                "⚠ I accept that forcing will **overwrite my manual edits**.",
+                t("rollback.btn.force_confirm"),
                 key="force_confirm",
             )
             if st.button(
-                "🔥 Force rollback (clobber edits)",
+                t("rollback.btn.force"),
                 disabled=not confirm,
                 type="secondary",
             ):
-                with st.spinner("Force rolling back..."):
+                with st.spinner(t("rollback.spinner.force")):
                     outcome = rb.run(manifest, force=True)
                 _render_outcome(outcome)
                 st.session_state.pop("_rb_preview", None)
@@ -110,7 +117,7 @@ def _pick_rollbackable_task() -> str | None:
     home = localflow_home()
     runs_root = home / "runs"
     if not runs_root.exists():
-        st.info("No runs in this LocalFlow store yet.")
+        st.info(t("rollback.no_runs"))
         return None
 
     current_ws = st.session_state.get("current_workspace")
@@ -133,49 +140,33 @@ def _pick_rollbackable_task() -> str | None:
             continue
 
     if not candidates:
-        st.info(
-            "No rollbackable runs for the current workspace. "
-            "Execute something on the **🔍 Execute** page first."
-        )
+        st.info(t("rollback.no_runs_ws"))
         return None
 
     labels = [lbl for _, lbl in candidates]
-    chosen_label = st.selectbox("Run to rollback", options=labels, key="rb_task_select")
+    chosen_label = st.selectbox(t("rollback.select.label"), options=labels, key="rb_task_select")
     return candidates[labels.index(chosen_label)][0]
 
 
 def _render_outcome(outcome) -> None:
     # Distinguish "real failures" from "cascaded-from-conflict" failures.
-    # A common pattern: user keeps drifted file via Safe rollback → the
-    # dir containing it can't be DELETE_CREATED_DIR'd (kernel refuses to
-    # remove non-empty dirs). That's a logical consequence of the user's
-    # choice, not a bug. Surface it as such instead of red "FAILED".
     cascaded, real_failed = _split_cascaded_failures(outcome)
 
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Undone", len(outcome.undone))
-    col2.metric("Failed", len(real_failed))
-    col3.metric("Conflicts", len(outcome.conflicts) + len(cascaded))
-    # "Real" success: no genuine failures, even if dir-cleanup cascaded.
+    col1.metric(t("rollback.metric.undone"), len(outcome.undone))
+    col2.metric(t("rollback.metric.failed"), len(real_failed))
+    col3.metric(t("rollback.metric.conflicts"), len(outcome.conflicts) + len(cascaded))
     real_success = not real_failed and not outcome.conflicts
     col4.markdown(
-        f"**Status:**<br>{status_badge(real_success, label_fail='PARTIAL')}",
+        f"{t('rollback.metric.status')}<br>"
+        + status_badge(real_success, label_fail=t("common.status.partial")),
         unsafe_allow_html=True,
     )
 
     if cascaded:
-        st.info(
-            "ℹ️ **Partial rollback by design.** "
-            f"{len(cascaded)} directory cleanup(s) were not performed because "
-            "they still contain files you chose to preserve (the conflict(s) "
-            "above). The harness **never deletes non-empty directories** — "
-            "that's the safety guarantee that kept your edits intact. "
-            "To fully clean, either:\n"
-            "  1. remove your manual edits, then run rollback again, or\n"
-            "  2. use **🔥 Force rollback** (will overwrite the edits)."
-        )
+        st.info(t("rollback.cascaded.info", n=len(cascaded)))
         with st.expander(
-            f"📂 Cascaded directory cleanups skipped ({len(cascaded)})",
+            t("rollback.cascaded.expander", n=len(cascaded)),
             expanded=False,
         ):
             for f in cascaded:
@@ -184,11 +175,13 @@ def _render_outcome(outcome) -> None:
                 )
 
     if real_failed:
-        with st.expander(f"❌ Real failures ({len(real_failed)})", expanded=True):
+        with st.expander(t("rollback.real_failures.expander", n=len(real_failed)), expanded=True):
             for f in real_failed:
                 st.error(f)
     if outcome.conflicts:
-        with st.expander(f"⚠️ Conflicts skipped ({len(outcome.conflicts)})", expanded=False):
+        with st.expander(
+            t("rollback.conflicts.expander", n=len(outcome.conflicts)), expanded=False
+        ):
             for c in outcome.conflicts:
                 st.warning(
                     f"`{c.get('action_id')}` ({c.get('op')}) on "
@@ -196,7 +189,7 @@ def _render_outcome(outcome) -> None:
                 )
 
     if real_success:
-        st.success("✅ Rollback complete.")
+        st.success(t("rollback.success"))
 
 
 def _split_cascaded_failures(outcome) -> tuple[list[dict], list[dict]]:
@@ -211,8 +204,6 @@ def _split_cascaded_failures(outcome) -> tuple[list[dict], list[dict]]:
     real: list[dict] = []
     for f in outcome.failed:
         if f.get("op") == "delete_created_dir" and "not empty" in str(f.get("error", "")):
-            # Find the dir path inside the error string. Format:
-            #   "OSError: created dir is not empty, refusing to remove: <path>"
             dir_path = _extract_path_from_error(f)
             if dir_path and any(
                 cp == dir_path or cp.startswith(dir_path + "/") for cp in conflict_paths

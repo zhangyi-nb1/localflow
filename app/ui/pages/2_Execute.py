@@ -10,6 +10,7 @@ from app.harness import control_loop
 from app.mcp.approval import ApprovalError, mint_token, validate_and_consume
 from app.schemas import ExecutionStatus
 from app.storage.run_store import RunStore, localflow_home
+from app.ui._i18n import t
 from app.ui._layout import (
     SESSION_DRY_RUN_KEY,
     SESSION_TASK_KEY,
@@ -24,8 +25,8 @@ from app.ui._layout import (
 
 
 def main() -> None:
-    configure_page("Execute", icon="🔍")
-    render_header("Execute", "Dry-run → review → approve → execute → verify.")
+    configure_page("app.page_title.execute", icon="🔍")
+    render_header("app.page_title.execute", "execute.subtitle")
     render_unsafe_banner()
     render_sandbox_sidebar()
 
@@ -35,28 +36,28 @@ def main() -> None:
 
     store = RunStore(task_id=task_id)
     if not store.exists(store.TASK_JSON):
-        st.error(f"No task.json for `{task_id}` — pick a valid task.")
+        st.error(t("execute.task.missing_task", task_id=task_id))
         return
     if not store.exists(store.PLAN_JSON):
-        st.error(f"Task `{task_id}` has no plan.json. Go to the **📋 Plan** page first.")
+        st.error(t("execute.task.missing_plan", task_id=task_id))
         return
 
     task = store.load_task()
     plan = store.load_plan()
 
     if store.exists(store.VERIFY_JSON):
-        st.success(f"Task `{task_id}` already executed + verified.")
+        st.success(t("execute.task.done", task_id=task_id))
         verification = store.load_verification()
-        st.markdown(f"Verifier: {status_badge(verification.passed)}")
+        st.markdown(f"{t('execute.verifier_badge')} {status_badge(verification.passed)}")
         st.caption(verification.summary)
         st.divider()
-        st.info("To re-run on a fresh state, create a new task from the **📋 Plan** page.")
+        st.info(t("execute.task.done_hint"))
         return
 
     # Stage 1: dry-run + token mint
-    st.subheader("Stage 1 — Dry run")
-    if st.button("🔍 Render dry-run", type="primary"):
-        with st.spinner("Computing dry-run..."):
+    st.subheader(t("execute.stage1.header"))
+    if st.button(t("execute.stage1.button"), type="primary"):
+        with st.spinner(t("execute.stage1.spinner")):
             try:
                 assessment = control_loop.run_risk_check(task, plan)
                 md = control_loop.run_dry_run(task, plan, assessment, store)
@@ -69,64 +70,64 @@ def main() -> None:
                     "warnings": list(assessment.warnings),
                 }
             except Exception as exc:
-                st.error(f"Dry-run failed: {type(exc).__name__}: {exc}")
+                st.error(t("execute.stage1.fail", err_type=type(exc).__name__, err=str(exc)))
                 return
 
     if SESSION_DRY_RUN_KEY in st.session_state:
         info = st.session_state.get("_last_dry_assessment", {})
         col1, col2 = st.columns([1, 3])
         col1.markdown(
-            f"**Risk:**<br>{risk_badge(info.get('risk_level', '—'))}", unsafe_allow_html=True
+            f"{t('execute.stage1.risk')}<br>{risk_badge(info.get('risk_level', '—'))}",
+            unsafe_allow_html=True,
         )
-        col2.metric("Actions to execute", len([a for a in plan.actions if a.is_write()]))
+        col2.metric(
+            t("execute.stage1.actions_to_execute"),
+            len([a for a in plan.actions if a.is_write()]),
+        )
         if info.get("warnings"):
-            with st.expander(f"⚠️ {len(info['warnings'])} warning(s)", expanded=True):
+            with st.expander(
+                t("execute.stage1.warnings_expander", n=len(info["warnings"])), expanded=True
+            ):
                 for w in info["warnings"]:
                     st.warning(w)
-        with st.expander("📄 Dry-run preview (markdown)", expanded=True):
+        with st.expander(t("execute.stage1.preview_expander"), expanded=True):
             st.markdown(st.session_state[SESSION_DRY_RUN_KEY])
     else:
-        st.info("Click **Render dry-run** above to preview every planned action.")
+        st.info(t("execute.stage1.hint"))
         return
 
     # Stage 2: approval ceremony
-    st.subheader("Stage 2 — Approval")
+    st.subheader(t("execute.stage2.header"))
     if not info.get("passed", True):
-        st.error(
-            "Policy guard blocked one or more actions (see warnings above). "
-            "Execute will refuse the run."
-        )
+        st.error(t("execute.stage2.blocked"))
         return
 
-    approved = st.checkbox(
-        "✅ I've reviewed every action above and consent to commit them.",
-        key="approval_checkbox",
-    )
+    approved = st.checkbox(t("execute.stage2.checkbox"), key="approval_checkbox")
 
     # Stage 3: execute (only enabled after approval)
-    st.subheader("Stage 3 — Execute + Verify")
+    st.subheader(t("execute.stage3.header"))
     if not approved:
-        st.button("Execute (locked)", disabled=True)
-        st.caption("Check the approval box above to enable.")
+        st.button(t("execute.stage3.locked"), disabled=True)
+        st.caption(t("execute.stage3.locked_caption"))
         return
 
-    if st.button("🚀 Execute now", type="primary"):
+    if st.button(t("execute.stage3.button"), type="primary"):
         token_str = st.session_state.get(SESSION_TOKEN_KEY)
         if not token_str:
-            st.error("Approval token missing. Re-run dry-run.")
+            st.error(t("execute.stage3.token_missing"))
             return
         try:
-            with st.spinner("Validating approval token..."):
+            with st.spinner(t("execute.stage3.token_validate")):
                 validate_and_consume(store, token_str, workspace_root=task.workspace_root)
-            with st.spinner("Executing... (writing real changes)"):
+            with st.spinner(t("execute.stage3.executing")):
                 outcome = control_loop.run_execute(task, plan, store, approved=True)
                 snapshot = store.load_workspace()
                 verification = control_loop.run_verify(task, plan, store, outcome, snapshot)
         except ApprovalError as exc:
-            st.error(f"Approval rejected: {exc}")
+            st.error(t("execute.stage3.approval_err", err=str(exc)))
             return
         except Exception as exc:
-            st.error(f"Execute failed: {type(exc).__name__}: {exc}")
+            st.error(t("execute.stage3.exec_err", err_type=type(exc).__name__, err=str(exc)))
             return
 
         # Render results
@@ -135,27 +136,29 @@ def main() -> None:
         skipped = sum(1 for r in outcome.records if r.status == ExecutionStatus.SKIPPED)
 
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Executed", success)
-        col2.metric("Failed", failed, delta=None if failed == 0 else "fail")
-        col3.metric("Skipped", skipped)
+        col1.metric(t("execute.metric.executed"), success)
+        col2.metric(t("execute.metric.failed"), failed, delta=None if failed == 0 else "fail")
+        col3.metric(t("execute.metric.skipped"), skipped)
         col4.markdown(
-            f"**Verifier**<br>{status_badge(verification.passed)}",
+            f"**{t('execute.metric.verifier')}**<br>{status_badge(verification.passed)}",
             unsafe_allow_html=True,
         )
 
         if verification.passed:
-            st.success(f"✅ Task `{task_id}` complete. Run recorded in `{store.run_dir}`.")
+            st.success(t("execute.success", task_id=task_id, path=str(store.run_dir)))
             col_btn, _ = st.columns([1, 3])
             if col_btn.button(
-                "↺ Continue to Rollback →",
+                t("execute.button.goto_rollback"),
                 type="primary",
                 key="goto_rollback_btn",
             ):
                 st.switch_page("pages/3_Rollback.py")
-            st.caption("Or pick **↺ Rollback** in the left sidebar to undo.")
+            st.caption(t("execute.caption.goto_rollback"))
         else:
             st.error(
-                "❌ Verifier failed:\n\n" + "\n".join(f"- {c}" for c in verification.failed_checks)
+                t("execute.fail.verifier")
+                + "\n\n"
+                + "\n".join(f"- {c}" for c in verification.failed_checks)
             )
 
         # Clear the now-consumed token from session
@@ -167,7 +170,7 @@ def _pick_task() -> str | None:
     home = localflow_home()
     runs_root = home / "runs"
     if not runs_root.exists():
-        st.info("No tasks yet. Create one on the **📋 Plan** page first.")
+        st.info(t("execute.no_runs"))
         return None
 
     # Filter: tasks that match the current session workspace
@@ -191,10 +194,7 @@ def _pick_task() -> str | None:
             continue
 
     if not candidates:
-        st.info(
-            "No tasks for the current workspace. Create one on **📋 Plan**, "
-            "or switch workspace in the sidebar."
-        )
+        st.info(t("execute.no_runs_ws"))
         return None
 
     # Default to the most recent task (sessionStateOrFirst)
@@ -207,7 +207,7 @@ def _pick_task() -> str | None:
 
     labels = [lbl for _, lbl in candidates]
     chosen_label = st.selectbox(
-        "Task",
+        t("execute.task.label"),
         options=labels,
         index=default_idx,
         key="exec_task_select",

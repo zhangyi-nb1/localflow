@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from app.ui._i18n import t
 from app.ui._layout import (
     configure_page,
     render_header,
@@ -18,52 +19,40 @@ from app.ui._layout import (
 
 
 def main() -> None:
-    configure_page("Home", icon="🌀")
-    render_header(
-        "Home",
-        subtitle="Safe execution harness for LLM agents on local workspaces.",
-    )
+    configure_page("app.page_title.home", icon="🌀")
+    render_header("app.page_title.home", subtitle_key="app.subtitle.home")
     render_unsafe_banner()
     workspace = render_sandbox_sidebar()
 
     st.markdown(
-        """
-The LLM proposes; the harness disposes. Use the sidebar pages to
-walk a workspace through the lifecycle:
-
-```
-  Plan  →  Execute  →  Rollback
-            (with dry-run + approval)   (with hash-drift guard)
-```
-
-| Page | What it does |
-|---|---|
-| **📋 Plan** | Pick a skill, write a goal, see the structured ActionPlan. |
-| **🔍 Execute** | Render dry-run, approve, commit. Verifier runs automatically. |
-| **↺ Rollback** | Preview each reverse op + drift detection. `--force` to override. |
-| **⚙ Memory** | Edit `forbidden_paths` + `naming_style`. Audit log. |
-
-### Workspace
-"""
+        "\n".join(
+            [
+                t("home.intro"),
+                "",
+                t("home.table.header"),
+                t("home.table.divider"),
+                t("home.table.plan"),
+                t("home.table.execute"),
+                t("home.table.rollback"),
+                t("home.table.memory"),
+                "",
+                t("home.workspace.header"),
+            ]
+        )
     )
 
     if workspace is not None:
-        st.success(f"Active workspace: `{workspace}`")
-        # Show a quick file count + total size.
+        st.success(t("home.active_workspace", path=workspace))
         files = [p for p in workspace.rglob("*") if p.is_file()]
         total_bytes = sum(f.stat().st_size for f in files)
         col1, col2 = st.columns(2)
-        col1.metric("Files", f"{len(files)}")
-        col2.metric("Total size", _fmt_size(total_bytes))
+        col1.metric(t("home.metric.files"), f"{len(files)}")
+        col2.metric(t("home.metric.size"), _fmt_size(total_bytes))
     else:
-        st.info("Pick a workspace in the sidebar to begin.")
+        st.info(t("home.pick_workspace"))
 
     st.divider()
-    st.caption(
-        "Driver layer — same backend as CLI + MCP. "
-        "Every action passes through `policy_guard`, `dry_run`, "
-        "approval, executor, verifier, rollback, audit."
-    )
+    st.caption(t("home.footer"))
 
 
 def _fmt_size(n: int) -> str:

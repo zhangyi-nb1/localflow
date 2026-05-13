@@ -112,8 +112,10 @@ Skills:          folder_organizer · pdf_indexer · data_reporter · data_analyz
 Tool Registry:   15 declarable callable helpers, manifest-validated at register time
 Memory:          forbidden_paths (kernel-side) + naming_style (skill-side)
 MCP server:      stdio JSON-RPC, 16 tools, approval-token gated execute
-UI (v0.7.0):     Streamlit browser UI, soft-sandboxed to ./sandbox/, ?unsafe=1 escape hatch
-Tests:           283 passing across 5 OS × Python matrix in CI
+UI (v0.8.0):     Streamlit browser UI · EN/中文 toggle · goal-only Plan page
+                 with skill+planner auto-detect · radio-driven workspace picker
+                 · soft-sandboxed to ./sandbox/, ?unsafe=1 escape hatch
+Tests:           318 passing across 5 OS × Python matrix in CI
 ```
 
 Three equivalent driver layers, same kernel:
@@ -212,14 +214,20 @@ python -m build
 
 Releases (with verified wheel artifacts) under [**GitHub Releases**](https://github.com/zhangyi-nb1/localflow/releases).
 
-Version scheme: `0.<highest_phase>.<sub>`. Current `0.6.3` = Phase 6.1 + Phase 7 hardening + v0.6.3 polish.
+Version scheme: `0.<highest_phase>.<sub>`. Current `0.8.0` = Phase 6.1 + Phase 7 hardening + Phase 8.0 UI + Phase 8.1 UX overhaul.
 
 ---
 
 ## Roadmap
 
-- **v0.7.0** — lazy skill imports + optional dependencies (pandas/matplotlib/pypdf out of base install), WebCollect skill (HTTPS GET → workspace, with domain allow-list + robots.txt + rollback), MCP client (reverse: call external MCP servers as tools).
-- **v0.8.0+** — light Web UI (workspace tree + dry-run preview + approval panel), Skill manifest signing.
+- **v0.8.1+** — persist language preference to disk (currently
+  session-scoped only); auto-detect confidence ranking (show top-3
+  candidates).
+- **v0.9.0+** — lazy skill imports + optional dependencies
+  (pandas/matplotlib/pypdf out of base install), WebCollect skill
+  (HTTPS GET → workspace, with domain allow-list + robots.txt +
+  rollback), MCP client (reverse: call external MCP servers as
+  tools), Skill manifest signing.
 
 Deferred since groundwork is in place: directory-structure preference, report-template preference, common-task recipes (Phase 5.x).
 

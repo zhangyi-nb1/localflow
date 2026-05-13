@@ -1,8 +1,22 @@
 # LocalFlow 网页界面 · 中文使用指南
 
-> 本文针对 LocalFlow Streamlit UI（v0.7.4+）撰写。界面本身是英文 ——
-> 文中遇到具体按钮/字段时，**先给英文原文**（方便你在屏幕上对应），
-> 再用中文解释。
+> 本文针对 LocalFlow Streamlit UI（v0.8.0+）撰写。从 v0.8.0 起界面
+> **支持中英双语** —— 左侧栏顶端的 `Language / 语言` 单选可一键切
+> 换。文中保留英文原文的标注（先给英文原文 + 中文解释）是因为
+> 部分用户仍习惯英文界面，且这样可以同时帮助你定位屏幕上的按钮。
+
+**v0.8.0 关键改进**：
+
+- 🌍 **中英双语切换** —— 左侧栏置顶。session 级别（关掉浏览器后默认重置回英文）。
+- 🧠 **Plan 页面自动识别 skill + planner** —— 用户只写 goal，
+  LocalFlow 根据 goal 关键词 + 工作区文件类型自动选择 skill 和
+  rule/llm。如需手动覆盖，展开「▶ Override (advanced)」即可。
+- 📁 **自定义路径 UX 重构** —— 左侧栏 Source 单选按钮统一了
+  「Sandbox 子目录」与「Custom path（自定义路径）」两种来源，
+  替代之前折叠 expander 隐藏自定义路径输入框、被旁边的下拉
+  抢走焦点导致输入被静默丢失的旧布局。
+- 📌 **当前工作区徽章** —— 左侧栏顶端持续显示，不再需要靠下拉
+  推断当前选了哪个目录。
 
 ---
 
@@ -59,27 +73,31 @@ You can now view your Streamlit app in your browser.
 
 打开后界面分两块：
 
-### 左侧栏 (Sidebar)
+### 左侧栏 (Sidebar) · v0.8.0 新布局
 
 ```
-┌─────────────────────────┐
-│ Pages（页面切换）        │
-│   • main                │ ← 首页
-│   • Plan                │ ← 制定计划
-│   • Execute             │ ← 预演 + 执行
-│   • Rollback            │ ← 回滚
-│   • Memory              │ ← 偏好设置
-│                         │
-│ Workspace（工作区）      │
-│   Sandbox root: sandbox │
-│   Pick workspace: [▼]   │ ← 必须先选一个
-│   Custom path (unsafe)  │ ← 默认锁住
-│   [🔄 Refresh]          │
-│                         │
-│ Memory（快览）           │
-│   显示当前 forbidden_   │
-│   paths / naming_style  │
-└─────────────────────────┘
+┌─────────────────────────────────┐
+│ Pages（页面切换）                │
+│   • main / Plan / Execute /     │
+│     Rollback / Memory           │
+│                                 │
+│ 🌍 Language / 语言               │
+│   ⦿ English  ◯ 中文              │ ← 切换语言（v0.8.0 新增）
+│ ───────────────────────────     │
+│ Workspace（工作区）              │
+│   Active workspace:             │ ← 顶端徽章，始终可见
+│     ./sandbox/demo              │
+│   Sandbox root: sandbox         │
+│   Source（来源）：                │ ← 单选按钮（v0.8.0 新增）
+│     ⦿ Sandbox subdir            │
+│     ◯ Custom path               │ ← 仅 ?unsafe=1 时显示
+│   Pick workspace [▼]            │
+│   [🔄 Refresh]                  │
+│                                 │
+│ Memory（偏好快览）                │
+│   显示当前 forbidden_paths /    │
+│   naming_style                  │
+└─────────────────────────────────┘
 ```
 
 ### 主区域
@@ -109,16 +127,30 @@ mkdir sandbox\my_test_workspace
 
 回 UI 点 **"🔄 Refresh"**（刷新）按钮，下拉里就出现 `sandbox\my_test_workspace` 了。
 
-### 想用 sandbox 外的目录怎么办（不推荐）
+### 想用 sandbox 外的目录怎么办（v0.8.0 已重写流程）
 
 浏览器地址栏改成 `http://127.0.0.1:8501/?unsafe=1`（**加上 `?unsafe=1`**），
 回车。这时：
 
 * 页面顶部会出现 **黄色警告条**
-* 左侧栏的 **"Custom path (unsafe)"** 输入框解锁，可以填任何绝对路径
+* 左侧栏的 **Source（来源）** 单选按钮会多出一个 **"Custom path
+  (?unsafe=1 required)"** 选项 —— 选中它
+* 下方出现一个 **"Workspace absolute path"**（工作区绝对路径）输入框
+  + 实时校验：
+  * ✅ 绿色：路径存在且是目录 → 自动作为当前工作区
+  * ❌ 红色：错误信息直接显示在输入框下面（路径不存在、不是目录等）
+
+（不加 `?unsafe=1` 时，Custom path 单选项**根本不显示**；左侧栏会
+在 Source 下方给出一行 "🔒 Custom path locked — reload with
+?unsafe=1 to enable." 的提示。）
 
 ⚠️ 但即便 UI 放行了，kernel 内置的安全检查仍然会拦截 —— UI 软隔离只是
 第一道防线，不是唯一防线。
+
+> 旧版本（v0.7.x）的 "Custom path" 输入框藏在一个折叠 expander 里，
+> 上方的下拉框还会和它抢工作区选择 —— 实际效果是用户输入了路径
+> 但 UI 静默回退到下拉里的选择。v0.8.0 用单选按钮把两种来源摆在
+> 同一个控件里，从结构上消除了这种歧义。
 
 ---
 
@@ -136,18 +168,54 @@ mkdir sandbox\my_test_workspace
 
 ---
 
-### 5.2 📋 Plan（规划）页
+### 5.2 📋 Plan（规划）页 · v0.8.0 已重设计
 
 **用途**：让 LocalFlow 看一下你的 workspace，生成一份「我打算这么做」的
 结构化计划。**这一步不动任何文件**。
 
-#### 表单字段
+#### v0.8.0 的新界面
 
-| 字段 | 中文含义 | 推荐值 |
-|---|---|---|
-| **Skill** | 用哪个技能。`folder_organizer`（按文件类型整理）/ `pdf_indexer`（PDF 索引）/ `data_reporter`（CSV 数据报告）/ `data_analyzer`（数据分析）等 | 入门选 `folder_organizer` |
-| **Planner** | 规划方式。`rule` = 规则引擎（0.3 秒出结果，对"按类型分类"这种任务足够）；`llm` = LLM 规划（20 秒左右，懂语义） | 入门用 `rule` |
-| **Goal** | 你想干什么。**自然语言描述**，例如 "按文件类型整理"、"给所有 PDF 生成索引" | 一句话说清目的 |
+```
+┌──────────────────────────────────────────────────┐
+│ What do you want to do? / 你想做什么？           │
+│ ┌──────────────────────────────────────────────┐ │
+│ │ e.g. organize by file type / 按文件类型整理 │ │
+│ └──────────────────────────────────────────────┘ │
+│                                                  │
+│ ℹ️ Auto-detected · skill=folder_organizer ·      │
+│    planner=rule                                  │
+│ Reason — goal mentions organize/sort/categorize  │
+│          · rule planner is enough                │
+│                                                  │
+│ ▶ Override (advanced)   ← 默认折叠               │
+│                                                  │
+│ [ 📋 Create plan ]                              │
+└──────────────────────────────────────────────────┘
+```
+
+**只需要写一句 goal**，LocalFlow 会根据：
+
+* **goal 里的关键词**（中英双语都识别）
+  * `分析` / `analyze` / `groupby` → `data_analyzer`
+  * `报告` / `统计` / `report` / `summary` → `data_reporter`
+  * `论文` / `paper` / `pdf` / `index` → `pdf_indexer`
+  * `整理` / `分类` / `organize` / `sort` → `folder_organizer`
+* **工作区里的文件构成**（数据 skill 需要至少 1 个 csv/excel；
+  pdf_indexer 需要至少 1 个 PDF）
+* **是否需要大模型**
+  * goal 包含 `按内容` / `语义` / `intelligent` / `by topic` 等
+    语义意图词，并且 skill 支持 LLM → `planner=llm`
+  * 否则 → `planner=rule`（快、确定、免费）
+
+自动识别结果会显示在输入框下方，附带一行 **Reason**
+（理由）说明它为什么这么选 —— 方便你判断对不对。
+
+#### 想要手动覆盖时
+
+展开 **"▶ Override (advanced)"** 折叠面板，里面是经典的
+**Skill 下拉** + **Planner 单选**（rule / llm）。这两个控件默认就
+显示自动识别的结果；如果你不改，自动识别会被采纳；改了的话以
+你的选择为准。
 
 点 **"📋 Create plan"**（创建计划）按钮提交。
 
@@ -394,6 +462,9 @@ rollback 把它们移回来了）。
 | Rollback 显示 PARTIAL 状态 + 蓝色提示 | **不是 bug**。你选了 Safe 保留某些文件 → 它们所在的目录无法清空 → 这是正常副作用 |
 | Memory 页加 forbidden_path 报 "absolute paths not allowed" | 用 workspace 相对路径，不要写 `C:\...` 这种绝对路径 |
 | Plan 页 LLM planner 选项灰色 | 当前 skill 不支持 LLM 规划。换成 rule planner，或选 `folder_organizer` / `data_analyzer`（支持 LLM 的 skill） |
+| Plan 页 auto-detect 选错了 skill | 展开 **"▶ Override (advanced)"** 手动选择 |
+| 切换语言后部分文字仍是英文 | 该字符串可能还没翻译，或显示为 `!!key!!` —— 这是开发态的标记。请去 GitHub 提 issue。UI 不会因此崩溃。 |
+| 关掉浏览器后语言又变回 English | session 级别设置，**这是设计如此**。每个浏览器 tab 新建都要重新选一次中文。 |
 | 关掉浏览器后再打开，session 都丢了 | Streamlit session 跟浏览器 tab 绑定。这是 Streamlit 特性，重新选 workspace 即可。task 数据**没丢**（在磁盘上） |
 
 ---
@@ -441,6 +512,7 @@ UI 自 v0.7.0 推出，至 v0.7.4 经历的关键改进：
 | v0.7.2 | 加 **"🔍 Continue to Execute →"** / **"↺ Continue to Rollback →"** 自动跳转按钮，不用每次手动切页 |
 | v0.7.3 | 修复 Rollback 页 AttributeError 崩溃 |
 | v0.7.4 | Rollback 结果区智能区分"真失败"和"因 drift 而连带跳过的目录清理"，状态从 FAILED → PARTIAL |
+| v0.8.0 | **三大 UX 修复**：① 中英双语切换（左侧栏顶端单选按钮）② Plan 页面自动识别 skill + planner，写 goal 即可，手动选项收进折叠面板 ③ 左侧栏 Source 单选按钮取代旧的下拉 + 折叠 expander，自定义路径输入框现在显式且可见 |
 
 ---
 

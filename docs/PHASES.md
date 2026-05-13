@@ -345,6 +345,83 @@ Rollback page uses `Rollback.preview()` to show drift inline.
 
 ---
 
+## Phase 8.0.1–8.0.4 — UI hardening (v0.7.1–v0.7.4)
+
+Bug-fix releases on top of the Phase 8.0 MVP:
+
+- **v0.7.1**: disable Streamlit's first-run email prompt (was
+  silently waiting for input on a hidden stdin)
+- **v0.7.2**: add "🔍 Continue to Execute →" + "↺ Continue to
+  Rollback →" cross-page navigation buttons after a successful
+  plan / execute
+- **v0.7.3**: fix `RollbackPreview.entry_count` AttributeError
+  (regression test in `test_rollback.py`)
+- **v0.7.4**: in the Rollback page, split `outcome.failed` into
+  cascaded-from-conflict vs real failures — `delete_created_dir`
+  ops that fail because the dir is non-empty due to a user-kept
+  conflict are surfaced as PARTIAL with a blue info note, not
+  red FAILED.
+
+**Kernel touch**: NO. All four releases ship UI-side changes only.
+
+---
+
+## Phase 8.1 — UI UX overhaul (v0.8.0)
+
+**Goal**: address three real-user pain points exposed by v0.7.0–v0.7.4
+testing — Custom path was unreachable, the Skill/Planner dropdowns
+exposed internals users didn't want to see, and the UI was English-only.
+
+**Shipped**:
+- `app/ui/_i18n.py` — flat `_DICT` (~120 keys), `t(key, **kwargs)`
+  lookup with two-level fallback (requested lang → English →
+  `!!key!!` sentinel), `render_language_toggle()` sidebar widget
+  bound to `st.session_state["ui_lang"]`. Streamlit-free at import
+  time so the dict is unit-testable.
+- `app/ui/_autodetect.py` — `autodetect_skill()` +
+  `autodetect_planner()`. Combines goal keywords (bilingual lists)
+  with the workspace's file-type distribution and the skill's
+  `supports_llm()` flag to pick both layers. Returns a reason string
+  so the UI can explain its choice.
+- `app/ui/_layout.py` — sidebar rewritten around a workspace-source
+  radio (Sandbox subdir vs Custom path). Active-workspace badge
+  always at the top. Custom-path input lives directly under the
+  radio (no expander) with live validation; the option is hidden
+  entirely without `?unsafe=1` (Streamlit can't disable a single
+  radio choice). Language toggle at the very top.
+- `app/ui/pages/1_Plan.py` — goal-only form, auto-detect badge + reason
+  line, `▶ Override (advanced)` collapsed expander with the
+  classic Skill + Planner widgets for power users. Auto-detect runs
+  on every keystroke (cheap workspace scan cached per workspace
+  in session_state).
+- Every UI string (~120 unique keys) routed through `t()` —
+  language toggle now switches the entire app instantly.
+
+**Files**: `app/ui/_i18n.py` (NEW), `app/ui/_autodetect.py` (NEW),
+`app/ui/_layout.py` (rewritten), `app/ui/main.py` (i18n migration),
+`app/ui/pages/1_Plan.py` (rewritten), `app/ui/pages/2_Execute.py`
+(i18n migration), `app/ui/pages/3_Rollback.py` (i18n migration),
+`app/ui/pages/4_Memory.py` (i18n migration). `pyproject.toml`
+version 0.7.4 → 0.8.0.
+
+**Tests added**: 36 (`test_ui_i18n.py` 16 + `test_ui_autodetect.py`
+20) — covers every autodetect branch, every i18n contract clause,
+every critical key. Pure Python, zero Streamlit dep. Total suite
+283 → 318.
+
+**Kernel touch**: NO. `app/harness/`, `app/schemas/`, `app/tools/`,
+`app/skills/`, `app/memory/`, `app/mcp/` all untouched. **12th**
+zero-kernel-touch phase. (Phase 5 remains the lone exception.)
+
+**Design note on the Override expander**: the user's original ask
+was to hide Skill + Planner entirely. I pushed back: when the
+heuristic guesses wrong, users with no override would be stuck.
+A collapsed expander gives the dead-simple flow (95% case) without
+trapping power users. The decision is surfaced in the auto-detect
+reason line so users know exactly what's being chosen.
+
+---
+
 ## Outline §10.7 final ledger
 
 | Phase | Kernel-touch | Notes |
@@ -361,8 +438,10 @@ Rollback page uses `Rollback.preview()` to show drift inline.
 | 6.1 | NO | new package `app/mcp/`, 1 CLI command |
 | 7.1 (v0.6.3) | NO | doc/format/UX hardening + rollback hash-guard in `app/harness/rollback.py` — extends existing class only, no new kernel primitives |
 | **8.0 (v0.7.0)** | NO | new package `app/ui/`, 1 CLI command (`ui-serve`) |
+| 8.0.1–8.0.4 (v0.7.1–v0.7.4) | NO | UI bug-fix sequence |
+| **8.1 (v0.8.0)** | NO | UI UX overhaul: i18n + autodetect + sidebar rewrite |
 
-**Score**: 1 deliberate exception across 12 deliveries. The rule held.
+**Score**: 1 deliberate exception across 13 deliveries. The rule held.
 
 ---
 
