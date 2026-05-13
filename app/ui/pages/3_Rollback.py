@@ -145,18 +145,47 @@ def _pick_rollbackable_task() -> str | None:
 
 
 def _render_outcome(outcome) -> None:
+    # Distinguish "real failures" from "cascaded-from-conflict" failures.
+    # A common pattern: user keeps drifted file via Safe rollback → the
+    # dir containing it can't be DELETE_CREATED_DIR'd (kernel refuses to
+    # remove non-empty dirs). That's a logical consequence of the user's
+    # choice, not a bug. Surface it as such instead of red "FAILED".
+    cascaded, real_failed = _split_cascaded_failures(outcome)
+
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Undone", len(outcome.undone))
-    col2.metric("Failed", len(outcome.failed))
-    col3.metric("Conflicts", len(outcome.conflicts))
+    col2.metric("Failed", len(real_failed))
+    col3.metric("Conflicts", len(outcome.conflicts) + len(cascaded))
+    # "Real" success: no genuine failures, even if dir-cleanup cascaded.
+    real_success = not real_failed and not outcome.conflicts
     col4.markdown(
-        f"**Status:**<br>{status_badge(outcome.success)}",
+        f"**Status:**<br>{status_badge(real_success, label_fail='PARTIAL')}",
         unsafe_allow_html=True,
     )
 
-    if outcome.failed:
-        with st.expander(f"❌ Failed ({len(outcome.failed)})", expanded=True):
-            for f in outcome.failed:
+    if cascaded:
+        st.info(
+            "ℹ️ **Partial rollback by design.** "
+            f"{len(cascaded)} directory cleanup(s) were not performed because "
+            "they still contain files you chose to preserve (the conflict(s) "
+            "above). The harness **never deletes non-empty directories** — "
+            "that's the safety guarantee that kept your edits intact. "
+            "To fully clean, either:\n"
+            "  1. remove your manual edits, then run rollback again, or\n"
+            "  2. use **🔥 Force rollback** (will overwrite the edits)."
+        )
+        with st.expander(
+            f"📂 Cascaded directory cleanups skipped ({len(cascaded)})",
+            expanded=False,
+        ):
+            for f in cascaded:
+                st.write(
+                    f"- `{f.get('action_id')}` `{f.get('op')}` on `{_extract_path_from_error(f)}`"
+                )
+
+    if real_failed:
+        with st.expander(f"❌ Real failures ({len(real_failed)})", expanded=True):
+            for f in real_failed:
                 st.error(f)
     if outcome.conflicts:
         with st.expander(f"⚠️ Conflicts skipped ({len(outcome.conflicts)})", expanded=False):
@@ -166,8 +195,42 @@ def _render_outcome(outcome) -> None:
                     f"`{c.get('target_path')}`: {c.get('reason')}"
                 )
 
-    if outcome.success:
+    if real_success:
         st.success("✅ Rollback complete.")
+
+
+def _split_cascaded_failures(outcome) -> tuple[list[dict], list[dict]]:
+    """Split ``outcome.failed`` into (cascaded, real_failed).
+
+    A ``delete_created_dir`` op that failed because the dir was non-empty
+    AND any conflict's target lives at-or-under that dir → cascaded.
+    Everything else is a real failure.
+    """
+    conflict_paths = [c.get("target_path") or c.get("source_path") or "" for c in outcome.conflicts]
+    cascaded: list[dict] = []
+    real: list[dict] = []
+    for f in outcome.failed:
+        if f.get("op") == "delete_created_dir" and "not empty" in str(f.get("error", "")):
+            # Find the dir path inside the error string. Format:
+            #   "OSError: created dir is not empty, refusing to remove: <path>"
+            dir_path = _extract_path_from_error(f)
+            if dir_path and any(
+                cp == dir_path or cp.startswith(dir_path + "/") for cp in conflict_paths
+            ):
+                cascaded.append(f)
+                continue
+        real.append(f)
+    return cascaded, real
+
+
+def _extract_path_from_error(failed_entry: dict) -> str:
+    """Pull the path out of 'refusing to remove: <path>' error string."""
+    msg = str(failed_entry.get("error", ""))
+    marker = "refusing to remove: "
+    idx = msg.find(marker)
+    if idx == -1:
+        return ""
+    return msg[idx + len(marker) :].rstrip("'\" }")
 
 
 main()
