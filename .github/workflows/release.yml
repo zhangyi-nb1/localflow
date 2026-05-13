@@ -1,0 +1,61 @@
+name: Release
+
+# Triggers:
+#   1. Tag push matching `v*` (e.g. v0.6.2, v0.7.0-rc1)
+#   2. Manual via Actions → Run workflow (handy for re-releasing an
+#      existing tag — pick the tag from the input)
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g., v0.6.2). Must already exist.'
+        required: true
+        type: string
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      # softprops/action-gh-release needs write to create/update releases.
+      contents: write
+
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+
+      - name: Build wheel + sdist
+        run: python -m build
+
+      - name: Show built artifacts
+        run: ls -la dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # When tag-triggered: github.ref_name = "v0.6.2"
+          # When dispatch-triggered: github.event.inputs.tag = "v0.6.2"
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          # Auto-generate notes from PR / commit history since the previous tag.
+          generate_release_notes: true
+          # Wheel + sdist attached to the release.
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+          # If the release already exists (e.g. workflow_dispatch on an
+          # earlier tag), update it instead of failing.
+          fail_on_unmatched_files: true

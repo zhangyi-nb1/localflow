@@ -1,5 +1,10 @@
 # LocalFlow Agent
 
+[![CI](https://github.com/zhangyi-nb1/localflow/actions/workflows/ci.yml/badge.svg)](https://github.com/zhangyi-nb1/localflow/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](https://github.com/zhangyi-nb1/localflow/blob/main/pyproject.toml)
+[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/zhangyi-nb1/localflow/blob/main/pyproject.toml)
+[![Release](https://img.shields.io/github/v/tag/zhangyi-nb1/localflow?label=release)](https://github.com/zhangyi-nb1/localflow/releases)
+
 **A safe, controllable, recoverable, verifiable, extensible execution harness for LLM agents operating on local workspaces.**
 
 LocalFlow is *not* "an agent that organizes files." It's a Harness Engineering project — the differentiator is the **execution scaffold around the LLM**, not the LLM itself. Models produce typed `TaskSpec` / `ActionPlan` / `Action` structures; the harness performs every side effect under strict dry-run + approval + checkpoint + rollback + verifier discipline.
@@ -172,22 +177,26 @@ Detailed per-phase changelog: [docs/PHASES.md](docs/PHASES.md). Full design rati
 
 ## Distribution
 
-Build wheel + sdist:
+### Local build
 
 ```powershell
 pip install build
 python -m build
-# → dist/localflow_agent-0.6.1-py3-none-any.whl
-# → dist/localflow_agent-0.6.1.tar.gz
+# → dist/localflow_agent-0.6.2-py3-none-any.whl
+# → dist/localflow_agent-0.6.2.tar.gz
+pip install dist/localflow_agent-0.6.2-py3-none-any.whl
 ```
 
-Install from wheel:
+### CI / Release automation
 
-```powershell
-pip install dist/localflow_agent-0.6.1-py3-none-any.whl
-```
+| Workflow | Trigger | What it does |
+|---|---|---|
+| [CI](.github/workflows/ci.yml) | every push & PR | matrix tests on Linux/Windows/macOS × Python 3.11/3.12/3.13 + ruff lint + wheel build |
+| [Release](.github/workflows/release.yml) | tag `v*` push, or manual dispatch | builds wheel + sdist, creates a GitHub Release with auto-generated notes and both artifacts attached |
 
-Version scheme: `0.<highest_phase>.<sub>`. Current `0.6.1` = Phase 6.1.
+Released wheels are available under the [GitHub Releases](https://github.com/zhangyi-nb1/localflow/releases) page.
+
+Version scheme: `0.<highest_phase>.<sub>`. Current `0.6.2` = Phase 6.1 + Phase 7 security hardening.
 
 ## License
 
