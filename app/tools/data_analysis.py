@@ -16,7 +16,6 @@ import logging
 from typing import Any
 
 from app.schemas.analysis import (
-    AggregationOp,
     AnalysisOutcome,
     AnalysisResult,
     AnalysisSpec,
@@ -26,7 +25,6 @@ from app.schemas.analysis import (
     GroupBy,
 )
 from app.tools import chart_ops
-
 
 logging.getLogger("pandas").setLevel(logging.ERROR)
 
@@ -139,7 +137,6 @@ def execute_analysis(df: Any, spec: AnalysisSpec) -> AnalysisResult:
 
 
 def _apply_filter(df: Any, f: Filter) -> Any:
-    import pandas as pd
 
     col = df[f.column]
     op = f.op
@@ -316,7 +313,7 @@ def _stringify_value(value: Any) -> Any:
             return None
     except Exception:
         pass
-    if isinstance(value, (int, float, bool, str)) and not isinstance(value, bool) is False:
+    if isinstance(value, (int, float, bool, str)) and isinstance(value, bool) is not False:
         return value
     if isinstance(value, bool):
         return bool(value)

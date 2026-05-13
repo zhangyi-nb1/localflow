@@ -11,12 +11,11 @@ planner already showed the model — same convention as everywhere else.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from app.schemas import TaskSpec, WorkspaceSnapshot
 from app.tools.data_ops import is_supported_tabular
-from pathlib import Path
-
 
 TOOL_NAME = "submit_analysis_spec"
 TOOL_DESCRIPTION = (

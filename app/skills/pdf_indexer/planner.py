@@ -20,7 +20,6 @@ from typing import Any
 from app.schemas import ActionPlan, FileMeta, TaskSpec, WorkspaceSnapshot
 from app.schemas.action import Action, ActionType, RiskLevel
 
-
 DEFAULT_OUTPUT_PATH = "pdf_index.md"
 TITLE_MAX_CHARS = 100
 SUMMARY_MAX_CHARS = 240

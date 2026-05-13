@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.skills._base import Skill, SkillRegistry
+    from app.skills._base import SkillRegistry
     from app.tools._registry import ToolRegistry
 
 

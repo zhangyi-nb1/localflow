@@ -14,7 +14,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-
 DEFAULT_MAX_ROWS = 10_000
 """Cap rows read per file to keep memory bounded on large CSVs. The
 report is summary-level, so a sample is sufficient."""

@@ -32,7 +32,6 @@ from pydantic import ValidationError
 
 from app.memory._schema import MemoryPreferences, NamingStyle
 
-
 PREFS_JSON = "prefs.json"
 AUDIT_JSONL = "audit.jsonl"
 

@@ -29,12 +29,16 @@ from app.agent.analysis_prompts import (
     render_repair_prompt,
     render_user_prompt,
 )
-from app.agent.client import AnthropicClient, LLMClient, LLMClientError, StructuredResponse
+from app.agent.client import LLMClient, LLMClientError, StructuredResponse
 from app.agent.planner import _default_client
 from app.schemas import ActionPlan, TaskSpec, WorkspaceSnapshot
-from app.schemas.analysis import AggregationOp, AnalysisOutcome, AnalysisResult, AnalysisSpec, ChartRequest, Filter, GroupBy
+from app.schemas.analysis import (
+    AggregationOp,
+    AnalysisOutcome,
+    AnalysisResult,
+    AnalysisSpec,
+)
 from app.skills.data_analyzer.planner import build_plan_from_results
-
 
 DEFAULT_MAX_ATTEMPTS = 3
 
@@ -69,7 +73,6 @@ def plan_analysis_with_llm(
         {"role": "user", "content": render_user_prompt(task, snapshot)}
     ]
 
-    last_errors: list[str] = []
     response: StructuredResponse | None = None
 
     for attempt in range(1, max_attempts + 1):
@@ -99,7 +102,6 @@ def plan_analysis_with_llm(
                 break  # accepted!
             errors = validation_errors
 
-        last_errors = errors
         if attempt == max_attempts:
             joined = "\n".join(f"- {e}" for e in errors)
             raise AnalysisPlannerFailure(
@@ -259,7 +261,6 @@ def _execute_spec_against_workspace(
     spec: AnalysisSpec, workspace_root: Path
 ) -> AnalysisResult:
     """Load the file the LLM chose and run the engine."""
-    from app.schemas.analysis import AnalysisOutcome
     from app.tools import data_analysis, data_ops
 
     abs_path = workspace_root / spec.source_file

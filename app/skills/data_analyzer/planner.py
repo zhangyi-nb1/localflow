@@ -11,7 +11,6 @@ path / test fixture / dev mode.
 """
 from __future__ import annotations
 
-import base64
 import re
 import uuid
 from pathlib import Path
@@ -27,7 +26,6 @@ from app.schemas.analysis import (
     GroupBy,
 )
 from app.tools import data_analysis, data_ops
-
 
 DEFAULT_REPORT_PATH = "analysis_report.md"
 CHARTS_DIR = "analysis_charts"
@@ -68,7 +66,6 @@ def plan_data_analysis(
         )
 
     results: list[AnalysisResult] = []
-    chart_b64_by_result_idx: dict[int, str] = {}
 
     for meta in sorted(data_files, key=lambda f: f.path):
         abs_path = workspace_root / meta.path

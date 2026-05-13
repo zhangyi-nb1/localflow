@@ -2,7 +2,6 @@
 DocumentOps reference)."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -13,7 +12,6 @@ from app.schemas import ExecutionStatus, TaskSpec
 from app.skills.pdf_indexer import (
     PdfIndexerSkill,
     plan_pdf_index,
-    render_pdf_index_report,
 )
 from app.skills.pdf_indexer.validator import (
     PdfIndexerValidationError,

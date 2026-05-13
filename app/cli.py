@@ -4,7 +4,8 @@ from __future__ import annotations
 # evaluates Option() defaults at import time, so the file has to be loaded
 # before those lines run. override=False keeps shell-set vars winning over
 # the file, so the precedence is: shell env > .env > code default.
-from dotenv import find_dotenv as _find_dotenv, load_dotenv as _load_dotenv
+from dotenv import find_dotenv as _find_dotenv
+from dotenv import load_dotenv as _load_dotenv
 
 _dotenv_path = _find_dotenv(usecwd=True)
 if _dotenv_path:
@@ -40,12 +41,10 @@ from app.agent import (
     LLMClientError,
     OpenAIClient,
     PlannerFailure,
-    plan_with_llm,
 )
 from app.harness import control_loop
 from app.harness.approval import ask_approval
 from app.harness.audit import AuditLogger
-from app.harness.policy_guard import PolicyViolation
 from app.harness.rollback import Rollback
 from app.memory import (
     MemoryPreferences,
@@ -54,7 +53,6 @@ from app.memory import (
     NamingStyle,
 )
 from app.schemas import TaskSpec
-from app.schemas.action import ActionType
 from app.skills import SkillError, get_default_registry
 from app.storage.run_store import RunStore
 
@@ -667,8 +665,9 @@ def cmd_mcp_serve() -> None:
         )
         raise typer.Exit(code=2)
 
-    from app.mcp.server import run_mcp_server
     import asyncio
+
+    from app.mcp.server import run_mcp_server
 
     try:
         asyncio.run(run_mcp_server())

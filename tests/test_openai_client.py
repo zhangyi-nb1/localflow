@@ -11,8 +11,6 @@ from typing import Any
 import pytest
 
 from app.agent import LLMClientError, OpenAIClient, plan_with_llm
-from app.agent.prompts import TOOL_NAME
-
 
 # --------------------------------------------------------------------- translator
 

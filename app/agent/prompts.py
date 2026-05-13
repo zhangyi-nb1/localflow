@@ -4,7 +4,6 @@ from typing import Any
 
 from app.schemas import TaskSpec, WorkspaceSnapshot
 
-
 TOOL_NAME = "submit_action_plan"
 TOOL_DESCRIPTION = (
     "Submit a complete, structured action plan for the LocalFlow harness "

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.schemas import ActionPlan, SkillManifest, TaskSpec, VerificationResult, WorkspaceSnapshot
+from app.schemas import ActionPlan, SkillManifest, TaskSpec, WorkspaceSnapshot
 from app.skills import (
     DataReporterSkill,
     FolderOrganizerSkill,
@@ -125,7 +125,6 @@ class _SkillWithRequiredTools(Skill):
         )
 
     def plan(self, task, snapshot):
-        from app.schemas import ActionPlan
         return ActionPlan(plan_id="p", task_id=task.task_id, summary="x")
 
     def validate(self, plan) -> None:

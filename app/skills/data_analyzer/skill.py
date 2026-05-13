@@ -7,7 +7,7 @@ under ``analysis_charts/``.
 """
 from __future__ import annotations
 
-from app.schemas import ActionPlan, SkillManifest, TaskSpec, WorkspaceSnapshot, VerificationResult
+from app.schemas import ActionPlan, SkillManifest, TaskSpec, VerificationResult, WorkspaceSnapshot
 from app.skills._base import Skill
 from app.skills.data_analyzer.planner import plan_data_analysis
 from app.skills.data_analyzer.reporter import render_final_report

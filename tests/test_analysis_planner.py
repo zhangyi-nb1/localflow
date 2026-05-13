@@ -14,7 +14,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
 import pytest
 
 from app.agent.analysis_planner import (
@@ -25,7 +24,6 @@ from app.agent.client import FakeLLMClient
 from app.schemas import TaskSpec
 from app.skills.data_analyzer import DataAnalyzerSkill
 from app.tools.file_scan import scan_workspace
-
 
 # --------------------------------------------------------------------- fixtures
 
@@ -207,11 +205,12 @@ def test_llm_plan_runs_through_executor(sales_workspace, sales_snapshot_and_task
     """Phase 3.3b / outline §10.7: confirm the LLM path still produces
     a plan the harness can execute end-to-end. 7th implementation of
     the 'new skill doesn't touch Harness Kernel' rule."""
+    import os
+
     from app.harness.executor import Executor
     from app.harness.verifier import Verifier
     from app.schemas import ExecutionStatus
     from app.storage.run_store import RunStore
-    import os
 
     snap, task = sales_snapshot_and_task
     os.environ["LOCALFLOW_HOME"] = str(tmp_path / ".lf")

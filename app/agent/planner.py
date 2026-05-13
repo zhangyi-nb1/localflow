@@ -20,7 +20,6 @@ from app.harness.action_validator import PlanValidationError, validate_plan_stru
 from app.harness.policy_guard import assess_plan
 from app.schemas import ActionPlan, RiskAssessment, TaskSpec, WorkspaceSnapshot
 
-
 DEFAULT_MAX_ATTEMPTS = 3
 
 

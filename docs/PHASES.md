@@ -45,8 +45,9 @@ plan; harness performs IO.
   schema, `tool_result` repair loop on Pydantic validation failure
 - SSE streaming output with Rich Live in CLI (long planning calls
   stream tokens in real time)
-- Default provider = OpenAI (`gpt-5.4-mini` via subscription-relay
-  proxy, see project memory `project_localflow.md` for proxy details)
+- Default provider is OpenAI-compatible; configure via
+  `LOCALFLOW_LLM_PROVIDER` / `LOCALFLOW_LLM_MODEL` /
+  `LOCALFLOW_LLM_BASE_URL` in `.env` (see `.env.example`)
 
 **Files**: `app/agent/`, `app/cli.py` (new `--planner llm` path)
 
@@ -343,4 +344,7 @@ execution through the MCP path identically to the CLI path —
 - **Phase 6.x** — browser only-read (browser-use-style), external
   service connector.
 
-Pointers to memory entries in `~/.claude/projects/.../memory/project_localflow.md` for each phase contain the full design decisions, real-data validation, and "lessons learned".
+Each phase's full design rationale, real-data validation notes, and
+lessons-learned were captured during development. The most important
+ones are inlined above; the master design doc is
+[localflow_agent_harness_outline.md](../localflow_agent_harness_outline.md).

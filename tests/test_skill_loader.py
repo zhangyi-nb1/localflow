@@ -17,13 +17,11 @@ from pathlib import Path
 
 import pytest
 
-from app.skills import SkillError
-from app.skills._base import Skill, SkillRegistry
+from app.skills._base import SkillRegistry
 from app.skills._loader import (
     default_external_skill_dirs,
     discover_and_register_external,
 )
-
 
 SKILL_PY_TEMPLATE = '''
 from app.schemas import ActionPlan, SkillManifest, TaskSpec, WorkspaceSnapshot, VerificationResult

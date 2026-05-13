@@ -7,7 +7,7 @@ from app.harness.action_validator import validate_plan_structure
 from app.harness.approval import ApprovalDecision, ask_approval
 from app.harness.audit import AuditLogger
 from app.harness.dry_run import render_dry_run_markdown
-from app.harness.executor import Executor, ExecutionOutcome
+from app.harness.executor import ExecutionOutcome, Executor
 from app.harness.policy_guard import assess_plan
 from app.harness.verifier import Verifier
 from app.schemas import (

@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from app.memory import NamingStyle
 from app.schemas import TaskSpec
 from app.skills.folder_organizer import FolderOrganizerSkill
 from app.tools.file_scan import scan_workspace

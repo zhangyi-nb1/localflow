@@ -11,7 +11,6 @@ from app.schemas import ExecutionStatus, TaskSpec
 from app.skills.data_reporter import (
     DataReporterSkill,
     plan_data_report,
-    render_data_report,
 )
 from app.skills.data_reporter.validator import (
     DataReporterValidationError,
@@ -19,7 +18,6 @@ from app.skills.data_reporter.validator import (
 )
 from app.tools import data_ops
 from app.tools.file_scan import scan_workspace
-
 
 # --------------------------------------------------------------------- data_ops unit tests
 
@@ -138,7 +136,6 @@ def test_data_ops_reads_multi_sheet_xlsx(tmp_path: Path) -> None:
     assert any("Alpha" in n for n in sheet_names)
     assert any("Beta" in n for n in sheet_names)
     assert any("Gamma" in n for n in sheet_names)
-    by_sheet = {s.path: s for s in summaries}
     beta = next(s for s in summaries if "Beta" in s.path)
     assert beta.rows_read == 3
 
@@ -281,6 +278,7 @@ def test_planner_includes_excel_sheets(tmp_path: Path) -> None:
     """End-to-end: a workspace with both a CSV and a multi-sheet Excel
     must yield one section per CSV PLUS one section per Excel sheet."""
     import pandas as pd
+
     from app.tools.file_scan import scan_workspace
 
     ws = tmp_path / "mixed"

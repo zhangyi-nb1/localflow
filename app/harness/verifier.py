@@ -5,7 +5,6 @@ from pathlib import Path
 from app.harness.policy_guard import PolicyViolation, resolve_inside
 from app.schemas import (
     ActionPlan,
-    ExecutionStatus,
     RollbackManifest,
     VerificationCheck,
     VerificationResult,

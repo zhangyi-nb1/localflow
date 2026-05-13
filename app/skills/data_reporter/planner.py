@@ -15,21 +15,19 @@ from __future__ import annotations
 import base64
 import re
 import uuid
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 
-from app.schemas import ActionPlan, FileMeta, TaskSpec, WorkspaceSnapshot
+from app.schemas import ActionPlan, TaskSpec, WorkspaceSnapshot
 from app.schemas.action import Action, ActionType, RiskLevel
 from app.tools import chart_ops
 from app.tools.data_ops import (
-    ColumnSummary,
     DataFrameSummary,
     TabularRead,
     is_supported_tabular,
     read_tabular,
     summarize_dataframe,
 )
-
 
 DEFAULT_OUTPUT_PATH = "data_report.md"
 CHARTS_DIR = "charts"

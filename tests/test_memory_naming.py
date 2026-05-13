@@ -5,7 +5,6 @@ import pytest
 
 from app.memory import NamingStyle, apply_naming_style
 
-
 # --------------------------------------------------------------- original
 
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 DEFAULT_MAX_CHARS = 2000
 
 # File types whose contents are inherently text. Anything else

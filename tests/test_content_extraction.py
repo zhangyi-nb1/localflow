@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from app.tools import pdf_ops, text_ops
 from app.tools.file_scan import scan_workspace
-
 
 # --------------------------------------------------------------------- text_ops
 

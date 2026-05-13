@@ -17,7 +17,6 @@ import io
 import logging
 from typing import TYPE_CHECKING, Iterable, Mapping
 
-
 logging.getLogger("matplotlib").setLevel(logging.ERROR)
 
 if TYPE_CHECKING:

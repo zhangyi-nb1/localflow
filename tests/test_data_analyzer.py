@@ -33,7 +33,6 @@ from app.skills.data_analyzer import (
 from app.tools.data_analysis import execute_analysis
 from app.tools.file_scan import scan_workspace
 
-
 # --------------------------------------------------------------------- fixtures
 
 

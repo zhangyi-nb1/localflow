@@ -19,7 +19,6 @@ from pathlib import PurePosixPath
 
 from app.memory._schema import NamingStyle
 
-
 _SEPARATOR_CHARS = re.compile(r"[\s\(\)\[\]\{\}+&@,;'\"!?]+")
 _RUN_OF_UNDERSCORES = re.compile(r"_+")
 _RUN_OF_DASHES = re.compile(r"-+")

@@ -7,12 +7,14 @@ from typing import Any
 
 from app.agent.client import LLMClientError, StructuredResponse
 
+DEFAULT_MODEL = "gpt-4o-mini"
+"""Default model. Override via the ``LOCALFLOW_OPENAI_MODEL`` env var.
 
-DEFAULT_MODEL = "gpt-5.4-mini"
-"""Default model. gpt-5.4-mini on /v1/chat/completions is the proven
-fastest path on the typical subscription-relay proxy (~10s end-to-end
-for the LocalFlow planner workload, vs 22s on /v1/responses and 80s+
-on /v1/responses with gpt-5.5).
+The client targets the **OpenAI /v1/chat/completions** endpoint, which
+empirically yields lower latency than /v1/responses on
+OpenAI-compatible relays (the latter often runs implicit reasoning
+pipelines even on non-reasoning models). For the canonical OpenAI API
+this distinction is moot; for self-hosted relays it can be 2-3x.
 """
 
 DEFAULT_MAX_TOKENS = 16000
@@ -21,13 +23,10 @@ DEFAULT_MAX_TOKENS = 16000
 class OpenAIClient:
     """LLMClient backed by the **OpenAI /v1/chat/completions** endpoint.
 
-    Why chat.completions and not /v1/responses?
-      Direct probing of subscription-relay proxies (the typical setup
-      where a logged-in ChatGPT account is exposed as an OpenAI-compatible
-      API) shows /v1/chat/completions is 2-3x faster than /v1/responses
-      for the same model. The Responses API runs reasoning even on
-      non-reasoning models on these proxies, whereas chat.completions
-      bypasses that pipeline.
+    Targets /v1/chat/completions rather than /v1/responses — the former
+    has lower latency on OpenAI-compatible relays that wrap reasoning
+    pipelines around non-reasoning models. On the canonical OpenAI API
+    either endpoint works.
 
     Configured via env vars:
 
@@ -36,7 +35,7 @@ class OpenAIClient:
     ===========================================  =====================================
     ``OPENAI_API_KEY``                           Auth (required unless ``api_key`` arg)
     ``OPENAI_BASE_URL``                          Custom endpoint (proxy / self-hosted)
-    ``LOCALFLOW_OPENAI_MODEL``                   Model ID; default ``gpt-5.4-mini``
+    ``LOCALFLOW_OPENAI_MODEL``                   Model ID; default ``gpt-4o-mini``
     ``LOCALFLOW_OPENAI_REASONING_EFFORT``        ``low``/``medium``/``high`` (optional)
     ``LOCALFLOW_OPENAI_DISABLE_STORAGE``         ``true`` → send ``store=False``
     ``LOCALFLOW_OPENAI_TIMEOUT``                 Per-request timeout in seconds (180)

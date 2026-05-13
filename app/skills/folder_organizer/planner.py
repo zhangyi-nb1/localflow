@@ -8,7 +8,6 @@ from app.memory import NamingStyle, apply_naming_style
 from app.schemas import ActionPlan, TaskSpec, WorkspaceSnapshot
 from app.schemas.action import Action, ActionType, RiskLevel
 
-
 # Phase 0 keeps the category map hard-coded here (and mirrored in skill.yaml).
 # A later phase can load it from the manifest at runtime.
 CATEGORY_TARGETS: dict[str, str] = {
