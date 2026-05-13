@@ -19,7 +19,12 @@ from datetime import datetime, timezone
 
 from app.schemas import FileMeta, WorkspaceSnapshot
 from app.skills import get_default_registry
-from app.ui._autodetect import autodetect_planner, autodetect_skill
+from app.ui._autodetect import (
+    autodetect_planner,
+    autodetect_skill,
+    detect_capability_gap,
+    is_compound_goal,
+)
 
 
 def _snap(file_types: dict[str, int]) -> WorkspaceSnapshot:
@@ -208,3 +213,145 @@ def test_data_analyzer_supports_llm_branch() -> None:
     reg = get_default_registry()
     choice = autodetect_planner("analyze data by topic", "data_analyzer", reg)
     assert choice.name == "llm"
+
+
+# ───────────────────────────────────── v0.8.2 — compound goal → LLM
+
+
+def test_compound_goal_chinese_marker() -> None:
+    """Goals with 然后/再/最后 are multi-step → LLM."""
+    hit, reason = is_compound_goal("先整理，然后绘制图表")
+    assert hit
+    assert "然后" in reason or "marker" in reason
+
+
+def test_compound_goal_english_marker() -> None:
+    hit, reason = is_compound_goal("organize the files, then make a report")
+    assert hit
+    assert "then" in reason or "marker" in reason
+
+
+def test_compound_goal_multiple_verbs() -> None:
+    """Three+ distinct action verbs also trigger the compound path."""
+    hit, _ = is_compound_goal("organize sort summarize and visualize the workspace")
+    assert hit
+
+
+def test_single_step_is_not_compound() -> None:
+    hit, _ = is_compound_goal("organize by file type")
+    assert not hit
+
+
+def test_compound_goal_routes_planner_to_llm() -> None:
+    """The user's exact testing-grade goal — should land on LLM
+    because of the multi-step compound marker."""
+    reg = get_default_registry()
+    goal = "将文件按种类整理，然后总结，最后绘制柱状图"
+    choice = autodetect_planner(goal, "folder_organizer", reg)
+    assert choice.name == "llm"
+    assert "compound" in choice.reason.lower()
+
+
+# ───────────────────────────────────── v0.8.2 — prefer_llm pref
+
+
+def test_prefer_llm_overrides_simple_goal() -> None:
+    """When the user has flipped prefer_llm_planner on, even a simple
+    goal lands on the LLM planner."""
+    reg = get_default_registry()
+    choice = autodetect_planner("organize by file type", "folder_organizer", reg, prefer_llm=True)
+    assert choice.name == "llm"
+    assert "preference" in choice.reason.lower()
+
+
+def test_prefer_llm_does_not_force_rule_skills_to_llm() -> None:
+    """If the skill itself doesn't support LLM (pdf_indexer,
+    data_reporter, workspace_visualizer), the toggle is silently
+    ignored — we can't conjure an LLM planner that doesn't exist."""
+    reg = get_default_registry()
+    choice = autodetect_planner("anything", "pdf_indexer", reg, prefer_llm=True)
+    assert choice.name == "rule"
+
+
+# ───────────────────────────────────── v0.8.2 — workspace_visualizer routing
+
+
+def test_workspace_visualizer_for_chart_no_tabular() -> None:
+    """No tabular data + chart keyword → workspace_visualizer (real PNG)."""
+    reg = get_default_registry()
+    snap = _snap({"pdf": 3, "image": 2})
+    choice = autodetect_skill("draw a bar chart of my file counts", snap, reg)
+    assert choice.name == "workspace_visualizer"
+
+
+def test_workspace_visualizer_chinese_chart_keyword() -> None:
+    reg = get_default_registry()
+    snap = _snap({"image": 4})
+    choice = autodetect_skill("绘制一个柱状图", snap, reg)
+    assert choice.name == "workspace_visualizer"
+
+
+def test_data_analyzer_wins_on_tabular_with_chart_keyword() -> None:
+    """If tabular files dominate, route to data_analyzer (it draws
+    per-column charts), not workspace_visualizer (which charts file
+    counts)."""
+    reg = get_default_registry()
+    snap = _snap({"tabular": 3, "excel": 2})
+    choice = autodetect_skill("chart the sales data", snap, reg)
+    assert choice.name == "data_analyzer"
+
+
+def test_organize_wins_in_mixed_workspace_with_stray_xlsx() -> None:
+    """v0.8.2 regression: a workspace with a single xlsx + many other
+    files was hijacked into data_analyzer when the goal asked for
+    organize+chart. The user wanted to organize their workspace,
+    not analyze the spreadsheet's columns."""
+    reg = get_default_registry()
+    snap = _snap({"excel": 1, "pdf": 4, "image": 4, "text": 2})
+    goal = "将文件按种类整理，然后绘制柱状图"
+    choice = autodetect_skill(goal, snap, reg)
+    assert choice.name == "folder_organizer"
+
+
+# ───────────────────────────────────── v0.8.2 — capability gap
+
+
+def test_capability_gap_for_organize_plus_chart_picks_folder_organizer() -> None:
+    """folder_organizer can't draw charts. Gap helper should warn and
+    nudge toward workspace_visualizer as the second step."""
+    reg = get_default_registry()
+    snap = _snap({"pdf": 4, "image": 2, "text": 2})
+    goal = "整理文件并绘制柱状图"
+    sk = autodetect_skill(goal, snap, reg)
+    assert sk.name == "folder_organizer"
+    gap = detect_capability_gap(goal, sk.name, snap)
+    assert gap is not None
+    assert "workspace_visualizer" == gap.suggested_skill
+
+
+def test_capability_gap_for_organize_plus_chart_picks_visualizer() -> None:
+    """The mirror case: when workspace_visualizer is somehow picked
+    (e.g. user manually overrode), warn that the organize part is
+    missing and nudge toward folder_organizer."""
+    snap = _snap({"pdf": 4, "image": 2})
+    goal = "organize files and chart the counts"
+    gap = detect_capability_gap(goal, "workspace_visualizer", snap)
+    assert gap is not None
+    assert gap.suggested_skill == "folder_organizer"
+
+
+def test_capability_gap_warns_when_chart_routed_to_data_reporter() -> None:
+    """data_reporter writes markdown, not real PNGs. If something
+    routes a chart-asking goal there, warn the user."""
+    snap = _snap({"tabular": 2})
+    gap = detect_capability_gap("draw a chart of the data", "data_reporter", snap)
+    assert gap is not None
+    assert "markdown" in gap.message.lower()
+    assert gap.suggested_skill in ("data_analyzer", "workspace_visualizer")
+
+
+def test_capability_gap_none_for_clean_routing() -> None:
+    """workspace_visualizer + chart-only goal → no gap."""
+    snap = _snap({"pdf": 3})
+    gap = detect_capability_gap("draw a chart", "workspace_visualizer", snap)
+    assert gap is None

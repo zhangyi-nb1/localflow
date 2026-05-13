@@ -24,7 +24,8 @@ def test_load_returns_defaults_when_no_prefs_file(tmp_path: Path) -> None:
     prefs = s.load()
     assert prefs.forbidden_paths == []
     assert prefs.naming_style == NamingStyle.ORIGINAL
-    assert prefs.schema_version == 1
+    assert prefs.prefer_llm_planner is False
+    assert prefs.schema_version == 2
     assert prefs.is_default()
 
 
@@ -148,3 +149,58 @@ def test_save_is_atomic_no_partial_file(tmp_path: Path) -> None:
     s.save(MemoryPreferences(forbidden_paths=["x"]))
     tmps = list(s.home.glob(".prefs_*.tmp"))
     assert tmps == [], f"orphan temp files: {tmps}"
+
+
+# ---------------------------------------------------- v0.8.2 prefer_llm_planner
+
+
+def test_prefer_llm_planner_defaults_off(tmp_path: Path) -> None:
+    """v0.8.2 default: prefer_llm_planner = False. Smart upgrade is
+    the default; opting into 'always LLM' is a deliberate user act."""
+    prefs = _store(tmp_path).load()
+    assert prefs.prefer_llm_planner is False
+
+
+def test_set_prefer_llm_planner_persists(tmp_path: Path) -> None:
+    s = _store(tmp_path)
+    result = s.set_prefer_llm_planner(True)
+    assert result.changed
+    assert "True" in result.detail
+    reloaded = _store(tmp_path).load()
+    assert reloaded.prefer_llm_planner is True
+
+
+def test_set_prefer_llm_planner_noop_when_same(tmp_path: Path) -> None:
+    s = _store(tmp_path)
+    s.set_prefer_llm_planner(True)
+    result = s.set_prefer_llm_planner(True)
+    assert not result.changed
+
+
+def test_clear_prefer_llm_planner_resets_to_false(tmp_path: Path) -> None:
+    s = _store(tmp_path)
+    s.set_prefer_llm_planner(True)
+    result = s.clear_prefer_llm_planner()
+    assert result.changed
+    assert s.load().prefer_llm_planner is False
+
+
+def test_prefer_llm_planner_in_audit(tmp_path: Path) -> None:
+    """Toggle changes are recorded in the audit log just like other
+    mutations — users can trace when the pref was flipped."""
+    s = _store(tmp_path)
+    s.set_prefer_llm_planner(True)
+    entries = s.read_audit()
+    assert any(
+        e.get("event") == "memory.set" and e.get("key") == "prefer_llm_planner" for e in entries
+    )
+
+
+def test_is_default_respects_prefer_llm(tmp_path: Path) -> None:
+    """The CLI uses ``is_default`` to decide whether to print 'Applied
+    preferences'. The new field must participate so a flipped pref
+    surfaces."""
+    s = _store(tmp_path)
+    assert s.load().is_default()
+    s.set_prefer_llm_planner(True)
+    assert not s.load().is_default()

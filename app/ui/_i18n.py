@@ -135,6 +135,10 @@ _DICT: dict[str, dict[Lang, str]] = {
         "en": "📝 naming_style: `{value}`",
         "zh": "📝 命名风格：`{value}`",
     },
+    "sidebar.memory.prefer_llm": {
+        "en": "🤖 prefer_llm_planner: on",
+        "zh": "🤖 已开启 LLM 优先",
+    },
     "sidebar.memory.error": {
         "en": "Memory store error: {err}",
         "zh": "偏好读取错误：{err}",
@@ -234,6 +238,26 @@ _DICT: dict[str, dict[Lang, str]] = {
     "plan.autodetect.reason": {
         "en": "Reason — {skill_reason} · {planner_reason}",
         "zh": "理由 — {skill_reason} · {planner_reason}",
+    },
+    "plan.gap.title": {
+        "en": "⚠️ Capability gap detected",
+        "zh": "⚠️ 检测到能力缺口",
+    },
+    "plan.gap.suggest_skill": {
+        "en": "Suggested skill for the missing part: `{skill}`",
+        "zh": "覆盖剩余部分的建议 skill：`{skill}`",
+    },
+    "plan.gap.next_steps": {
+        "en": (
+            "Plan will still run, but won't cover every part of your goal. "
+            "Either pick the suggested skill via **▶ Override (advanced)** "
+            "below, or run a second task afterward."
+        ),
+        "zh": (
+            "Plan 仍会运行，但不会覆盖 goal 的全部步骤。"
+            "可以从下方 **▶ 高级覆盖** 切换到建议的 skill，"
+            "或者先跑完这个 task 再起一个新 task 补齐缺失的部分。"
+        ),
     },
     "plan.override.expander": {
         "en": "▶ Override (advanced) — pick skill / planner manually",
@@ -541,7 +565,48 @@ _DICT: dict[str, dict[Lang, str]] = {
     },
     "memory.tab.forbidden": {"en": "🚫 Forbidden paths", "zh": "🚫 禁止路径"},
     "memory.tab.naming": {"en": "📝 Naming style", "zh": "📝 命名风格"},
+    "memory.tab.planner": {"en": "🤖 Planner preference", "zh": "🤖 Planner 偏好"},
     "memory.tab.audit": {"en": "📜 Audit log", "zh": "📜 审计日志"},
+    "memory.planner.header": {
+        "en": "Prefer LLM by default",
+        "zh": "默认偏好 LLM planner",
+    },
+    "memory.planner.caption": {
+        "en": (
+            "When ON, every LLM-capable skill (folder_organizer, data_analyzer) "
+            "uses the LLM planner by default — even for simple goals. When OFF, "
+            "LocalFlow uses the rule planner unless the goal has semantic intent "
+            "or multiple steps. Defaults to OFF."
+        ),
+        "zh": (
+            "开启后，所有支持 LLM 的 skill（folder_organizer / data_analyzer）"
+            "**默认都用 LLM**，即使是简单 goal。关闭时（默认），LocalFlow "
+            "仅在 goal 含语义意图或多步骤连接词时升级到 LLM。**默认关闭**。"
+        ),
+    },
+    "memory.planner.toggle": {
+        "en": "Prefer LLM planner",
+        "zh": "默认使用 LLM planner",
+    },
+    "memory.planner.tradeoff": {
+        "en": (
+            "Trade-off: LLM planner takes ~20 s + consumes API quota; rule "
+            'planner is instant + free. For simple goals ("organize by type") '
+            "rule is usually enough."
+        ),
+        "zh": (
+            "权衡：LLM 慢 (~20 秒) + 烧 API 配额；rule 即时 + 免费。"
+            "简单 goal（如「按类型整理」）通常 rule 就够了。"
+        ),
+    },
+    "memory.planner.saved_on": {
+        "en": "✅ prefer_llm_planner enabled. Auto-detect will now default to LLM.",
+        "zh": "✅ 已开启 LLM 优先。Auto-detect 现在默认走 LLM。",
+    },
+    "memory.planner.saved_off": {
+        "en": "✅ prefer_llm_planner disabled. Auto-detect falls back to smart upgrade.",
+        "zh": "✅ 已关闭 LLM 优先。Auto-detect 回到智能升级模式。",
+    },
     "memory.error.store": {
         "en": "Memory store error: {err}",
         "zh": "偏好读取错误：{err}",

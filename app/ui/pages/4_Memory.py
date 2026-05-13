@@ -28,8 +28,13 @@ def main() -> None:
         st.error(t("memory.error.store", err=str(exc)))
         return
 
-    tab1, tab2, tab3 = st.tabs(
-        [t("memory.tab.forbidden"), t("memory.tab.naming"), t("memory.tab.audit")]
+    tab1, tab2, tab3, tab4 = st.tabs(
+        [
+            t("memory.tab.forbidden"),
+            t("memory.tab.naming"),
+            t("memory.tab.planner"),
+            t("memory.tab.audit"),
+        ]
     )
 
     with tab1:
@@ -39,7 +44,31 @@ def main() -> None:
         _render_naming_style(store, prefs)
 
     with tab3:
+        _render_planner_pref(store, prefs)
+
+    with tab4:
         _render_audit(store)
+
+
+def _render_planner_pref(store: MemoryStore, prefs) -> None:
+    st.subheader(t("memory.planner.header"))
+    st.caption(t("memory.planner.caption"))
+
+    new_value = st.toggle(
+        t("memory.planner.toggle"),
+        value=prefs.prefer_llm_planner,
+        key="memory_prefer_llm_toggle",
+    )
+    st.caption(t("memory.planner.tradeoff"))
+
+    if new_value != prefs.prefer_llm_planner:
+        result = store.set_prefer_llm_planner(new_value)
+        if result.changed:
+            if new_value:
+                st.success(t("memory.planner.saved_on"))
+            else:
+                st.success(t("memory.planner.saved_off"))
+            st.rerun()
 
 
 def _render_forbidden_paths(store: MemoryStore, prefs) -> None:

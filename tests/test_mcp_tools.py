@@ -43,8 +43,9 @@ def mini_workspace(tmp_path: Path) -> Path:
 
 
 def test_all_tools_registered() -> None:
-    """We claim 16 MCP tools (15 from Phase 6.1 + 1 rollback_preview
-    from Phase 7.1). If someone adds/removes one, update this test."""
+    """We claim 18 MCP tools (15 from Phase 6.1 + 1 rollback_preview
+    from Phase 7.1 + 2 prefer_llm_planner mutations from Phase 8.2).
+    If someone adds/removes one, update this test."""
     names = {t.name for t in TOOLS}
     assert len(names) == len(TOOLS), "duplicate tool names"
     expected = {
@@ -67,6 +68,8 @@ def test_all_tools_registered() -> None:
         "memory_unforbid_path",
         "memory_set_naming_style",
         "memory_unset_naming_style",
+        "memory_set_prefer_llm_planner",  # Phase 8.2
+        "memory_unset_prefer_llm_planner",  # Phase 8.2
     }
     assert names == expected
 
@@ -131,7 +134,8 @@ def test_read_memory_prefs_returns_defaults(isolated_home: Path) -> None:
     result = get_tool("read_memory_prefs").handler({})
     assert result["naming_style"] == "original"
     assert result["forbidden_paths"] == []
-    assert result["schema_version"] == 1
+    assert result["prefer_llm_planner"] is False
+    assert result["schema_version"] == 2
 
 
 def test_read_memory_audit_empty_initially(isolated_home: Path) -> None:

@@ -276,6 +276,8 @@ def _render_memory_summary() -> None:
         st.caption(t("sidebar.memory.forbidden_count", n=len(prefs.forbidden_paths)))
     if prefs.naming_style.value != "original":
         st.caption(t("sidebar.memory.naming_style", value=prefs.naming_style.value))
+    if prefs.prefer_llm_planner:
+        st.caption(t("sidebar.memory.prefer_llm"))
 
 
 def risk_badge(risk_level: str) -> str:

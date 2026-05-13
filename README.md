@@ -108,14 +108,16 @@ Full threat model + per-mitigation tests: [**docs/SECURITY.md**](docs/SECURITY.m
 ```
 Core harness:    full lifecycle (plan / dry-run / approval / execute / verify / rollback)
 Skills:          folder_organizer · pdf_indexer · data_reporter · data_analyzer
+                 · workspace_visualizer (new in v0.8.2 — real PNG bar charts)
                  + filesystem plug-in loader (Phase 4.1)
 Tool Registry:   15 declarable callable helpers, manifest-validated at register time
-Memory:          forbidden_paths (kernel-side) + naming_style (skill-side)
-MCP server:      stdio JSON-RPC, 16 tools, approval-token gated execute
-UI (v0.8.1):     Streamlit browser UI · EN/中文 toggle · goal-only Plan page
-                 with skill+planner auto-detect · radio-driven workspace picker
-                 with sticky ?unsafe=1 · soft-sandboxed to ./sandbox/
-Tests:           319 passing across 5 OS × Python matrix in CI
+Memory:          forbidden_paths (kernel-side) · naming_style · prefer_llm_planner
+MCP server:      stdio JSON-RPC, 18 tools, approval-token gated execute
+UI (v0.8.2):     Streamlit browser UI · EN/中文 toggle · goal-only Plan page
+                 with skill+planner auto-detect · compound-goal → LLM upgrade
+                 · capability-gap warning · radio-driven workspace picker with
+                 sticky ?unsafe=1 · soft-sandboxed to ./sandbox/
+Tests:           359 passing across 5 OS × Python matrix in CI
 ```
 
 Three equivalent driver layers, same kernel:
@@ -214,7 +216,7 @@ python -m build
 
 Releases (with verified wheel artifacts) under [**GitHub Releases**](https://github.com/zhangyi-nb1/localflow/releases).
 
-Version scheme: `0.<highest_phase>.<sub>`. Current `0.8.1` = Phase 6.1 + Phase 7 hardening + Phase 8.0 UI + Phase 8.1 UX overhaul + 8.1.1 sticky unsafe fix.
+Version scheme: `0.<highest_phase>.<sub>`. Current `0.8.2` = Phase 6.1 + Phase 7 hardening + Phase 8.0 UI + Phase 8.1 UX overhaul + 8.1.1 sticky unsafe fix + Phase 8.2 workspace_visualizer + smart planner upgrades.
 
 ---
 

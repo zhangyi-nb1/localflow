@@ -139,3 +139,46 @@ def test_memory_audit_empty_when_no_changes(isolated_home: Path) -> None:
     r = _runner().invoke(app, ["memory", "audit"])
     assert r.exit_code == 0
     assert "no memory audit entries" in r.stdout.lower()
+
+
+# --------------------------------------------------------------- v0.8.2 prefer_llm_planner
+
+
+def test_memory_set_prefer_llm_planner_true(isolated_home: Path) -> None:
+    r = _runner().invoke(app, ["memory", "set", "prefer_llm_planner", "true"])
+    assert r.exit_code == 0, r.stdout
+    prefs = json.loads(_prefs_path(isolated_home).read_text(encoding="utf-8"))
+    assert prefs["prefer_llm_planner"] is True
+
+
+def test_memory_set_prefer_llm_planner_accepts_aliases(isolated_home: Path) -> None:
+    """Match the truthy-value vocabulary used elsewhere (?unsafe=1 /
+    LOCALFLOW_DISABLE_EXTERNAL_SKILLS)."""
+    runner = _runner()
+    for val in ("1", "yes", "on", "TRUE"):
+        r = runner.invoke(app, ["memory", "set", "prefer_llm_planner", val])
+        assert r.exit_code == 0, f"{val!r}: {r.stdout}"
+    prefs = json.loads(_prefs_path(isolated_home).read_text(encoding="utf-8"))
+    assert prefs["prefer_llm_planner"] is True
+
+
+def test_memory_set_prefer_llm_planner_rejects_garbage(isolated_home: Path) -> None:
+    r = _runner().invoke(app, ["memory", "set", "prefer_llm_planner", "maybe"])
+    assert r.exit_code != 0
+    assert "expected" in r.stdout.lower() or "invalid" in r.stdout.lower()
+
+
+def test_memory_unset_prefer_llm_planner(isolated_home: Path) -> None:
+    runner = _runner()
+    runner.invoke(app, ["memory", "set", "prefer_llm_planner", "true"])
+    r = runner.invoke(app, ["memory", "unset", "prefer_llm_planner"])
+    assert r.exit_code == 0
+    prefs = json.loads(_prefs_path(isolated_home).read_text(encoding="utf-8"))
+    assert prefs["prefer_llm_planner"] is False
+
+
+def test_memory_list_includes_prefer_llm_planner(isolated_home: Path) -> None:
+    """`memory list` shows the current value for every preference key."""
+    r = _runner().invoke(app, ["memory", "list"])
+    assert r.exit_code == 0
+    assert "prefer_llm_planner" in r.stdout

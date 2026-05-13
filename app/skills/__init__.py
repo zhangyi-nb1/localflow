@@ -24,6 +24,7 @@ from app.skills.data_analyzer import DataAnalyzerSkill
 from app.skills.data_reporter import DataReporterSkill
 from app.skills.folder_organizer import FolderOrganizerSkill
 from app.skills.pdf_indexer import PdfIndexerSkill
+from app.skills.workspace_visualizer import WorkspaceVisualizerSkill
 from app.tools import get_default_tool_registry
 
 # Phase 4.2: the same Tool Registry validates both built-in and external
@@ -35,6 +36,7 @@ _default_registry.register(FolderOrganizerSkill(), tool_registry=_tool_registry)
 _default_registry.register(PdfIndexerSkill(), tool_registry=_tool_registry)
 _default_registry.register(DataReporterSkill(), tool_registry=_tool_registry)
 _default_registry.register(DataAnalyzerSkill(), tool_registry=_tool_registry)
+_default_registry.register(WorkspaceVisualizerSkill(), tool_registry=_tool_registry)
 
 # Phase 4.1: filesystem skill discovery. Built-ins register FIRST so any
 # external skill with a colliding name fails registration (logged in the
@@ -72,6 +74,7 @@ __all__ = [
     "SkillRegistry",
     "StageResult",
     "WorkspaceSeeder",
+    "WorkspaceVisualizerSkill",
     "default_external_skill_dirs",
     "discover_and_register_external",
     "get_default_registry",

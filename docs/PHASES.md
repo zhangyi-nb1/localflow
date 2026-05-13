@@ -422,6 +422,73 @@ reason line so users know exactly what's being chosen.
 
 ---
 
+## Phase 8.2 — workspace_visualizer + smart planner upgrades (v0.8.2)
+
+**Goal**: close the v0.8.1 gap where user testing exposed three real
+limits — auto-detect routing compound goals to the wrong skill, no
+skill drawing real PNG charts of file metadata, and no way to make
+LLM the default planner without bypassing the heuristic.
+
+**Shipped**:
+
+- **New skill** `workspace_visualizer` ([app/skills/workspace_visualizer/](localflow/app/skills/workspace_visualizer/)):
+  counts files by parent folder (when ≥60% of files live in subdirs)
+  or by file_type otherwise, then renders a real PNG bar chart via
+  `chart_ops.bar_png` + base64-encoded INDEX action. Mirrors the
+  binary-write mechanism `data_analyzer` / `data_reporter` already
+  use for column charts. Rule-only — counts and matplotlib have
+  nothing for an LLM to add.
+- **Compound-goal detection** in [app/ui/_autodetect.py](localflow/app/ui/_autodetect.py):
+  goals with 然后/再/最后/then/finally/etc. (or three+ distinct
+  action verbs) auto-upgrade the planner to LLM. Rule planners can
+  only emit one action category — multi-step goals silently lose
+  the rest unless an LLM synthesizes the plan.
+- **Capability-gap warning** on the Plan page: when the auto-detected
+  skill can't satisfy every part of the goal (e.g. user asks for
+  organize+chart and only folder_organizer was picked), surface a
+  yellow warning with a suggested second-step skill. The warning
+  doesn't block — the user can still run the plan and pick up the
+  missing part as a second task.
+- **`prefer_llm_planner` memory pref** ([app/memory/_schema.py](localflow/app/memory/_schema.py)):
+  new boolean field, defaults to False. When ON, every LLM-capable
+  skill uses LLM regardless of goal text. New CLI command
+  (`localflow memory set prefer_llm_planner true|false`), new MCP
+  tools (`memory_set_prefer_llm_planner`,
+  `memory_unset_prefer_llm_planner`), new Memory-page tab
+  ("🤖 Planner preference"). Schema bumped 1 → 2.
+- **Smarter routing heuristic**: a goal with `organize` keyword in a
+  mixed workspace (more non-tabular than tabular files) now routes
+  to `folder_organizer` even with a stray xlsx — the user is
+  organizing their workspace, not analyzing the spreadsheet.
+
+**Files**: 5 new files in `app/skills/workspace_visualizer/`,
+extended `app/ui/_autodetect.py` + `_i18n.py`, modified
+`app/memory/_schema.py` + `_store.py`, `app/cli.py`, `app/mcp/tools.py`,
+`app/ui/pages/1_Plan.py` + `4_Memory.py` + `_layout.py`,
+`app/skills/__init__.py`.
+
+**Tests added**: 40 (`test_workspace_visualizer.py` 14 +
+`test_ui_autodetect.py` extensions 17 + `test_memory_store.py`
+extensions 6 + `test_cli_memory.py` extensions 5 + `test_mcp_tools.py`
+update 2). Total 319 → 359.
+
+**Kernel touch**: NO. The schema_version bump is memory-side, not
+kernel-side. `app/harness/*`, `app/schemas/*`, `app/tools/*`
+untouched. **15th** zero-kernel-touch phase.
+
+**The full bilingual decision tree** the user wrote that exposed this:
+
+> 将文件按种类整理，然后在各自文件夹下总结文件的信息，最后把各文件夹的文件数以柱状图绘制然后放在图象文件夹下
+
+Before v0.8.2: routed to `data_reporter + rule` because of one
+incidental xlsx + "总结" keyword → output was a markdown mermaid
+block, not a real chart. After v0.8.2: routes to `folder_organizer +
+llm` (organize keyword in mixed workspace + compound 然后 marker),
+with a yellow gap warning nudging the user to run
+`workspace_visualizer` as a second task for the real PNG chart.
+
+---
+
 ## Phase 8.1.1 — Sticky unsafe mode (v0.8.1)
 
 **Bug**: in v0.8.0, after the user opted into unsafe path mode with
@@ -471,8 +538,9 @@ post-nav persistence, fresh-session reset). Total 318 → 319.
 | 8.0.1–8.0.4 (v0.7.1–v0.7.4) | NO | UI bug-fix sequence |
 | **8.1 (v0.8.0)** | NO | UI UX overhaul: i18n + autodetect + sidebar rewrite |
 | 8.1.1 (v0.8.1) | NO | Sticky unsafe mode (Streamlit page-nav drops query params) |
+| **8.2 (v0.8.2)** | NO | workspace_visualizer skill + compound-goal detection + capability-gap warning + prefer_llm_planner memory pref |
 
-**Score**: 1 deliberate exception across 14 deliveries. The rule held.
+**Score**: 1 deliberate exception across 15 deliveries. The rule held.
 
 ---
 

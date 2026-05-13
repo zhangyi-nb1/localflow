@@ -315,6 +315,7 @@ def handle_create_plan(args: dict[str, Any]) -> dict[str, Any]:
         "applied_preferences": {
             "forbidden_paths": list(prefs.forbidden_paths),
             "naming_style": prefs.naming_style.value,
+            "prefer_llm_planner": prefs.prefer_llm_planner,
         },
     }
 
@@ -482,6 +483,17 @@ def handle_memory_set_naming_style(args: dict[str, Any]) -> dict[str, Any]:
 
 def handle_memory_unset_naming_style(args: dict[str, Any]) -> dict[str, Any]:
     result = MemoryStore().clear_naming_style()
+    return {"changed": result.changed, "event": result.event, "detail": result.detail}
+
+
+def handle_memory_set_prefer_llm_planner(args: dict[str, Any]) -> dict[str, Any]:
+    value = _require(args, "value", bool)
+    result = MemoryStore().set_prefer_llm_planner(value)
+    return {"changed": result.changed, "event": result.event, "detail": result.detail}
+
+
+def handle_memory_unset_prefer_llm_planner(args: dict[str, Any]) -> dict[str, Any]:
+    result = MemoryStore().clear_prefer_llm_planner()
     return {"changed": result.changed, "event": result.event, "detail": result.detail}
 
 
@@ -739,6 +751,26 @@ TOOLS: list[ToolDef] = [
         description="Reset naming_style to default (original).",
         input_schema={"type": "object", "properties": {}},
         handler=handle_memory_unset_naming_style,
+    ),
+    ToolDef(
+        name="memory_set_prefer_llm_planner",
+        description=(
+            "Set the prefer_llm_planner toggle. When True, the UI auto-detect "
+            "routes every LLM-capable skill to the LLM planner regardless of "
+            "goal text. Defaults to False."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {"value": {"type": "boolean"}},
+            "required": ["value"],
+        },
+        handler=handle_memory_set_prefer_llm_planner,
+    ),
+    ToolDef(
+        name="memory_unset_prefer_llm_planner",
+        description="Reset prefer_llm_planner to default (False).",
+        input_schema={"type": "object", "properties": {}},
+        handler=handle_memory_unset_prefer_llm_planner,
     ),
 ]
 

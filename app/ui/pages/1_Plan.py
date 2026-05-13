@@ -17,7 +17,7 @@ from app.memory import MemoryStore, NamingStyle
 from app.schemas import TaskSpec
 from app.skills import SkillError, get_default_registry
 from app.storage.run_store import RunStore
-from app.ui._autodetect import autodetect_planner, autodetect_skill
+from app.ui._autodetect import autodetect_planner, autodetect_skill, detect_capability_gap
 from app.ui._i18n import t
 from app.ui._layout import (
     SESSION_TASK_KEY,
@@ -54,8 +54,15 @@ def main() -> None:
     # re-scan a 10k-file folder on every keystroke.
     detect_snapshot = _detect_snapshot(workspace)
 
+    # Read the prefer_llm_planner memory pref for planner detection.
+    try:
+        prefer_llm = MemoryStore().load().prefer_llm_planner
+    except Exception:
+        prefer_llm = False
+
     skill_choice = autodetect_skill(goal, detect_snapshot, registry)
-    planner_choice = autodetect_planner(goal, skill_choice.name, registry)
+    planner_choice = autodetect_planner(goal, skill_choice.name, registry, prefer_llm=prefer_llm)
+    gap = detect_capability_gap(goal, skill_choice.name, detect_snapshot)
 
     if goal.strip():
         st.markdown(
@@ -72,6 +79,20 @@ def main() -> None:
                 planner_reason=planner_choice.reason,
             )
         )
+        if gap is not None:
+            st.warning(
+                "**"
+                + t("plan.gap.title")
+                + "** — "
+                + gap.message
+                + (
+                    "\n\n" + t("plan.gap.suggest_skill", skill=gap.suggested_skill)
+                    if gap.suggested_skill
+                    else ""
+                )
+                + "\n\n"
+                + t("plan.gap.next_steps")
+            )
     else:
         st.markdown(t("plan.goal.empty_hint"))
 

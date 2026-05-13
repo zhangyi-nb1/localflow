@@ -514,6 +514,7 @@ UI 自 v0.7.0 推出，至 v0.7.4 经历的关键改进：
 | v0.7.4 | Rollback 结果区智能区分"真失败"和"因 drift 而连带跳过的目录清理"，状态从 FAILED → PARTIAL |
 | v0.8.0 | **三大 UX 修复**：① 中英双语切换（左侧栏顶端单选按钮）② Plan 页面自动识别 skill + planner，写 goal 即可，手动选项收进折叠面板 ③ 左侧栏 Source 单选按钮取代旧的下拉 + 折叠 expander，自定义路径输入框现在显式且可见 |
 | v0.8.1 | 修复「点 Plan 后自定义路径被静默切回 sandbox」—— Streamlit 多页切换会丢掉 URL 的 `?unsafe=1`。现在 unsafe 模式一旦启用就锁定到 session_state，跨页切换不会再丢失。 |
+| v0.8.2 | **三大升级**：① 新增 `workspace_visualizer` skill —— 真画 PNG 柱状图（不再是 markdown 假图） ② 复合 goal 自动升级 LLM（含「然后/再/最后」等连接词或 3+ 不同动词时） ③ Memory 新增「Prefer LLM by default」开关 + Plan 页面增加「能力缺口」黄色警告，提示当一个 skill 不能完整覆盖 goal 时该怎么补齐。 |
 
 ---
 

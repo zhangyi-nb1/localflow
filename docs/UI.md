@@ -1,4 +1,4 @@
-# LocalFlow UI (Streamlit) — v0.8.1
+# LocalFlow UI (Streamlit) — v0.8.2
 
 A localhost-only browser UI that wraps the same harness the CLI and
 MCP server use. Built for users who'd rather click than memorize 5
@@ -176,6 +176,9 @@ of 3 commands.
 | Custom workspace silently reverts to sandbox after clicking a page | Fixed in v0.8.1 — unsafe mode now latches into session_state so page navigation no longer drops the opt-in |
 | Custom path input rejects a path | Make sure it's an absolute path to an existing directory. The error message under the input names the exact reason. |
 | Auto-detected skill is wrong | Expand `▶ Override (advanced)` on the Plan page and pick the skill / planner manually |
+| Plan page shows a yellow "Capability gap" warning | Your goal asks for things one skill can't fully cover (e.g. organize+chart). Run the suggested skill as a second task after this one finishes, or override to the suggested skill via `▶ Override (advanced)`. New in v0.8.2. |
+| Want LLM by default on every plan | Memory → 🤖 Planner preference → toggle "Prefer LLM planner" ON. Default is OFF (rule for simple goals, LLM only for compound / semantic). |
+| Want a real PNG bar chart of file counts | Plan with goal "draw a bar chart" → routed to `workspace_visualizer`. Writes a PNG to `images/file_counts.png`. New in v0.8.2. |
 | Strings show up as `!!key.something!!` | A translation key is missing — file an issue. UI keeps rendering with the sentinel rather than crashing. |
 | Language toggle persists across browser sessions | It doesn't — by design. Streamlit session_state is per-tab. Reset on every new tab. |
 | Page renders but actions don't fire | Check the terminal where you ran `ui-serve` — Streamlit logs there |

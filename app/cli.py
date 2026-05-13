@@ -878,6 +878,7 @@ def cmd_memory_list() -> None:
     table.add_column("Value")
     table.add_row("forbidden_paths", "\n".join(prefs.forbidden_paths) or "[dim]—[/]")
     table.add_row("naming_style", prefs.naming_style.value)
+    table.add_row("prefer_llm_planner", str(prefs.prefer_llm_planner).lower())
     table.add_row("schema_version", str(prefs.schema_version))
     console.print(table)
     if prefs.is_default():
@@ -914,24 +915,48 @@ def cmd_memory_unforbid(
     console.print(f"[{style}]{result.detail}[/]")
 
 
+_SCALAR_KEYS = ("naming_style", "prefer_llm_planner")
+
+
+def _parse_bool_arg(value: str) -> bool:
+    """Parse a CLI bool argument. Accept the truthy/falsy strings the
+    rest of LocalFlow uses (matches LOCALFLOW_MCP_ALLOW_DANGEROUS,
+    LOCALFLOW_DISABLE_EXTERNAL_SKILLS, ?unsafe=1)."""
+    v = value.strip().lower()
+    if v in ("1", "true", "yes", "on"):
+        return True
+    if v in ("0", "false", "no", "off"):
+        return False
+    raise ValueError(f"expected true/false (or 1/0/yes/no/on/off), got {value!r}")
+
+
 @memory_app.command("set")
 def cmd_memory_set(
-    key: str = typer.Argument(..., help="Preference key (currently: 'naming_style')."),
+    key: str = typer.Argument(
+        ..., help="Preference key. Supported: 'naming_style' or 'prefer_llm_planner'."
+    ),
     value: str = typer.Argument(
-        ..., help="Value (for naming_style: original / snake_case / kebab-case / lower)."
+        ...,
+        help=(
+            "Value. For naming_style: original / snake_case / kebab-case / lower. "
+            "For prefer_llm_planner: true / false."
+        ),
     ),
 ) -> None:
     """Set a scalar preference. Rejects unknown keys / values."""
     store = MemoryStore()
-    if key != "naming_style":
+    if key not in _SCALAR_KEYS:
         console.print(
             f"[red]unknown preference key {key!r}.[/] "
-            "Supported: naming_style. (Lists like forbidden_paths use the "
-            "dedicated forbid/unforbid commands.)"
+            f"Supported: {', '.join(_SCALAR_KEYS)}. (Lists like forbidden_paths "
+            "use the dedicated forbid/unforbid commands.)"
         )
         raise typer.Exit(code=2)
     try:
-        result = store.set_naming_style(value)
+        if key == "naming_style":
+            result = store.set_naming_style(value)
+        else:  # prefer_llm_planner
+            result = store.set_prefer_llm_planner(_parse_bool_arg(value))
     except ValueError as exc:
         console.print(f"[red]invalid value:[/] {exc}")
         raise typer.Exit(code=2)
@@ -945,10 +970,15 @@ def cmd_memory_unset(
 ) -> None:
     """Reset a scalar preference to its default."""
     store = MemoryStore()
-    if key != "naming_style":
-        console.print(f"[red]unknown preference key {key!r}.[/] Supported: naming_style.")
+    if key not in _SCALAR_KEYS:
+        console.print(
+            f"[red]unknown preference key {key!r}.[/] Supported: {', '.join(_SCALAR_KEYS)}."
+        )
         raise typer.Exit(code=2)
-    result = store.clear_naming_style()
+    if key == "naming_style":
+        result = store.clear_naming_style()
+    else:
+        result = store.clear_prefer_llm_planner()
     style = "green" if result.changed else "dim"
     console.print(f"[{style}]{result.detail}[/]")
 

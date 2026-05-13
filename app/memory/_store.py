@@ -254,3 +254,35 @@ class MemoryStore:
 
     def clear_naming_style(self) -> MutationResult:
         return self.set_naming_style(NamingStyle.ORIGINAL.value)
+
+    # -- mutations: prefer_llm_planner --------------------------------
+
+    def set_prefer_llm_planner(self, value: bool) -> MutationResult:
+        """Persist the ``prefer_llm_planner`` toggle. Read by the UI's
+        auto-detect to bypass the goal-text heuristic and always pick
+        the LLM planner for skills that support it."""
+        prefs = self.load()
+        if prefs.prefer_llm_planner == value:
+            return MutationResult(
+                event="memory.set.noop",
+                changed=False,
+                detail=f"prefer_llm_planner already {value}",
+            )
+        before = prefs.prefer_llm_planner
+        prefs.prefer_llm_planner = value
+        self.save(prefs)
+        self._audit(
+            "memory.set",
+            key="prefer_llm_planner",
+            before=before,
+            after=value,
+        )
+        return MutationResult(
+            event="memory.set",
+            changed=True,
+            detail=f"prefer_llm_planner: {before} → {value}",
+        )
+
+    def clear_prefer_llm_planner(self) -> MutationResult:
+        """Reset to factory default (False)."""
+        return self.set_prefer_llm_planner(False)

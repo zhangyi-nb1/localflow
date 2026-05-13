@@ -55,12 +55,25 @@ class MemoryPreferences(BaseModel):
             "Default ORIGINAL preserves the input name verbatim."
         ),
     )
+    prefer_llm_planner: bool = Field(
+        default=False,
+        description=(
+            "When True, the UI auto-detect routes every LLM-capable skill "
+            "to the LLM planner regardless of goal text. Compound-goal "
+            "detection still runs for non-LLM-capable skills. Defaults to "
+            "False — most users want rule planning for simple goals."
+        ),
+    )
     schema_version: int = Field(
-        default=1,
+        default=2,
         description="Bump when adding/removing fields to enable migration.",
     )
 
     def is_default(self) -> bool:
         """True iff the preferences match factory defaults — used by the
         CLI to decide whether to print the 'Applied preferences' header."""
-        return not self.forbidden_paths and self.naming_style == NamingStyle.ORIGINAL
+        return (
+            not self.forbidden_paths
+            and self.naming_style == NamingStyle.ORIGINAL
+            and self.prefer_llm_planner is False
+        )
