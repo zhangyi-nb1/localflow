@@ -62,26 +62,59 @@ appear under the `localflow:` namespace.
 | Tool | Wraps | Pre-conditions |
 |---|---|---|
 | `create_plan` | RunStore.create + inspect + skill.plan + risk_check | rule planner only; LLM planning is CLI-only |
-| `dry_run` | `control_loop.run_dry_run` | requires an existing `task_id` |
-| `execute_plan` | `control_loop.run_execute` + `run_verify` | **must pass `approved: true`** (matches CLI `--yes`) |
+| `dry_run` | `control_loop.run_dry_run` + mints approval_token | requires an existing `task_id`; **response includes `approval_token` (10-min TTL, one-shot)** |
+| `execute_plan` | `control_loop.run_execute` + `run_verify` | **requires `approval_token` from a prior `dry_run`** — see [SECURITY.md](SECURITY.md#approval-tokens) |
 | `rollback_run` | `Rollback.run()` | requires existing rollback manifest |
 
 ### Memory mutations
 
-| Tool | Wraps |
-|---|---|
-| `memory_forbid_path` | `MemoryStore().add_forbidden_path(path)` |
-| `memory_unforbid_path` | `MemoryStore().remove_forbidden_path(path)` |
-| `memory_set_naming_style` | `MemoryStore().set_naming_style(value)` |
-| `memory_unset_naming_style` | `MemoryStore().clear_naming_style()` |
+| Tool | Wraps | Default exposure |
+|---|---|---|
+| `memory_forbid_path` | `MemoryStore().add_forbidden_path(path)` | visible (adds a restriction; can only make things safer) |
+| `memory_set_naming_style` | `MemoryStore().set_naming_style(value)` | visible (no security implication) |
+| `memory_unset_naming_style` | `MemoryStore().clear_naming_style()` | visible (resets to default) |
+| `memory_unforbid_path` | `MemoryStore().remove_forbidden_path(path)` | **HIDDEN** — see "Dangerous tools" below |
+
+#### Dangerous tools — hidden by default
+
+`memory_unforbid_path` removes a user-set safety boundary. To prevent
+a buggy/hostile MCP client from undoing the user's `forbidden_paths`
+and then executing against them, this tool is hidden from the MCP
+tool list unless explicitly enabled:
+
+```jsonc
+// .mcp.json
+{
+  "mcpServers": {
+    "localflow": {
+      "command": "...",
+      "args": [...],
+      "env": {
+        "LOCALFLOW_MCP_ALLOW_DANGEROUS": "1"
+      }
+    }
+  }
+}
+```
+
+The CLI `localflow memory unforbid` works regardless of this flag —
+the local user already has shell access. The gate only constrains
+the MCP surface.
 
 ## Typical client workflow
 
 1. `localflow:inspect_workspace(path=…)` — see what's there.
 2. `localflow:create_plan(workspace=…, goal="…", skill="folder_organizer")` — get a `task_id`.
-3. `localflow:dry_run(task_id=…)` — preview the markdown.
-4. `localflow:execute_plan(task_id=…, approved=true)` — commit. Verifier runs automatically.
+3. `localflow:dry_run(task_id=…)` — preview the markdown AND mint an
+   `approval_token` (10-min TTL, single-use, drift-sensitive).
+4. `localflow:execute_plan(task_id=…, approval_token=<token>)` — commit.
+   Verifier runs automatically. The token is consumed on success — a
+   second `execute_plan` with the same token will fail.
 5. `localflow:rollback_run(task_id=…)` — undo if anything looks wrong.
+
+If `plan.json` or `dry_run.md` is modified between steps 3 and 4 (e.g.,
+re-planning), the token becomes invalid — call `dry_run` again to
+issue a fresh one.
 
 ## Safety contracts
 
@@ -89,11 +122,14 @@ appear under the `localflow:` namespace.
    existing `control_loop.*` function or `MemoryStore` method. The
    kernel's safety primitives (workspace containment, `forbidden_paths`,
    `forbidden_actions`, dry-run, verify, rollback) are inherited unchanged.
-2. **No interactive prompts.** `execute_plan` requires `approved: true`
-   as an explicit argument — matching the CLI's `--yes` flag.
-3. **Stdio purity.** stdout carries only JSON-RPC frames; all logs and
+2. **Token-bound execute.** `execute_plan` requires an `approval_token`
+   minted by a prior `dry_run` — defends against MCP clients skipping
+   the dry-run inspection step. See [SECURITY.md](SECURITY.md#approval-tokens).
+3. **Dangerous tools opt-in.** `memory_unforbid_path` is hidden from
+   the tool list unless `LOCALFLOW_MCP_ALLOW_DANGEROUS=1`.
+4. **Stdio purity.** stdout carries only JSON-RPC frames; all logs and
    incidental output go to stderr.
-4. **Errors are values, not exceptions.** A failing tool call returns
+5. **Errors are values, not exceptions.** A failing tool call returns
    `{"error": "..."}` as a JSON payload — the protocol stays healthy.
 
 ## Caveats

@@ -113,6 +113,19 @@ localflow tools            # 15 callable tools by category, with "used-by"
 
 Full layer-by-layer detail in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+## Security model (read before extending)
+
+LocalFlow's safety machinery (workspace containment, `forbidden_paths`,
+dry-run, approval tokens, rollback, verifier, audit) defends against
+plans that **the kernel sees**. **External skills are TRUSTED Python
+code**: once loaded, an external skill can `import os; os.unlink(...)`
+and bypass every primitive listed below.
+
+Treat external skill loading as you would `pip install` from an
+unknown source. See [docs/SECURITY.md](docs/SECURITY.md) for the full
+threat model, MCP approval-token contract, and the
+`LOCALFLOW_MCP_ALLOW_DANGEROUS` flag.
+
 ## Design principles (the 8 iron rules)
 
 1. **The model does not execute side effects** — it only emits `TaskSpec` / `ActionPlan` / `Action` / `RepairSuggestion`.

@@ -38,8 +38,9 @@ from typing import Any, Callable
 from app.harness import control_loop
 from app.harness.audit import AuditLogger
 from app.harness.rollback import Rollback
-from app.memory import MemoryStore
 from app.mcp._serialize import to_jsonable
+from app.mcp.approval import ApprovalError, mint_token, validate_and_consume
+from app.memory import MemoryStore
 from app.skills import get_default_registry, get_load_findings
 from app.storage.run_store import RunStore, localflow_home
 from app.tools import get_default_tool_registry
@@ -51,6 +52,33 @@ class ToolDef:
     description: str
     input_schema: dict[str, Any]
     handler: Callable[[dict[str, Any]], Any]
+    # Phase 7 / Issue 3 fix — `dangerous=True` tools are NOT advertised
+    # in the MCP tool list by default. The user can opt them in by
+    # setting LOCALFLOW_MCP_ALLOW_DANGEROUS=1 in the server's env.
+    # The handler is still importable (CLI uses some of these directly),
+    # only the MCP exposure is gated.
+    dangerous: bool = False
+
+
+# Env var name documented in docs/MCP.md and in the error message
+# returned when a dangerous tool is unavailable.
+DANGEROUS_ENV = "LOCALFLOW_MCP_ALLOW_DANGEROUS"
+
+
+def _dangerous_enabled() -> bool:
+    """Read the gate env var with the usual truthy semantics."""
+    import os
+
+    raw = os.environ.get(DANGEROUS_ENV, "")
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def visible_tools() -> list["ToolDef"]:
+    """Return only the tools the MCP server should advertise to clients
+    in the current environment. Used by :mod:`app.mcp.server`."""
+    if _dangerous_enabled():
+        return list(TOOLS)
+    return [t for t in TOOLS if not t.dangerous]
 
 
 # --------------------------------------------------------------------- helpers
@@ -295,7 +323,13 @@ def handle_create_plan(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def handle_dry_run(args: dict[str, Any]) -> dict[str, Any]:
-    """Render the dry-run markdown for an existing task."""
+    """Render the dry-run markdown AND mint a one-shot approval token.
+
+    The token (10-minute TTL, bound to plan + dry-run + workspace) is
+    what ``execute_plan`` requires — there is no longer a way to
+    execute via MCP without going through this step. See
+    :mod:`app.mcp.approval` for the rationale and contract.
+    """
     task_id = _require(args, "task_id", str)
     store = RunStore(task_id=task_id)
     if not store.exists(store.TASK_JSON):
@@ -304,31 +338,46 @@ def handle_dry_run(args: dict[str, Any]) -> dict[str, Any]:
     plan = store.load_plan()
     assessment = control_loop.run_risk_check(task, plan)
     md = control_loop.run_dry_run(task, plan, assessment, store)
+    # Mint AFTER dry-run files exist on disk (mint reads them to hash).
+    token = mint_token(store, workspace_root=task.workspace_root)
     return {
         "task_id": task_id,
         "markdown": md,
         "dry_run_path": str(store.dry_run_path),
         "risk_level": assessment.risk_level.value,
+        "approval_token": token.token,
+        "approval_expires_at": token.expires_at,
     }
 
 
 def handle_execute_plan(args: dict[str, Any]) -> dict[str, Any]:
-    """Execute a planned task. ``approved`` MUST be explicitly true.
+    """Execute a planned task. Requires a valid ``approval_token`` minted
+    by a prior ``dry_run`` call.
 
-    Mirrors the CLI's ``execute --yes`` semantics. After executing, the
-    verifier runs automatically (matches the CLI sequence).
+    Token semantics (see :mod:`app.mcp.approval`):
+      * 10-minute TTL from when dry_run minted it
+      * One-shot (consumed on success, can't be reused)
+      * Bound to the exact plan + dry_run + workspace at mint time —
+        any drift invalidates it
+
+    This is intentionally stricter than the CLI's ``execute --yes``,
+    because CLI has a human at the keyboard while MCP has an external
+    process passing arguments.
     """
     task_id = _require(args, "task_id", str)
-    approved = bool(args.get("approved", False))
-    if not approved:
-        raise ValueError(
-            "execute_plan requires approved=true; "
-            "inspect dry_run first and pass approved=true to proceed"
-        )
+    approval_token = _require(args, "approval_token", str)
     store = RunStore(task_id=task_id)
     if not store.exists(store.TASK_JSON):
         raise ValueError(f"unknown task_id: {task_id!r}")
     task = store.load_task()
+
+    # Validate + consume token BEFORE doing any harness work. If the
+    # token is bad, no policy_guard check, no audit log spam.
+    try:
+        validate_and_consume(store, approval_token, workspace_root=task.workspace_root)
+    except ApprovalError as exc:
+        raise ValueError(f"approval token rejected: {exc}") from exc
+
     plan = store.load_plan()
     snapshot = store.load_workspace()
     assessment = control_loop.run_risk_check(task, plan)
@@ -520,9 +569,11 @@ TOOLS: list[ToolDef] = [
     ToolDef(
         name="dry_run",
         description=(
-            "Render the dry-run markdown for an existing planned task. "
+            "Render the dry-run markdown for an existing planned task "
+            "AND mint a one-shot approval_token bound to the plan + "
+            "dry-run + workspace. The token is required by execute_plan. "
             "Read-only with respect to the workspace (writes only to "
-            "the run's dry_run.md artifact for record-keeping)."
+            "the run's dry_run.md + approval_token.json artifacts)."
         ),
         input_schema={
             "type": "object",
@@ -534,20 +585,26 @@ TOOLS: list[ToolDef] = [
     ToolDef(
         name="execute_plan",
         description=(
-            "Execute a planned task. Requires approved=true (matches CLI "
-            "--yes). Inspect dry_run first. Verifier runs automatically "
-            "after execute. Returns success + counts + verifier outcome."
+            "Execute a planned task. Requires an approval_token returned "
+            "by a prior dry_run call. Token has 10-minute TTL, is "
+            "single-use, and is bound to the exact plan + dry_run + "
+            "workspace state — any drift invalidates it. Verifier runs "
+            "automatically after execute. Returns success + counts + "
+            "verifier outcome."
         ),
         input_schema={
             "type": "object",
             "properties": {
                 "task_id": {"type": "string"},
-                "approved": {
-                    "type": "boolean",
-                    "description": "Must be true. Explicit consent that you've inspected the dry-run and accept every action.",
+                "approval_token": {
+                    "type": "string",
+                    "description": (
+                        "The token string returned by the most recent dry_run "
+                        "call for this task. Single-use, expires in 10 min."
+                    ),
                 },
             },
-            "required": ["task_id", "approved"],
+            "required": ["task_id", "approval_token"],
         },
         handler=handle_execute_plan,
     ),
@@ -580,13 +637,21 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="memory_unforbid_path",
-        description="Remove a path from forbidden_paths.",
+        description=(
+            "Remove a path from forbidden_paths. **Dangerous** — this "
+            "weakens a user-set safety boundary, so it is NOT exposed "
+            "over MCP by default. To enable, set "
+            "LOCALFLOW_MCP_ALLOW_DANGEROUS=1 in the server's environment. "
+            "The CLI ``localflow memory unforbid`` is always available "
+            "for the local user."
+        ),
         input_schema={
             "type": "object",
             "properties": {"path": {"type": "string"}},
             "required": ["path"],
         },
         handler=handle_memory_unforbid_path,
+        dangerous=True,
     ),
     ToolDef(
         name="memory_set_naming_style",
@@ -617,7 +682,14 @@ TOOLS: list[ToolDef] = [
 
 
 def get_tool(name: str) -> ToolDef | None:
-    for t in TOOLS:
+    """Look up a tool by name from the **currently visible** set.
+
+    Dangerous tools (e.g. memory_unforbid_path) are hidden when
+    LOCALFLOW_MCP_ALLOW_DANGEROUS is not set — they look like unknown
+    tools to MCP clients. Tests and direct CLI users can still reach
+    them via the handler functions directly.
+    """
+    for t in visible_tools():
         if t.name == name:
             return t
     return None

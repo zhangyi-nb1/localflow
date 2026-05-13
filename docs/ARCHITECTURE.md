@@ -201,6 +201,31 @@ tails it.
 add one consumer site. The framework (load, save, atomic write, audit)
 is already there.
 
+## Security caveats
+
+The architecture above describes what the kernel enforces for plans
+**it gets to see**. Crucial caveat for Layer 2:
+
+> **External skills are trusted Python code.** Phase 4.1's filesystem
+> loader does a full `importlib` execution — once a skill is loaded,
+> its code can `import os; os.unlink(...)` and bypass every primitive
+> in Layers 3–5. The Tool Registry validates *declared* dependencies
+> but does not prevent arbitrary imports.
+
+The Phase 4.3 contract test confirms a skill is *compatible* with the
+lifecycle. It does **not** confirm the skill is *safe*. Same trust
+level as a `pip install` from the same source.
+
+For MCP-driven flows (Layer 1 right), Phase 7 added:
+- **Approval tokens** — `execute_plan` requires a token minted by
+  `dry_run`. 10-min TTL, one-shot, drift-sensitive. See
+  [app/mcp/approval.py](../app/mcp/approval.py).
+- **Dangerous-tool gating** — `memory_unforbid_path` (the only tool
+  that *weakens* a safety boundary) is hidden from the MCP tool list
+  unless `LOCALFLOW_MCP_ALLOW_DANGEROUS=1` is set in the server's env.
+
+Full threat model + mitigations in [docs/SECURITY.md](SECURITY.md).
+
 ## §10.7 ledger — kernel touches per phase
 
 Project rule: adding a new Skill / Tool / Memory category should NOT

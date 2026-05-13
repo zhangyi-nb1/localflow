@@ -19,7 +19,6 @@ import logging
 import sys
 from typing import Any
 
-
 # Send any logging that happens during a tool call to stderr — never to
 # stdout — so JSON-RPC framing on stdout stays uncorrupted.
 logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
@@ -40,19 +39,21 @@ async def run_mcp_server() -> None:
     from mcp.server.stdio import stdio_server
     from mcp.types import TextContent, Tool
 
-    from app.mcp.tools import TOOLS, get_tool
+    from app.mcp.tools import get_tool, visible_tools
 
     server: Server = Server("localflow")
 
     @server.list_tools()
     async def _list_tools() -> list[Tool]:
+        # Phase 7 / Issue 3: dangerous tools (memory_unforbid_path) are
+        # hidden unless LOCALFLOW_MCP_ALLOW_DANGEROUS=1.
         return [
             Tool(
                 name=t.name,
                 description=t.description,
                 inputSchema=t.input_schema,
             )
-            for t in TOOLS
+            for t in visible_tools()
         ]
 
     @server.call_tool()

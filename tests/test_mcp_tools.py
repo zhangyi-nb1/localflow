@@ -69,7 +69,7 @@ def test_all_tools_registered() -> None:
     assert names == expected
 
 
-def test_get_tool_returns_none_for_unknown() -> None:
+def test_get_tool_returns_none_for_unknown(isolated_home: Path) -> None:
     assert get_tool("nonexistent") is None
 
 
@@ -146,7 +146,11 @@ def test_create_plan_dry_run_execute_rollback_roundtrip(
     """The big one: create_plan → dry_run → execute_plan → rollback_run
     must all work in sequence, with workspace state restored at the
     end. This is the single integration assertion that proves MCP can
-    drive a real LocalFlow lifecycle."""
+    drive a real LocalFlow lifecycle.
+
+    Phase 7 / Issue 2 fix: execute_plan now requires an approval_token
+    minted by dry_run (not just `approved=true`).
+    """
     create = get_tool("create_plan").handler({
         "workspace": str(mini_workspace),
         "goal": "organize my files",
@@ -160,14 +164,20 @@ def test_create_plan_dry_run_execute_rollback_roundtrip(
     dry = get_tool("dry_run").handler({"task_id": task_id})
     assert dry["task_id"] == task_id
     assert "markdown" in dry and len(dry["markdown"]) > 0
+    # Phase 7 / Issue 2: dry_run must now mint an approval token
+    assert "approval_token" in dry
+    assert "approval_expires_at" in dry
+    token = dry["approval_token"]
+    assert isinstance(token, str) and len(token) >= 32
 
-    # Execute requires explicit approval; missing approval → error.
-    with pytest.raises(ValueError, match="approved=true"):
+    # Execute without token → rejected.
+    with pytest.raises(ValueError, match="missing required argument: 'approval_token'"):
         get_tool("execute_plan").handler({"task_id": task_id})
 
+    # Execute with token → succeeds.
     exec_result = get_tool("execute_plan").handler({
         "task_id": task_id,
-        "approved": True,
+        "approval_token": token,
     })
     assert exec_result["success"] is True
     assert exec_result["verification_passed"] is True
@@ -177,6 +187,13 @@ def test_create_plan_dry_run_execute_rollback_roundtrip(
     # After execute, the files have been categorized
     categorized = list(mini_workspace.rglob("*.pdf"))
     assert any(p.parent.name == "papers" for p in categorized)
+
+    # Token is one-shot — second execute with same token must fail.
+    with pytest.raises(ValueError, match="no approval token found"):
+        get_tool("execute_plan").handler({
+            "task_id": task_id,
+            "approval_token": token,
+        })
 
     # Rollback restores them
     rb = get_tool("rollback_run").handler({"task_id": task_id})
@@ -247,7 +264,11 @@ def test_memory_forbid_idempotent(isolated_home: Path) -> None:
     assert r2["changed"] is False
 
 
-def test_memory_unforbid_writes_through(isolated_home: Path) -> None:
+def test_memory_unforbid_writes_through(
+    isolated_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """unforbid is dangerous by default — opt in via env var to test it."""
+    monkeypatch.setenv("LOCALFLOW_MCP_ALLOW_DANGEROUS", "1")
     get_tool("memory_forbid_path").handler({"path": "tmp"})
     res = get_tool("memory_unforbid_path").handler({"path": "tmp"})
     assert res["changed"] is True
@@ -282,6 +303,73 @@ def test_memory_audit_records_mcp_mutations(isolated_home: Path) -> None:
     events = [e["event"] for e in audit["entries"]]
     assert "memory.forbid" in events
     assert "memory.set" in events
+
+
+# --------------------------------------------------------------- dangerous tool gating (Issue 3 fix)
+
+
+def test_memory_unforbid_is_hidden_by_default(
+    isolated_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`memory_unforbid_path` REMOVES a user-set safety boundary, so it
+    must NOT be advertised by the MCP server unless explicitly opted in.
+    A buggy MCP client that calls it before our env flag is set should
+    see it as an unknown tool, not silently weaken the user's settings."""
+    from app.mcp.tools import visible_tools
+
+    monkeypatch.delenv("LOCALFLOW_MCP_ALLOW_DANGEROUS", raising=False)
+    names = {t.name for t in visible_tools()}
+    assert "memory_unforbid_path" not in names
+    # Lookup via get_tool returns None too (treated as unknown).
+    assert get_tool("memory_unforbid_path") is None
+
+
+def test_memory_unforbid_visible_when_opted_in(
+    isolated_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.mcp.tools import visible_tools
+
+    monkeypatch.setenv("LOCALFLOW_MCP_ALLOW_DANGEROUS", "1")
+    names = {t.name for t in visible_tools()}
+    assert "memory_unforbid_path" in names
+    assert get_tool("memory_unforbid_path") is not None
+
+
+def test_safe_tools_always_visible(
+    isolated_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Read-only + adds-restriction tools must remain visible
+    regardless of the env flag."""
+    from app.mcp.tools import visible_tools
+
+    monkeypatch.delenv("LOCALFLOW_MCP_ALLOW_DANGEROUS", raising=False)
+    names = {t.name for t in visible_tools()}
+    safe = {
+        "inspect_workspace",
+        "list_skills",
+        "list_runs",
+        "read_memory_prefs",
+        "create_plan",
+        "dry_run",
+        "execute_plan",
+        "rollback_run",
+        "memory_forbid_path",
+        "memory_set_naming_style",
+    }
+    assert safe.issubset(names)
+
+
+def test_dangerous_env_flag_truthy_values(
+    isolated_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.mcp.tools import _dangerous_enabled
+
+    for value in ("1", "true", "True", "yes", "on", "TRUE"):
+        monkeypatch.setenv("LOCALFLOW_MCP_ALLOW_DANGEROUS", value)
+        assert _dangerous_enabled(), f"value {value!r} should enable"
+    for value in ("0", "false", "no", "off", "", "anything-else"):
+        monkeypatch.setenv("LOCALFLOW_MCP_ALLOW_DANGEROUS", value)
+        assert not _dangerous_enabled(), f"value {value!r} should NOT enable"
 
 
 # --------------------------------------------------------------- serialization
@@ -335,3 +423,133 @@ def test_create_plan_inherits_forbidden_paths_from_memory(
         "forbidden_paths" in w and "secrets" in w
         for w in create["warnings"]
     )
+
+
+# --------------------------------------------------------------- approval tokens
+#
+# Phase 7 / Issue 2 fix — `execute_plan` requires an `approval_token`
+# minted by a prior `dry_run` call. Tests below pin the contract:
+#   1. dry_run mints token; execute consumes it
+#   2. no token → reject
+#   3. wrong token → reject
+#   4. expired token → reject
+#   5. plan modification after token mint → reject (hash drift)
+#   6. workspace mismatch → reject (defense in depth)
+
+
+def _plan_with_token(workspace: Path) -> tuple[str, str]:
+    """Helper: create_plan + dry_run, return (task_id, token)."""
+    create = get_tool("create_plan").handler({
+        "workspace": str(workspace),
+        "goal": "organize",
+        "skill": "folder_organizer",
+    })
+    dry = get_tool("dry_run").handler({"task_id": create["task_id"]})
+    return create["task_id"], dry["approval_token"]
+
+
+def test_execute_plan_requires_token(isolated_home: Path, mini_workspace: Path) -> None:
+    task_id, _ = _plan_with_token(mini_workspace)
+    with pytest.raises(ValueError, match="missing required argument"):
+        get_tool("execute_plan").handler({"task_id": task_id})
+
+
+def test_execute_plan_rejects_wrong_token(
+    isolated_home: Path, mini_workspace: Path
+) -> None:
+    task_id, _ = _plan_with_token(mini_workspace)
+    with pytest.raises(ValueError, match="approval token rejected"):
+        get_tool("execute_plan").handler({
+            "task_id": task_id,
+            "approval_token": "not-the-real-token-just-some-junk-string",
+        })
+
+
+def test_execute_plan_rejects_token_after_plan_modification(
+    isolated_home: Path, mini_workspace: Path
+) -> None:
+    """If the plan.json file is modified after the token is minted
+    (e.g., user re-planned), the token must become invalid — otherwise
+    we lose the binding between what the user dry-ran and what runs."""
+    from app.storage.run_store import RunStore
+
+    task_id, token = _plan_with_token(mini_workspace)
+    # Tamper with plan.json — overwrite with a trivially modified copy.
+    store = RunStore(task_id=task_id)
+    plan = store.load_plan()
+    # Modify the summary; everything else stays.
+    plan_dict = plan.model_dump(mode="json")
+    plan_dict["summary"] = plan_dict["summary"] + " (modified)"
+    import json
+    store.plan_path.write_text(
+        json.dumps(plan_dict, indent=2), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="plan.json has changed"):
+        get_tool("execute_plan").handler({
+            "task_id": task_id,
+            "approval_token": token,
+        })
+
+
+def test_execute_plan_rejects_expired_token(
+    isolated_home: Path, mini_workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fast-forward time past the 10-minute TTL."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.mcp import approval
+
+    task_id, token = _plan_with_token(mini_workspace)
+
+    # Patch _utc_now to return a time 11 minutes in the future.
+    real_now = datetime.now(timezone.utc)
+    monkeypatch.setattr(
+        approval, "_utc_now", lambda: real_now + timedelta(minutes=11)
+    )
+    with pytest.raises(ValueError, match="expired"):
+        get_tool("execute_plan").handler({
+            "task_id": task_id,
+            "approval_token": token,
+        })
+
+
+def test_dry_run_minted_token_includes_expiry(
+    isolated_home: Path, mini_workspace: Path
+) -> None:
+    """The dry_run response must include both the token and its
+    expiry, so the client can decide if it's stale before retrying."""
+    task_id, _ = _plan_with_token(mini_workspace)
+    dry = get_tool("dry_run").handler({"task_id": task_id})
+    assert "approval_token" in dry
+    assert "approval_expires_at" in dry
+    # Expiry must be a parseable ISO string in the future.
+    from datetime import datetime
+    expires = datetime.fromisoformat(dry["approval_expires_at"])
+    from datetime import timezone
+    assert expires > datetime.now(timezone.utc)
+
+
+def test_dry_run_remints_token_when_called_again(
+    isolated_home: Path, mini_workspace: Path
+) -> None:
+    """Calling dry_run twice should issue a fresh token; the old one
+    becomes invalid (file overwritten)."""
+    task_id, first_token = _plan_with_token(mini_workspace)
+    second_dry = get_tool("dry_run").handler({"task_id": task_id})
+    second_token = second_dry["approval_token"]
+    assert first_token != second_token
+
+    # First token now points at a file containing the second token's data.
+    with pytest.raises(ValueError, match="approval token rejected"):
+        get_tool("execute_plan").handler({
+            "task_id": task_id,
+            "approval_token": first_token,
+        })
+
+    # Second token works.
+    result = get_tool("execute_plan").handler({
+        "task_id": task_id,
+        "approval_token": second_token,
+    })
+    assert result["success"] is True
