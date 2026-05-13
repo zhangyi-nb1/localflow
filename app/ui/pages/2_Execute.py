@@ -144,10 +144,15 @@ def main() -> None:
         )
 
         if verification.passed:
-            st.success(
-                f"✅ Task `{task_id}` complete. Run is recorded in "
-                f"`{store.run_dir}`. To undo, go to the **↺ Rollback** page."
-            )
+            st.success(f"✅ Task `{task_id}` complete. Run recorded in `{store.run_dir}`.")
+            col_btn, _ = st.columns([1, 3])
+            if col_btn.button(
+                "↺ Continue to Rollback →",
+                type="primary",
+                key="goto_rollback_btn",
+            ):
+                st.switch_page("pages/3_Rollback.py")
+            st.caption("Or pick **↺ Rollback** in the left sidebar to undo.")
         else:
             st.error(
                 "❌ Verifier failed:\n\n" + "\n".join(f"- {c}" for c in verification.failed_checks)

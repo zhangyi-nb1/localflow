@@ -128,10 +128,17 @@ def main() -> None:
 
     next_steps = st.container()
     with next_steps:
-        st.success(
-            f"✅ Task `{task.task_id}` created. Head to the **🔍 Execute** "
-            f"page to dry-run and commit."
-        )
+        st.success(f"✅ Task `{task.task_id}` created.")
+        col_btn, _ = st.columns([1, 3])
+        # Big primary button that jumps to the Execute page. Streamlit's
+        # st.switch_page works outside of forms.
+        if col_btn.button(
+            "🔍 Continue to Execute →",
+            type="primary",
+            key="goto_execute_btn",
+        ):
+            st.switch_page("pages/2_Execute.py")
+        st.caption("Or pick **🔍 Execute** in the left sidebar.")
 
 
 def _maybe_show_last_plan() -> None:
@@ -177,7 +184,7 @@ def _render_plan_summary(task, plan, assessment, snapshot) -> None:
                     "reason": (a.reason[:80] + "…") if len(a.reason) > 80 else a.reason,
                 }
             )
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
     else:
         st.info("Plan has 0 actions (workspace already organized?).")
 

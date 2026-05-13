@@ -130,7 +130,7 @@ def _render_naming_style(store: MemoryStore, prefs) -> None:
             for s in styles:
                 row[s] = apply_naming_style(ex, s)
             rows.append(row)
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
 
 def _render_audit(store: MemoryStore) -> None:
@@ -159,7 +159,7 @@ def _render_audit(store: MemoryStore) -> None:
                 "after": _stringify(e.get("after")),
             }
         )
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
 
 def _stringify(value) -> str:

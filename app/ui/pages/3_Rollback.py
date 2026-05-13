@@ -70,7 +70,7 @@ def main() -> None:
                 else (drift[:120] + ("…" if len(drift) > 120 else "")),
             }
         )
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
     st.divider()
     st.subheader("Run rollback")
