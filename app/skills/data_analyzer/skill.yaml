@@ -1,0 +1,31 @@
+name: data_analyzer
+version: 0.1.0
+description: |
+  Phase 3.3 — typed AnalysisSpec-driven targeted data analysis.
+
+  Each tabular file (or Excel sheet) gets ONE deep analysis: the rule
+  planner picks a sensible default (numeric column with highest std →
+  groupby/aggregation against a categorical column, plus a chart);
+  Phase 3.3b will let an LLM Planner emit the AnalysisSpec from a
+  natural-language goal.
+
+  Outputs a single `analysis_report.md` in the workspace + N chart PNGs
+  under `analysis_charts/`. Architecturally identical to data_reporter
+  but with a NARROW + DEEP focus rather than BROAD + SHALLOW summary.
+
+capabilities:
+  - read_csv
+  - read_xlsx
+  - run_typed_analysis_spec
+  - render_chart
+  - synthesize_markdown_report
+
+allowed_actions:
+  - index
+
+requires_approval:
+  - index
+
+supports_dry_run: true
+supports_rollback: true
+supports_verify: true

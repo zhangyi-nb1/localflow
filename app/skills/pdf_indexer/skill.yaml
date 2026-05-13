@@ -1,0 +1,29 @@
+name: pdf_indexer
+version: 0.1.0
+description: |
+  Scan PDFs in a workspace and emit a single Markdown index file that
+  lists each PDF with a heuristic title and 1-line summary extracted
+  from the PDF's text preview (populated by Phase 2.1 pdf_ops).
+
+  Design reference: Open Deep Research's research-planner pattern —
+  for each source: extract → summarize → cite → synthesize one report.
+
+capabilities:
+  - scan_pdfs
+  - extract_title_from_preview
+  - synthesize_index
+  - track_provenance
+
+allowed_actions:
+  - index
+
+requires_approval:
+  - index    # index files can be large; user should see content first
+
+supports_dry_run: true
+supports_rollback: true
+supports_verify: true
+
+# Output target — relative path inside workspace root. Future versions
+# may make this configurable via task.constraints.
+default_output: pdf_index.md

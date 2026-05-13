@@ -1,0 +1,43 @@
+name: folder_organizer
+version: 0.1.0
+description: Organize a local folder by file category with dry-run, rollback, and verification.
+
+capabilities:
+  - scan_files
+  - classify_files
+  - propose_moves
+  - generate_index
+  - detect_duplicate_candidates
+
+allowed_actions:
+  - mkdir
+  - move
+  - rename
+  - copy
+  - index
+
+requires_approval:
+  - mkdir
+  - move
+  - rename
+  - copy
+
+supports_dry_run: true
+supports_rollback: true
+supports_verify: true
+
+# Phase 0 category map: file_type label (from tools/file_scan.classify)
+# -> destination subdirectory inside the workspace root.
+category_map:
+  pdf: papers
+  word: documents
+  excel: spreadsheets
+  tabular: data
+  structured: data
+  text: notes
+  image: images
+  audio: audio
+  video: video
+  archive: archives
+  code: code
+  other: misc

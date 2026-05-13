@@ -1,0 +1,31 @@
+name: data_reporter
+version: 0.1.0
+description: |
+  Scan tabular files (.csv / .tsv) in a workspace and synthesize a single
+  Markdown report describing each one's schema and basic statistics
+  (row count, column dtypes, null counts, numeric min/max/mean/std,
+  unique counts, sample rows).
+
+  Design reference: TaskWeaver's "schema check → summary" stage —
+  but LocalFlow never executes LLM-generated code. All pandas operations
+  are pre-defined in app/tools/data_ops.py; the model contributes nothing
+  at runtime in Phase 3.1.
+
+capabilities:
+  - scan_tabular_files
+  - extract_schema
+  - compute_basic_stats
+  - synthesize_data_report
+  - track_provenance
+
+allowed_actions:
+  - index
+
+requires_approval:
+  - index
+
+supports_dry_run: true
+supports_rollback: true
+supports_verify: true
+
+default_output: data_report.md

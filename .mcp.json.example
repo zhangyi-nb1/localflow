@@ -1,0 +1,13 @@
+{
+  "_README": "Copy this file to .mcp.json and replace the absolute paths with your local clone. .mcp.json is git-ignored because the paths are machine-specific. After editing, reload your MCP client (Claude Code: Ctrl+Shift+P → Reload Window) so it picks up the new config.",
+  "mcpServers": {
+    "localflow": {
+      "command": "C:\\path\\to\\localflow\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "app.cli", "mcp-serve"],
+      "cwd": "C:\\path\\to\\localflow",
+      "env": {
+        "LOCALFLOW_HOME": "C:\\path\\to\\localflow\\.localflow"
+      }
+    }
+  }
+}

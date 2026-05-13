@@ -1,0 +1,346 @@
+# LocalFlow — Phase-by-Phase Changelog
+
+Source of truth for what shipped, when, and what touched the kernel.
+Each phase has been delivered in a focused single-sitting session and
+verified with both unit tests and real-data implementation. The §10.7
+ledger (kernel-touch count) is tracked explicitly — a project rule is
+"adding a new Skill / Tool / Memory category should NOT require kernel
+modifications". Phases 1-4.3 + 6.1 = zero kernel touches. Phase 5 is the
+documented exception (~25 lines for `forbidden_paths`, a universal
+safety primitive that *must* live kernel-side to be plug-in robust).
+
+---
+
+## Phase 0 — Harness skeleton (no LLM)
+
+**Goal**: prove the harness is usable before plugging in an LLM. Build
+the inspect → plan → dry-run → approve → execute → verify → rollback
+control loop with a rule-based folder organizer.
+
+**Shipped**:
+- Pydantic schemas for `TaskSpec` / `ActionPlan` / `Action` / `RollbackManifest` / `VerificationResult` / `WorkspaceSnapshot`
+- `policy_guard` (action-type allow-list, path containment)
+- `Executor` with per-action defense-in-depth re-check, JsonlLogger audit
+- `Verifier` (rules-only, independent of any LLM)
+- `Rollback` with backup restore
+- CLI: `inspect / plan / dry-run / execute / verify / rollback / status`
+- `folder_organizer` skill (rule planner, classifies by extension)
+
+**Files**: entire `app/harness/`, `app/schemas/`, `app/storage/`, `app/tools/file_*`, `app/skills/folder_organizer/`
+
+**Tests added**: ~53 (foundation)
+
+**Kernel touch**: this *is* the kernel — baseline.
+
+---
+
+## Phase 1 — LLM planner
+
+**Goal**: let an LLM emit a typed `ActionPlan` via strict tool call.
+Critical: model must NEVER directly write to disk — only emits the
+plan; harness performs IO.
+
+**Shipped**:
+- `app/agent/`: `OpenAIClient`, `AnthropicClient`, strict tool-call
+  schema, `tool_result` repair loop on Pydantic validation failure
+- SSE streaming output with Rich Live in CLI (long planning calls
+  stream tokens in real time)
+- Default provider = OpenAI (`gpt-5.4-mini` via subscription-relay
+  proxy, see project memory `project_localflow.md` for proxy details)
+
+**Files**: `app/agent/`, `app/cli.py` (new `--planner llm` path)
+
+**Tests added**: ~10
+
+**Kernel touch**: NO — agent layer sits *above* the harness, only
+produces `ActionPlan` to feed in.
+
+---
+
+## Phase 2.1 + 2.2 — Content awareness
+
+**Goal**: let the planner see the *contents* of files, not just names.
+
+**Shipped**:
+- `app/tools/pdf_ops.py`: pypdf-based text preview (graceful return
+  `None` on encoded / scanned / broken PDFs)
+- `app/tools/text_ops.py`: first ~2000 chars of text/code/structured/
+  tabular files, with NUL-byte binary detection
+- `file_scan.scan_workspace(compute_preview=True)` injects previews
+  into `FileMeta.text_preview`
+- `agent/prompts.py` renders previews into the LLM system prompt;
+  prompts updated to encourage semantic rename / classification
+
+**Files**: `app/tools/pdf_ops.py`, `app/tools/text_ops.py`,
+`app/tools/file_scan.py` (extended), `app/agent/prompts.py` (extended)
+
+**Tests added**: 14
+
+**Kernel touch**: NO — new module under `app/tools/`, used by
+existing scan flow.
+
+---
+
+## Phase 2.3 — Skill ABC + plug-in pattern + `pdf_indexer`
+
+**Goal**: turn LocalFlow from "single-purpose tool" into a Skill
+plug-in framework. Each task feature becomes a `Skill` subclass.
+
+**Shipped**:
+- `Skill` ABC with `manifest / plan / plan_with_llm / validate /
+  report` lifecycle ([app/skills/_base.py](../app/skills/_base.py))
+- `SkillRegistry` — process-wide skill catalog
+- `pdf_indexer` skill: scan PDFs → extract titles → synthesize a
+  single `pdf_index.md` with provenance metadata (Open Deep
+  Research-style)
+- `folder_organizer` retrofitted as a `Skill` subclass
+- CLI fully switched to registry dispatch (`--skill <name>`)
+
+**Files**: `app/skills/_base.py`, `app/skills/folder_organizer/skill.py`,
+`app/skills/pdf_indexer/`
+
+**Tests added**: 20
+
+**Kernel touch**: NO — Skill ABC lives in `app/skills/`, the kernel
+only knows about the typed return shapes.
+
+---
+
+## Phase 3.1–3.3 — DataOps (`data_reporter` + `data_analyzer`)
+
+**Goal**: read CSV/XLSX, produce report + analysis, render charts.
+Without ever giving the LLM raw `exec()` capability.
+
+**Shipped**:
+- **3.1**: `data_reporter` skill emits `data_report.md` with per-table
+  schema + numeric stats + sample rows (rule-based, no LLM)
+- **3.1c**: `RESTORE_FROM_BACKUP` rollback op for "overwrite original
+  with backup on undo"
+- **3.2**: matplotlib chart generation (`chart_ops.histogram_png` /
+  `bar_png`), binary action payload via `metadata.binary_content_b64`,
+  `_record_implicit_parents` tracks `mkdir(parents=True)` for rollback
+- **3.3a**: typed `AnalysisSpec` Pydantic schema (filter → groupby →
+  sort → limit → chart). `data_analysis.execute_analysis` is a pure
+  function: spec in, `AnalysisResult` out, NO eval/exec
+- **3.3b**: LLM planner outputs `AnalysisSpec` (not pandas code) via
+  strict tool call, harness's engine runs it. **Iron rule ⑤ kept** —
+  the model still doesn't write code.
+
+**Files**: `app/tools/data_ops.py`, `app/tools/chart_ops.py`,
+`app/tools/data_analysis.py`, `app/schemas/analysis.py`,
+`app/skills/data_reporter/`, `app/skills/data_analyzer/`,
+`app/agent/analysis_prompts.py`, `app/agent/analysis_planner.py`
+
+**Tests added**: ~60 (cumulative across 3.1 → 3.3b)
+
+**Kernel touch**: NO — added one helper `_record_implicit_parents` to
+the executor, **internal** to the existing `_do_index` path; no API
+change and no new safety primitives.
+
+---
+
+## Phase 4.1 — Filesystem skill discovery
+
+**Goal**: make LocalFlow a *real* plug-in framework. Drop a skill
+folder anywhere LocalFlow looks, it loads at startup.
+
+**Shipped**:
+- `app/skills/_loader.py`: `discover_and_register_external(registry,
+  dirs)` uses `importlib.util.spec_from_file_location` with hashed
+  module namespace per skill (avoids `app.skills.*` collisions). Each
+  load attempt becomes a `LoadFinding` entry — failures don't block
+  other skills.
+- Search paths (priority): `$LOCALFLOW_SKILLS_DIR` (multi-path) →
+  `<cwd>/.localflow/skills/` → `~/.localflow/skills/`
+- Name collision resolution: built-ins register first; external
+  collisions error out, logged in audit
+- `localflow skills` CLI command: registered table + search-paths +
+  full load audit
+- [examples/external_skill_example/](../examples/external_skill_example/):
+  `workspace_stats` plug-in + multi-flavor install README
+
+**Files**: `app/skills/_loader.py`, `app/cli.py` (new command),
+`examples/external_skill_example/`
+
+**Tests added**: 11
+
+**Kernel touch**: NO — loader sits in `app/skills/`, kernel unaware.
+
+**Outline §10.7 attestation**: project becomes "a framework", not "a
+tool" — users write a 50-line `Skill` subclass without touching source.
+
+---
+
+## Phase 4.2 — Tool Registry
+
+**Goal**: inventory the shared callable helpers (file_scan, pdf_ops,
+data_ops, ...) skills are allowed to use, validate `required_tools`
+declarations at register time. Composio-style.
+
+**Shipped**:
+- `app/tools/_registry.py`: `ToolSpec` (frozen dataclass: name,
+  callable_ref, module, category, description, side_effects=False),
+  `ToolRegistry` (register / get / has / list), lazy default factory
+- 15 tools registered: 11 read / 2 transform / 2 render. `file_ops.*`
+  (mutating IO) **intentionally excluded** — kernel-only, never
+  Skills' to call directly
+- `SkillManifest.required_tools: list[str] = []` (new field). When
+  `SkillRegistry.register(skill, tool_registry=...)` is called, every
+  declared name must resolve, else `SkillError`
+- `localflow tools` CLI command + new "Tools" column in
+  `localflow skills`
+
+**Files**: `app/tools/_registry.py`, `app/schemas/skill.py` (extend),
+`app/skills/_base.py` (validation hook), each built-in's `skill.py`
+(declares deps)
+
+**Tests added**: 24
+
+**Kernel touch**: NO — `app/skills/_base.py` and `app/schemas/skill.py`
+are framework, not kernel. Outline §10.7 still holds.
+
+---
+
+## Phase 4.3 — Unified Skill Contract Test Template
+
+**Goal**: every skill (built-in or external) plug-able into a single
+8-stage lifecycle test. "Does my skill work with LocalFlow?" gets a
+one-call answer.
+
+**Shipped**:
+- `app/skills/_contract.py`: `run_skill_contract(skill, *,
+  workspace_seeder, workspace_root, run_store, ...)` → `ContractReport`
+  with `StageResult[]`. 8 stages: `manifest_valid` →
+  `plan_empty_workspace` → `plan_happy_path` → `validate_accepts_own_plan`
+  → `validate_rejects_garbage` → `execute_and_verify` →
+  `rollback_restores` → `report_non_empty`. Each stage in its own
+  try/except so a failure surfaces all downstream skips with reasons.
+- All 4 built-ins parametrized through the contract; `folder_organizer`
+  finally gets dedicated E2E coverage (previously only tested
+  indirectly).
+- External skill example: [examples/external_skill_example/test_contract.py](../examples/external_skill_example/test_contract.py)
+
+**Files**: `app/skills/_contract.py`, `tests/test_skill_contracts.py`,
+`tests/test_skill_registry.py` (extended)
+
+**Tests added**: 10
+
+**Kernel touch**: NO. Contract treats `Executor` / `Verifier` /
+`Rollback` as black boxes.
+
+---
+
+## Phase 5 — Memory & personalization MVP
+
+**Goal**: persistent user preferences. Outline §14 lists 5 categories;
+this MVP ships 2 + lays the framework.
+
+**Shipped**:
+- `app/memory/`: `MemoryPreferences` (Pydantic schema with
+  `forbidden_paths: list[str]` + `naming_style: NamingStyle` +
+  `schema_version: int`), `MemoryStore` (atomic write, JSONL audit
+  log), `apply_naming_style(name, style)` (4 styles: original /
+  snake_case / kebab-case / lower)
+- `TaskSpec` schema gets `forbidden_paths: list[str] = []` +
+  `preferences: dict[str, Any] = {}` (skill-consumable bag)
+- **KERNEL TOUCH** (the only one): `policy_guard.evaluate_action` /
+  `assess_plan` / `_check_path_fields` gain `forbidden_paths` keyword
+  parameter; `Executor.__init__` adds the same. ~25 lines total,
+  fully backwards-compatible (defaults to empty tuple).
+- `folder_organizer.planner` reads
+  `task.preferences.get("naming_style", "original")` and transforms
+  filenames at line 89
+- CLI: `localflow memory list / forbid / unforbid / set / unset /
+  audit` sub-app; plan command prints "Applied preferences from
+  memory: ..." header when non-default
+
+**Files**: `app/memory/`, `app/schemas/task.py`,
+`app/harness/policy_guard.py` + `executor.py` + `control_loop.py`,
+`app/skills/folder_organizer/planner.py`, `app/cli.py`
+
+**Tests added**: 60
+
+**Kernel touch**: **YES** — the documented exception. `forbidden_paths`
+MUST be kernel-side; otherwise a forgetful Skill author could silently
+bypass a user's "never touch X" rule. Doing it skill-side would
+defeat the whole "plug-in safety" claim Phase 4 was built around.
+
+**Outline §10.7 ledger**: 11 consecutive zero-kernel phases broken
+deliberately. Phase 6.1 resumes the streak.
+
+---
+
+## Phase 6.1 — LocalFlow as MCP server
+
+**Goal**: expose existing CLI surface to external MCP clients (Claude
+Code, Claude Desktop, ...) over stdio JSON-RPC. **Zero new behavior** —
+just wrap.
+
+**Shipped**:
+- `mcp = ["mcp>=1.6,<2.0"]` optional dep
+- `app/mcp/`: `_serialize.py` (Pydantic/dataclass/Path/datetime/enum
+  → JSON-safe), `tools.py` (15 `ToolDef` + handlers), `server.py`
+  (`run_mcp_server()` boots stdio_server + Server.run; exceptions
+  become `{"error": ...}` payloads, never break protocol)
+- `localflow mcp-serve` CLI command (lazy SDK probe, graceful error
+  when uninstalled)
+- 15 MCP tools: read-only 7, state-changing 4 (create_plan / dry_run /
+  execute_plan [requires `approved: true`] / rollback_run), memory
+  mutations 4
+- `[docs/MCP.md](MCP.md)`: setup + 15-tool reference + Claude Code
+  config snippet
+
+**Files**: `app/mcp/`, `app/cli.py` (one new command),
+`pyproject.toml` (one new optional dep), `docs/MCP.md`
+
+**Tests added**: 24
+
+**Kernel touch**: NO — fully additive. **§10.7 streak resumes.**
+
+**Real-world verification**: end-to-end JSON-RPC roundtrip via
+`mcp.client.stdio.stdio_client` confirmed. `.mcp.json` wired into
+Claude Code, `list_skills` / `create_plan` / `dry_run` / `execute_plan`
+(with `approved=true`) / `rollback_run` all driven by Claude.
+**Critical safety property held**: Phase 5's `forbidden_paths` blocked
+execution through the MCP path identically to the CLI path —
+`secrets/creds.txt` never touched.
+
+---
+
+## Outline §10.7 final ledger
+
+| Phase | Kernel-touch | Notes |
+|-------|--------------|-------|
+| 0 | — | the kernel itself |
+| 1 | NO | agent layer above |
+| 2.1 + 2.2 | NO | new modules under `app/tools/` |
+| 2.3 | NO | Skill ABC + registry under `app/skills/` |
+| 3.1–3.3 | NO | `_record_implicit_parents` is internal to existing executor path, no API change |
+| 4.1 | NO | filesystem skill loader |
+| 4.2 | NO | Tool Registry |
+| 4.3 | NO | contract test template |
+| **5** | **YES (~25 lines)** | `forbidden_paths` — universal safety primitive, kernel-only by design |
+| 6.1 | NO | new package `app/mcp/`, 1 CLI command |
+
+**Score**: 1 deliberate exception across 12 deliveries. The rule held.
+
+---
+
+## Deferred (groundwork laid)
+
+- **Phase 5.x** — remaining 3 memory categories from outline §14:
+  directory structure pref / report template / common task recipes.
+  Schema already has `schema_version` for migration; pattern is
+  proven; adding each is a new field + one consumer site.
+- **Phase 6.2** — MCP **client** (reverse direction): LocalFlow calls
+  external MCP servers (community filesystem, fetch, search, ...) and
+  registers their tools into Phase 4.2 Tool Registry. Builds on the
+  `mcp>=1.6` SDK Phase 6.1 already pulled in.
+- **Phase 6.3** — WebCollect skill (HTTPS GET → workspace markdown).
+  Needs new `ActionType.FETCH` (second deliberate kernel touch),
+  domain allow-list in memory, robots.txt check, content-type
+  handling.
+- **Phase 6.x** — browser only-read (browser-use-style), external
+  service connector.
+
+Pointers to memory entries in `~/.claude/projects/.../memory/project_localflow.md` for each phase contain the full design decisions, real-data validation, and "lessons learned".

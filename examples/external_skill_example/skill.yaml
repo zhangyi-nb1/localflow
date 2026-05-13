@@ -1,0 +1,28 @@
+name: workspace_stats
+version: 0.1.0
+description: |
+  Example external skill demonstrating Phase 4.1 plugin discovery.
+
+  Generates a single `workspace_stats.md` summarizing file count by
+  category — a hello-world for the Skill plug-in API.
+
+  To install: copy this folder into one of the discovery paths
+    - `<workspace>/.localflow/skills/`
+    - `~/.localflow/skills/`
+    - or any dir listed in `$LOCALFLOW_SKILLS_DIR`
+
+  Then run `localflow skills` and it should appear with "external" tag.
+
+capabilities:
+  - scan_workspace
+  - render_markdown_report
+
+allowed_actions:
+  - index
+
+requires_approval:
+  - index
+
+supports_dry_run: true
+supports_rollback: true
+supports_verify: true
