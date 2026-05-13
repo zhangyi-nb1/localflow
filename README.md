@@ -111,11 +111,20 @@ Skills:          folder_organizer · pdf_indexer · data_reporter · data_analyz
                  + filesystem plug-in loader (Phase 4.1)
 Tool Registry:   15 declarable callable helpers, manifest-validated at register time
 Memory:          forbidden_paths (kernel-side) + naming_style (skill-side)
-MCP server:      stdio JSON-RPC, 15 tools, approval-token gated execute
-Tests:           259 passing across 5 OS × Python matrix in CI
+MCP server:      stdio JSON-RPC, 16 tools, approval-token gated execute
+UI (v0.7.0):     Streamlit browser UI, soft-sandboxed to ./sandbox/, ?unsafe=1 escape hatch
+Tests:           283 passing across 5 OS × Python matrix in CI
 ```
 
-Full per-phase changelog and `§10.7` kernel-touch ledger: [**docs/PHASES.md**](docs/PHASES.md)
+Three equivalent driver layers, same kernel:
+
+```powershell
+localflow plan ... && localflow execute --task-id ...  # 1. CLI
+localflow mcp-serve                                    # 2. MCP (Claude Code etc.)
+localflow ui-serve                                     # 3. Streamlit UI — http://127.0.0.1:8501
+```
+
+UI walkthrough: [**docs/UI.md**](docs/UI.md). Full per-phase changelog and `§10.7` kernel-touch ledger: [**docs/PHASES.md**](docs/PHASES.md)
 
 ---
 

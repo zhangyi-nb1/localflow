@@ -308,6 +308,43 @@ execution through the MCP path identically to the CLI path —
 
 ---
 
+## Phase 8.0 — Streamlit UI MVP (v0.7.0)
+
+**Goal**: replace 5-step CLI commands with a clickable browser UI.
+Outline L466/L512/L800/L1315 deferred UI until "CLI/API stable" —
+v0.6.3 satisfied that condition, so v0.7.0 ships the UI.
+
+**Shipped**:
+- `app/ui/` package: `_sandbox.py`, `_layout.py`, `main.py`, 4
+  pages (Plan / Execute / Rollback / Memory)
+- `localflow ui-serve` CLI command — defaults to `127.0.0.1:8501`,
+  graceful failure when streamlit dep missing
+- Soft sandbox: workspace dropdown only shows subdirs of `./sandbox/`
+  by default; `?unsafe=1` URL flag lifts with prominent banner
+- Approval ceremony in browser: dry-run renders, checkbox required,
+  Execute button only enabled after checkbox tick
+- Rollback page visualizes Phase 7.1 drift detection — yellow rows
+  for entries where the file changed since execute, safe-vs-force
+  buttons
+
+**Files**: `app/ui/` (new package), `app/cli.py` (one new command),
+`pyproject.toml` (one new optional dep + version bump)
+
+**Tests added**: 17 (`tests/test_ui_sandbox.py`) — sandbox boundary
+parsing, query-param truthy values, eligible-workspace listing.
+Streamlit UI itself smoke-tested via subprocess + HTTP 200 probe.
+
+**Kernel touch**: NO — `app/ui/` is a brand-new driver layer that
+reuses `control_loop.*` / `MemoryStore` / `Rollback` as black boxes.
+**11th** zero-kernel phase (Phase 5 remains the lone exception).
+
+**Reuses Phase 7.1**: the UI's Execute page mints approval tokens
+the same way the MCP server does (`mint_token`), so both drivers
+have symmetric "dry-run → approve → execute" ceremony. The
+Rollback page uses `Rollback.preview()` to show drift inline.
+
+---
+
 ## Outline §10.7 final ledger
 
 | Phase | Kernel-touch | Notes |
@@ -322,6 +359,8 @@ execution through the MCP path identically to the CLI path —
 | 4.3 | NO | contract test template |
 | **5** | **YES (~25 lines)** | `forbidden_paths` — universal safety primitive, kernel-only by design |
 | 6.1 | NO | new package `app/mcp/`, 1 CLI command |
+| 7.1 (v0.6.3) | NO | doc/format/UX hardening + rollback hash-guard in `app/harness/rollback.py` — extends existing class only, no new kernel primitives |
+| **8.0 (v0.7.0)** | NO | new package `app/ui/`, 1 CLI command (`ui-serve`) |
 
 **Score**: 1 deliberate exception across 12 deliveries. The rule held.
 

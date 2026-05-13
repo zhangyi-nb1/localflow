@@ -1,6 +1,6 @@
 [project]
 name = "localflow-agent"
-version = "0.6.3"
+version = "0.7.0"
 description = "LocalFlow Agent: Personal Automation Agent Harness"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -47,12 +47,16 @@ openai = [
 mcp = [
     "mcp>=1.6,<2.0",
 ]
-# Meta-extra — install everything (LLM providers + MCP + dev tools) in
-# one shot. Useful for full local development.
+ui = [
+    "streamlit>=1.30,<2.0",
+]
+# Meta-extra — install everything (LLM providers + MCP + UI + dev tools)
+# in one shot. Useful for full local development.
 all = [
     "localflow-agent[dev]",
     "localflow-agent[openai]",
     "localflow-agent[mcp]",
+    "localflow-agent[ui]",
 ]
 
 [project.scripts]

@@ -230,6 +230,31 @@ What's NOT mitigated:
 
 ---
 
+## Browser UI (Phase 8.0 / v0.7.0)
+
+The Streamlit UI is a **third driver** alongside the CLI and MCP
+server. Same posture, same kernel:
+
+- **Localhost-only by default** (`127.0.0.1:8501`). Binding `0.0.0.0`
+  requires explicit `--host` flag and is documented as "NOT
+  recommended outside dev".
+- **No auth**. A single-user local app. If you bind to a non-localhost
+  interface you've exited the supported threat model.
+- **Soft sandbox**. Workspace dropdown is constrained to subdirs of
+  `./sandbox/`. `?unsafe=1` query param lifts the dropdown
+  restriction with a banner. **The kernel's `policy_guard.resolve_inside`
+  and `forbidden_paths` checks remain active either way** — UI
+  sandboxing is the SECOND line, never the first.
+- **Approval ceremony in checkbox form**. Execute button is disabled
+  until "I've reviewed every action" checkbox is ticked. UI calls
+  `app.mcp.approval.mint_token` + `validate_and_consume` — same
+  approval mechanism the MCP server uses.
+- **No new actions, no new IO surface**. UI reuses
+  `control_loop.run_*`, `Rollback`, `MemoryStore`, `get_default_registry`
+  — nothing new under `app/harness/`.
+
+See [UI.md](UI.md) for the user-facing flow + troubleshooting.
+
 ## Rollback hash guard (Phase 7.1)
 
 By default the rollback path refuses to clobber files that the user

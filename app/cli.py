@@ -674,6 +674,75 @@ def cmd_tools(
     )
 
 
+# --------------------------------------------------------------------- ui-serve
+
+
+@app.command("ui-serve")
+def cmd_ui_serve(
+    port: int = typer.Option(8501, "--port", help="Browser port. Default 8501."),
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help=(
+            "Bind address. Default 127.0.0.1 (localhost only — safe). "
+            "Pass 0.0.0.0 to expose on the LAN, but only if you know "
+            "what you're doing."
+        ),
+    ),
+) -> None:
+    """Launch the Streamlit UI for LocalFlow (Phase 8.0 / v0.7.0).
+
+    Opens a browser at http://<host>:<port>. The UI provides visual
+    plan / dry-run / execute / verify / rollback / memory pages,
+    sandboxed to ``./sandbox/`` subdirectories by default.
+
+    Install the UI optional dep first::
+
+        pip install -e ".[ui]"
+
+    To allow paths outside the sandbox, visit the UI with ``?unsafe=1``
+    in the URL — a banner will surface acknowledging the override.
+    The kernel's policy_guard still enforces workspace containment.
+    """
+    try:
+        import streamlit  # noqa: F401
+    except ImportError:
+        console.print(
+            "[red]Streamlit not installed.[/] Install with: "
+            '[cyan]pip install "streamlit>=1.30,<2.0"[/] '
+            'or [cyan]pip install -e ".[ui]"[/]'
+        )
+        raise typer.Exit(code=2)
+
+    import subprocess
+
+    from app.ui import main_path
+
+    console.print(
+        f"[cyan]Starting LocalFlow UI[/] on [bold]http://{host}:{port}[/]  "
+        f"(sandbox: [dim]./sandbox/[/])"
+    )
+
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "streamlit",
+                "run",
+                str(main_path()),
+                "--server.port",
+                str(port),
+                "--server.address",
+                host,
+                "--browser.gatherUsageStats",
+                "false",
+            ]
+        )
+    except KeyboardInterrupt:
+        console.print("\n[dim]UI server stopped.[/]")
+
+
 # --------------------------------------------------------------------- mcp-serve
 
 
