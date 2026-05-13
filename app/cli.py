@@ -718,12 +718,21 @@ def cmd_ui_serve(
 
     from app.ui import main_path
 
+    # First-run hygiene: Streamlit interactively asks "Email:" on its
+    # very first invocation per-user. With subprocess.run inheriting
+    # stdin, that prompt blocks server start indefinitely and the user
+    # sees a connection-refused page. Pre-creating an empty
+    # credentials file makes Streamlit skip the prompt.
+    _ensure_streamlit_credentials()
+
     console.print(
         f"[cyan]Starting LocalFlow UI[/] on [bold]http://{host}:{port}[/]  "
         f"(sandbox: [dim]./sandbox/[/])"
     )
 
     try:
+        # stdin=DEVNULL is belt-and-suspenders — if any future Streamlit
+        # version reintroduces an interactive prompt, we won't hang.
         subprocess.run(
             [
                 sys.executable,
@@ -735,12 +744,37 @@ def cmd_ui_serve(
                 str(port),
                 "--server.address",
                 host,
+                "--server.headless",
+                "true",
                 "--browser.gatherUsageStats",
                 "false",
-            ]
+            ],
+            stdin=subprocess.DEVNULL,
         )
     except KeyboardInterrupt:
         console.print("\n[dim]UI server stopped.[/]")
+
+
+def _ensure_streamlit_credentials() -> None:
+    """Pre-populate ``~/.streamlit/credentials.toml`` so Streamlit skips
+    the first-run interactive email prompt. Idempotent — never
+    overwrites an existing file.
+
+    Streamlit checks this file at startup; if present it doesn't ask.
+    Writing an empty email opts out of their newsletter without
+    blocking server boot.
+    """
+    cred_path = Path.home() / ".streamlit" / "credentials.toml"
+    if cred_path.exists():
+        return
+    try:
+        cred_path.parent.mkdir(parents=True, exist_ok=True)
+        cred_path.write_text('[general]\nemail = ""\n', encoding="utf-8")
+    except OSError:
+        # If the user's home is unwritable for whatever reason, fall
+        # through — Streamlit will block on the prompt and the user
+        # sees a clearer message than a silent failure here.
+        pass
 
 
 # --------------------------------------------------------------------- mcp-serve
