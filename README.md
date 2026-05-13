@@ -124,7 +124,7 @@ localflow mcp-serve                                    # 2. MCP (Claude Code etc
 localflow ui-serve                                     # 3. Streamlit UI — http://127.0.0.1:8501
 ```
 
-UI walkthrough: [**docs/UI.md**](docs/UI.md). Full per-phase changelog and `§10.7` kernel-touch ledger: [**docs/PHASES.md**](docs/PHASES.md)
+UI walkthrough: [**docs/UI.md**](docs/UI.md) (EN) · [**docs/UI_zh.md**](docs/UI_zh.md) (中文用户指南). Full per-phase changelog and `§10.7` kernel-touch ledger: [**docs/PHASES.md**](docs/PHASES.md)
 
 ---
 
