@@ -109,11 +109,23 @@ def _lazy_import_matplotlib():
     commands that don't touch charts (inspect, rollback, plan for skills
     without charts) shouldn't pay the ~500 ms import cost.
 
+    v0.9.1: matplotlib moved out of the base install. If a plan tries
+    to render a chart in an environment without the ``[data]`` extra,
+    raise a friendly ImportError that names the right pip command
+    instead of letting the stack trace bubble up unchanged.
+
     Also configures a CJK-capable font fallback chain on first import
     so Chinese / Japanese / Korean titles and labels render correctly
     instead of as tofu boxes.
     """
-    import matplotlib
+    try:
+        import matplotlib
+    except ImportError as exc:  # pragma: no cover — exercised via friendly message
+        raise ImportError(
+            "matplotlib is required for chart rendering but is not installed. "
+            "Install with: pip install 'localflow-agent[data]' "
+            "(or [all] for everything). Original error: " + str(exc)
+        ) from exc
 
     matplotlib.use("Agg")  # headless backend, set BEFORE pyplot import
     import matplotlib.pyplot as plt

@@ -159,22 +159,27 @@ LocalFlow lifecycle. It does NOT confirm the skill is *safe*.
 
 **Mitigations available now**:
 
-1. **Kill switch (Phase 7.1)** — set `LOCALFLOW_DISABLE_EXTERNAL_SKILLS=1`
-   in your environment to refuse all external skill loading. The
-   built-ins still work; the registry's load audit records each
-   directory as "skipped (disabled by env)".
-2. **Startup warning (Phase 7.1)** — whenever at least one external
-   skill registers, LocalFlow prints a one-line warning to **stderr**
-   naming the loaded skill(s) and the trust caveat. Visible every
-   time you start the CLI or MCP server.
-3. **Inspect the skill source** before dropping it into
+1. **Opt-in by default (Phase 8.3.1 / v0.9.1)** — external skills are
+   **NOT loaded unless** you set `LOCALFLOW_ENABLE_EXTERNAL_SKILLS=1`
+   in your environment. The Phase-7.1 stderr warning was easy to
+   miss; making opt-in explicit is the only real defence. The audit
+   records each searched directory as "skipped: external skills
+   opt-in required" until you flip the toggle.
+2. **Legacy kill switch (Phase 7.1)** — `LOCALFLOW_DISABLE_EXTERNAL_SKILLS=1`
+   still works for back-compat. When both vars are set, DISABLE wins.
+3. **Startup warning** — whenever at least one external skill
+   registers (i.e. opt-in was set + a skill imported successfully),
+   LocalFlow prints a one-line warning to **stderr** naming the
+   loaded skill(s) and the trust caveat. Visible every time you start
+   the CLI or MCP server.
+4. **Inspect the skill source** before dropping it into
    `~/.localflow/skills/`. Skills are short (~50-200 lines typically).
-4. **Don't accept skills from unknown authors**. Same threat model as
+5. **Don't accept skills from unknown authors**. Same threat model as
    pip packages.
-5. **Check the load audit** with `localflow skills` — every load
+6. **Check the load audit** with `localflow skills` — every load
    attempt appears in the table, including where the file came from
-   and whether the kill switch was the reason for a skip.
-6. **Use a clean `$LOCALFLOW_SKILLS_DIR`** for testing third-party
+   and whether the opt-in flag was missing or the kill switch was set.
+7. **Use a clean `$LOCALFLOW_SKILLS_DIR`** for testing third-party
    skills instead of the default `~/.localflow/skills/` so you can
    pull the rug out by unsetting the env var.
 

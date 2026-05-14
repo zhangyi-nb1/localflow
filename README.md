@@ -33,16 +33,42 @@ Every action is a Pydantic struct (never a free-form string). Every write produc
 
 ---
 
-## Quickstart (full lifecycle, ~30 seconds)
+## Install
 
 ```powershell
-# Install
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -e ".[dev,mcp]"
+pip install -e ".[all]"           # everything (dev + mcp + ui + data + pdf + openai)
 ```
 
-The 6-stage lifecycle on the bundled demo workspace — every command corresponds to one stage of the harness:
+Or pick what you need (v0.9.1 split):
+
+```powershell
+pip install -e .                  # base: harness + folder_organizer + LLM clients
+pip install -e ".[data]"          # + pandas / matplotlib / openpyxl — chart skills
+pip install -e ".[pdf]"           # + pypdf — pdf_indexer
+pip install -e ".[ui]"            # + Streamlit (auto-pulls pandas)
+pip install -e ".[mcp]"           # + MCP SDK for `localflow mcp-serve`
+pip install -e ".[dev]"           # + pytest / ruff + every data / pdf lib for CI
+```
+
+## Quickstart A — Browser UI (recommended for demos)
+
+```powershell
+localflow ui-serve
+# → opens http://127.0.0.1:8501 in your default browser
+```
+
+1. **Pick a workspace** in the left sidebar (or visit `?unsafe=1` to pick a path outside `./sandbox/`).
+2. **Plan page** — type a goal ("organize by file type", "整理文件并画柱状图统计", anything compound). The agent auto-decomposes it; you see the planned actions + risk badge.
+3. **Execute page** — render the dry-run markdown, tick the approval box, hit *Execute*. The verifier runs automatically.
+4. **Rollback page** — drift-aware preview + safe/force rollback if you want to undo.
+
+Full walkthrough: [**docs/UI.md**](docs/UI.md) (EN) · [**docs/UI_zh.md**](docs/UI_zh.md) (中文)
+
+## Quickstart B — CLI (developers / scripts / CI)
+
+The 6-stage lifecycle as discrete commands — every command corresponds to one stage of the harness, with `dry-run` + `verify` explicit so you can wire it into automation:
 
 ```powershell
 # 1. PLAN  — the LLM (or rule planner) emits a structured ActionPlan; nothing on disk yet.
@@ -50,9 +76,10 @@ localflow plan ./examples/messy_downloads --goal "organize by file type" --plann
 # → Task created: 2026-05-13-001  ·  Actions: 40  ·  Risk: medium
 
 # 2. DRY-RUN  — render a markdown preview of every action; still read-only.
+#    Also mints the approval_token consumed by `execute`.
 localflow dry-run --task-id 2026-05-13-001
 
-# 3. EXECUTE  — only step that mutates the workspace. `--yes` = explicit approval.
+# 3. EXECUTE  — the ONLY stage that mutates the workspace. `--yes` = explicit approval.
 localflow execute --task-id 2026-05-13-001 --yes
 # → executed: 40 actions  ·  verify: passed
 
@@ -118,7 +145,7 @@ UI (v0.9.0):     Streamlit browser UI · EN/中文 toggle · goal-only Plan page
                  routing every compound goal through the agent meta-skill;
                  specialist skills remain CLI/MCP-only. Radio-driven workspace
                  picker with sticky ?unsafe=1 · soft-sandboxed to ./sandbox/
-Tests:           357 passing across 5 OS × Python matrix in CI
+Tests:           368 passing across 5 OS × Python matrix in CI
 ```
 
 Three equivalent driver layers, same kernel:
@@ -153,8 +180,10 @@ UI walkthrough: [**docs/UI.md**](docs/UI.md) (EN) · [**docs/UI_zh.md**](docs/UI
 │  Drivers:   CLI (Typer)         MCP Server (stdio JSON-RPC)        │
 ├────────────────────────────────────────────────────────────────────┤
 │  Skills:    Skill ABC + Registry + filesystem loader + contract    │
-│             test  (built-in: folder_organizer / pdf_indexer /      │
-│             data_reporter / data_analyzer · external: plug-ins)    │
+│             test  (built-in: agent (v0.9.0 default meta-skill) +   │
+│             folder_organizer / pdf_indexer / data_reporter /       │
+│             data_analyzer / workspace_visualizer specialists ·     │
+│             external: plug-ins, opt-in)                            │
 ├────────────────────────────────────────────────────────────────────┤
 │  Tool Registry (15 declarable helpers)   |   Harness Kernel        │
 │  + Memory (forbidden_paths / naming_style)│  (policy_guard / dry_run│
@@ -184,7 +213,8 @@ app/
   agent/      LLM planner + repair (Phase 1)
   harness/    policy_guard / dry_run / approval / executor / verifier /
               rollback / audit / control_loop  (the kernel)
-  mcp/        MCP server bootstrap + 15 tool handlers (Phase 6.1+)
+  mcp/        MCP server bootstrap + 18 tool handlers (Phase 6.1 +
+              memory mutations through Phase 8.2)
               + approval-token machinery (Phase 7)
   memory/     MemoryStore + naming transforms + Pydantic schema (Phase 5)
   schemas/    Pydantic data contracts (TaskSpec, ActionPlan, Action, ...)
@@ -197,7 +227,7 @@ docs/         PHASES.md · ARCHITECTURE.md · SECURITY.md · MCP.md
 examples/     messy_downloads (folder_organizer demo)
               pdf_demo (pdf_indexer demo)
               external_skill_example (Phase 4.1 plug-in pattern + contract test)
-tests/        259 tests across all layers
+tests/        368 tests across all layers
 ```
 
 ---
@@ -207,7 +237,7 @@ tests/        259 tests across all layers
 ```powershell
 pip install build
 python -m build
-# → dist/localflow_agent-0.6.3-py3-none-any.whl  +  .tar.gz
+# → dist/localflow_agent-0.9.1-py3-none-any.whl  +  .tar.gz
 ```
 
 | Workflow | Trigger | What it does |
@@ -217,20 +247,26 @@ python -m build
 
 Releases (with verified wheel artifacts) under [**GitHub Releases**](https://github.com/zhangyi-nb1/localflow/releases).
 
-Version scheme: `0.<highest_phase>.<sub>`. Current `0.9.0` = Phase 6.1 + Phase 7 hardening + Phase 8.0 UI + 8.1 UX overhaul + 8.1.1 sticky unsafe + 8.2 workspace_visualizer + smart planner upgrades + **Phase 8.3 agent meta-skill (one-shot compound execution)**.
+Version scheme: `0.<highest_phase>.<sub>`. Current `0.9.1` = Phase 6.1 + Phase 7 hardening + 8.0 UI + 8.1 UX overhaul + 8.1.1 sticky unsafe + 8.2 workspace_visualizer + 8.3 agent meta-skill + **8.3.1 project hygiene (opt-in external skills + [data]/[pdf] extras + UI doc cleanup + agent integration tests)**.
 
 ---
 
 ## Roadmap
 
-- **v0.8.1+** — persist language preference to disk (currently
-  session-scoped only); auto-detect confidence ranking (show top-3
-  candidates).
-- **v0.9.0+** — lazy skill imports + optional dependencies
-  (pandas/matplotlib/pypdf out of base install), WebCollect skill
-  (HTTPS GET → workspace, with domain allow-list + robots.txt +
-  rollback), MCP client (reverse: call external MCP servers as
-  tools), Skill manifest signing.
+- **v0.9.2+** — Skill manifest signing; per-skill capability scoping
+  in the LLM tool schema (so the agent can't accidentally cross-call
+  into uninvolved skill territory).
+- **v0.10.0+** — WebCollect skill (HTTPS GET → workspace, with domain
+  allow-list + robots.txt + rollback), MCP client (reverse: call
+  external MCP servers as tools), language-preference disk
+  persistence.
+
+Recently shipped (v0.9.1):
+- External skills are now opt-in via `LOCALFLOW_ENABLE_EXTERNAL_SKILLS=1`
+- `[data]` / `[pdf]` extras — pandas / matplotlib / pypdf out of base install
+- README split into WebUI / CLI Quickstarts; UI doc cleaned of v0.8.x stale sections
+- Agent meta-skill integration tests (illegal action / forbidden path /
+  bad chart spec / rollback restoration)
 
 Deferred since groundwork is in place: directory-structure preference, report-template preference, common-task recipes (Phase 5.x).
 

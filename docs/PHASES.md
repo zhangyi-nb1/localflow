@@ -422,6 +422,69 @@ reason line so users know exactly what's being chosen.
 
 ---
 
+## Phase 8.3.1 — project hygiene + opt-in external skills (v0.9.1)
+
+**Goal**: address review feedback on the v0.9.0 ship — stale doc
+sections, eagerly-loaded external skills (security risk), README
+still CLI-only after the UI became the primary surface, and the
+long-deferred dependency split that the v0.9.0 comment claimed was
+out of scope.
+
+**Shipped**:
+
+- **README rewrite** — version refs synced (`Tests: 357 → 359`,
+  Architecture box updated to mention `agent` + `workspace_visualizer`,
+  `mcp/` description bumped from 15 → 18 tools, sample wheel filename
+  `0.6.3 → 0.9.0`, layout's `tests/` line `259 → 359`). Quickstart
+  split into two sections: **WebUI Quickstart** (recommended for
+  demos, uses `localflow ui-serve`) and **CLI Quickstart** (developer
+  path, shows every stage including `dry-run` and `verify`
+  explicitly).
+- **UI.md cleanup** — removed the v0.8.x "Auto-detect heuristic"
+  paragraph that still claimed five-way skill routing, removed the
+  Override-panel troubleshooting rows. Replaced with a clean "Single
+  skill, no override" section that matches the v0.9.0 code reality.
+- **External skill opt-in** ([app/skills/_loader.py](localflow/app/skills/_loader.py)) —
+  v0.7.x shipped external skill auto-loading with a stderr warning;
+  in practice users ignored the warning. v0.9.1 flips the default:
+  `LOCALFLOW_ENABLE_EXTERNAL_SKILLS=1` is now required to load
+  anything from `~/.localflow/skills/`. The legacy
+  `LOCALFLOW_DISABLE_EXTERNAL_SKILLS=1` kill switch still wins when
+  both are set (back-compat with CI scripts). Audit table shows
+  "skipped: external skills opt-in required" for missed loads.
+- **Dependency split** — pandas / openpyxl / matplotlib / pypdf moved
+  out of the base install into `[data]` and `[pdf]` extras
+  ([pyproject.toml](localflow/pyproject.toml)). Survey confirmed every
+  heavy import in v0.9.0 is already inside a function body, so the
+  SkillRegistry registers all skills with zero heavy imports — the
+  comment in pyproject claiming "eagerly imports at module-load time"
+  was stale by Phase 6.1. chart_ops now raises a friendly
+  ImportError pointing at `[data]` when matplotlib is missing.
+- **Agent meta-skill integration tests** ([tests/test_agent_integration.py](localflow/tests/test_agent_integration.py)) —
+  7 new tests covering the harness's defensive layers against the
+  agent's expanded action surface: compound plan executes + verifies
+  + rolls back cleanly; path-traversal in target_path blocked by
+  policy_guard; duplicate action_ids rejected by plan validator;
+  forbidden_paths from memory blocked at risk-check; chart_request
+  with zero-value still renders; validator catches a PNG action that
+  skipped post-processing; rollback removes both generated chart PNGs
+  and index.md files.
+
+**Files modified**: `README.md`, `docs/UI.md`, `docs/SECURITY.md`,
+`docs/PHASES.md`, `app/skills/_loader.py`, `app/tools/chart_ops.py`,
+`pyproject.toml`, `tests/test_skill_loader.py`. New:
+`tests/test_agent_integration.py`.
+
+**Tests**: 359 → 368 (+9: 7 integration tests in
+`test_agent_integration.py`; +2 in `test_skill_loader.py` for the
+opt-in default and the DISABLE-wins-over-ENABLE precedence).
+Lint + format clean.
+
+**§10.7**: NO kernel touches. Doc + loader + dependency refactor only.
+**17th** zero-kernel-touch phase.
+
+---
+
 ## Phase 8.3 — agent meta-skill (v0.9.0)
 
 **Goal**: close the v0.8.2 design gap where compound goals like
@@ -614,8 +677,9 @@ post-nav persistence, fresh-session reset). Total 318 → 319.
 | 8.1.1 (v0.8.1) | NO | Sticky unsafe mode (Streamlit page-nav drops query params) |
 | **8.2 (v0.8.2)** | NO | workspace_visualizer skill + compound-goal detection + capability-gap warning + prefer_llm_planner memory pref |
 | **8.3 (v0.9.0)** | NO | agent meta-skill (LLM-driven, one-shot compound execution) + pluggable system prompts + UI collapse to single skill |
+| 8.3.1 (v0.9.1) | NO | Project hygiene — README split, UI.md cleanup, external skill opt-in default, [data]/[pdf] dep extras, agent integration tests |
 
-**Score**: 1 deliberate exception across 16 deliveries. The rule held.
+**Score**: 1 deliberate exception across 17 deliveries. The rule held.
 
 ---
 

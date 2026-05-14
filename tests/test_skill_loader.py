@@ -56,6 +56,17 @@ def _write_skill(skills_dir: Path, dirname: str, class_name: str, skill_name: st
     return sub
 
 
+@pytest.fixture(autouse=True)
+def _enable_external_skills(monkeypatch: pytest.MonkeyPatch) -> None:
+    """v0.9.1: external skill loading is opt-in. The loader tests want
+    to exercise the actual loading path, so flip the toggle ON for
+    every test in this file. Tests that care about the opt-in/opt-out
+    behaviour itself override via their own monkeypatch.setenv() /
+    delenv() calls — those win because monkeypatch is per-test."""
+    monkeypatch.setenv("LOCALFLOW_ENABLE_EXTERNAL_SKILLS", "1")
+    monkeypatch.delenv("LOCALFLOW_DISABLE_EXTERNAL_SKILLS", raising=False)
+
+
 # --------------------------------------------------------------------- happy path
 
 
@@ -326,15 +337,45 @@ def test_disable_env_skips_all_loading(tmp_path: Path, monkeypatch: pytest.Monke
     )
 
 
-def test_kill_switch_truthy_values(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.skills._loader import _external_skills_disabled
+def test_enable_switch_truthy_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    """v0.9.1: LOCALFLOW_ENABLE_EXTERNAL_SKILLS must accept the same
+    truthy vocabulary the rest of LocalFlow uses (?unsafe=1, etc.)."""
+    from app.skills._loader import _external_skills_enabled
 
+    monkeypatch.delenv("LOCALFLOW_DISABLE_EXTERNAL_SKILLS", raising=False)
     for value in ("1", "true", "True", "yes", "on", "TRUE"):
-        monkeypatch.setenv("LOCALFLOW_DISABLE_EXTERNAL_SKILLS", value)
-        assert _external_skills_disabled(), f"value {value!r} should disable"
+        monkeypatch.setenv("LOCALFLOW_ENABLE_EXTERNAL_SKILLS", value)
+        assert _external_skills_enabled(), f"value {value!r} should enable"
     for value in ("0", "false", "no", "off", ""):
-        monkeypatch.setenv("LOCALFLOW_DISABLE_EXTERNAL_SKILLS", value)
-        assert not _external_skills_disabled(), f"value {value!r} should NOT disable"
+        monkeypatch.setenv("LOCALFLOW_ENABLE_EXTERNAL_SKILLS", value)
+        assert not _external_skills_enabled(), f"value {value!r} should NOT enable"
+
+
+def test_disable_env_overrides_enable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """If a user sets BOTH env vars, the kill-switch DISABLE wins so
+    existing scripts setting DISABLE=1 still actually disable."""
+    from app.skills._loader import _external_skills_enabled
+
+    monkeypatch.setenv("LOCALFLOW_ENABLE_EXTERNAL_SKILLS", "1")
+    monkeypatch.setenv("LOCALFLOW_DISABLE_EXTERNAL_SKILLS", "1")
+    assert not _external_skills_enabled()
+
+
+def test_opt_in_required_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """v0.9.1: with neither env var set, external skills are SKIPPED
+    (the regression we're guarding against — auto-loading trusted code
+    was a quiet security wart)."""
+    skills_dir = tmp_path / "skills"
+    _write_skill(skills_dir, "would_load", "WouldLoad", "would_load")
+
+    monkeypatch.delenv("LOCALFLOW_ENABLE_EXTERNAL_SKILLS", raising=False)
+    monkeypatch.delenv("LOCALFLOW_DISABLE_EXTERNAL_SKILLS", raising=False)
+
+    registry = SkillRegistry()
+    findings = discover_and_register_external(registry, [skills_dir])
+
+    assert registry.list_names() == []
+    assert any(f.status == "skipped" and "opt-in required" in (f.error or "") for f in findings)
 
 
 def test_loading_external_skill_prints_warning_to_stderr(
@@ -355,7 +396,8 @@ def test_loading_external_skill_prints_warning_to_stderr(
     captured = capsys.readouterr()
     assert "harmless" in captured.err
     assert "TRUSTED Python code" in captured.err
-    assert "LOCALFLOW_DISABLE_EXTERNAL_SKILLS" in captured.err
+    # v0.9.1: warning text references the new ENABLE env var by name.
+    assert "LOCALFLOW_ENABLE_EXTERNAL_SKILLS" in captured.err
     assert "TRUSTED" not in captured.out, "stderr warning leaked to stdout"
 
 

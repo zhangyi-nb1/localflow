@@ -106,10 +106,10 @@ The full plan → dry-run → execute → verify → rollback flow takes
 about 30 seconds and roughly 5 clicks:
 
 1. **📋 Plan page**: type a goal (e.g. "organize by file type" or
-   "按类型整理"). LocalFlow shows an `ℹ️ Auto-detected: skill=… ·
-   planner=…` line with a one-line reason. Hit **Create plan**.
-   See the action table + risk badge. To override, expand the
-   `▶ Override (advanced)` panel and pick manually.
+   "整理文件并画柱状图统计"). The page shows
+   `ℹ️ Auto-detected: skill=agent · planner=llm` and a one-line
+   confirmation that the agent will plan end-to-end. Hit
+   **Create plan** — that's it. See the action table + risk badge.
 2. **🔍 Execute page**: pre-filled with the new task. Hit **Render
    dry-run** → review markdown → tick "I've reviewed every action"
    → **Execute now**. The verifier runs automatically and shows a
@@ -119,30 +119,21 @@ about 30 seconds and roughly 5 clicks:
    file modified since execute). Hit **Rollback now (clean)** if no
    conflicts, otherwise pick safe / force.
 
-### Auto-detect heuristic
+### Single skill, no override
 
-The Plan page's auto-detection logic (in
-[app/ui/_autodetect.py](../app/ui/_autodetect.py)) combines:
+Starting in v0.9.0 the Plan page exposes exactly **one** skill — the
+`agent` meta-skill ([app/skills/agent/](../app/skills/agent/)). It
+decomposes compound goals into a single ActionPlan covering organize
++ summarize + chart in one harness cycle (one dry-run, one approval,
+one execute). The Override panel from v0.8.x is gone — the agent is
+always the right choice for goal-driven UI use, and the harness
+catches mistakes regardless.
 
-* **Goal keywords** — bilingual lists (English + Chinese). Examples:
-  `analyze` / `分析` / `groupby` route to `data_analyzer`;
-  `report` / `统计` route to `data_reporter`; `paper` / `论文` /
-  `index` route to `pdf_indexer`; `organize` / `整理` /
-  `categorize` route to `folder_organizer`.
-* **Workspace content** — a cheap scan (no hash, no preview) counts
-  files by type. `data_*` skills require at least one tabular/excel
-  file; `pdf_indexer` requires at least one PDF.
-* **Planner choice** — `rule` always for skills that don't override
-  `plan_with_llm` (currently `pdf_indexer` and `data_reporter`).
-  `llm` for skills that DO support it AND the goal contains a
-  semantic-intent keyword (`by content` / `intelligent` / `语义` /
-  `智能`). Otherwise `rule` since it's free and instant.
-
-The reason string surfaced under each auto-detected pick names the
-exact signals that drove the decision so you can sanity-check it
-before clicking Create plan. If wrong, expand the Override panel
-and pick manually — the kernel's policy_guard will still surface
-any policy violation regardless of what you pick.
+Specialist skills (`folder_organizer`, `pdf_indexer`, `data_reporter`,
+`data_analyzer`, `workspace_visualizer`) stay in the registry for CLI
+and MCP power users — they're not removed, just not exposed in the
+Plan page. Use `localflow plan ... --skill <name>` from PowerShell if
+you want one of them by hand.
 
 ## Hash-drift demo (Phase 7.1 visualized)
 
@@ -185,10 +176,10 @@ of 3 commands.
 | Custom path radio option missing | Visit `?unsafe=1`; without it the option is hidden by design |
 | Custom workspace silently reverts to sandbox after clicking a page | Fixed in v0.8.1 — unsafe mode now latches into session_state so page navigation no longer drops the opt-in |
 | Custom path input rejects a path | Make sure it's an absolute path to an existing directory. The error message under the input names the exact reason. |
-| Auto-detected skill is wrong | Expand `▶ Override (advanced)` on the Plan page and pick the skill / planner manually |
-| Plan page shows a yellow "Capability gap" warning | Your goal asks for things one skill can't fully cover (e.g. organize+chart). Run the suggested skill as a second task after this one finishes, or override to the suggested skill via `▶ Override (advanced)`. New in v0.8.2. |
-| Want LLM by default on every plan | Memory → 🤖 Planner preference → toggle "Prefer LLM planner" ON. Default is OFF (rule for simple goals, LLM only for compound / semantic). |
-| Want a real PNG bar chart of file counts | Plan with goal "draw a bar chart" → routed to `workspace_visualizer`. Writes a PNG to `images/file_counts.png`. New in v0.8.2. |
+| Want LLM by default on every plan | Memory page → 🤖 Planner preference → toggle "Prefer LLM planner" ON. (The UI's agent skill already uses LLM by default; this flag affects specialist skills invoked from CLI/MCP.) |
+| Want a real PNG bar chart of file counts | Write a compound goal like "整理文件并画一张柱状图统计每个分类的文件数". The agent emits both organize + chart actions in one plan; the post-processor renders a real PNG (not a markdown placeholder). |
+| Plan page shows a chart `_error.md` instead of a PNG | The LLM emitted a chart action without the required `chart_request` block. The harness defensively downgrades that to a markdown error placeholder. Re-run with a more explicit goal mentioning "柱状图" / "bar chart" — usually fixes it. |
+| Want to force a specific skill (e.g. `pdf_indexer` for batch indexing) | Use the CLI: `localflow plan <workspace> --goal "..." --skill pdf_indexer --planner rule`. Specialist skills aren't exposed in the UI but still work from CLI/MCP. |
 | Strings show up as `!!key.something!!` | A translation key is missing — file an issue. UI keeps rendering with the sentinel rather than crashing. |
 | Language toggle persists across browser sessions | It doesn't — by design. Streamlit session_state is per-tab. Reset on every new tab. |
 | Page renders but actions don't fire | Check the terminal where you ran `ui-serve` — Streamlit logs there |

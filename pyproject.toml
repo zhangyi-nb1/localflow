@@ -1,6 +1,6 @@
 [project]
 name = "localflow-agent"
-version = "0.9.0"
+version = "0.9.1"
 description = "LocalFlow Agent: Personal Automation Agent Harness"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,26 +13,28 @@ dependencies = [
     "pyyaml>=6.0",
     "python-dotenv>=1.0",
     "anthropic>=0.92",
-    "pypdf>=4.0",
-    "pandas>=2.0",
-    "openpyxl>=3.1",
-    "matplotlib>=3.7",
 ]
-# NOTE on the dep set above (known limitation, tracked for v0.7.0):
+# v0.9.1 dependency split:
 #
-# LocalFlow's data + PDF skills eagerly import pandas / openpyxl /
-# matplotlib / pypdf at module-load time via ``app/skills/__init__.py``
-# wiring the SkillRegistry, so those heavy packages are pinned in the
-# BASE install. Splitting them into ``[data]`` / ``[pdf]`` extras
-# requires refactoring the skill loader to be lazy:
-#   1. SkillRegistry only loads the manifest at startup (cheap).
-#   2. The skill's planner module is imported on first ``plan()`` call.
-#   3. Missing-dep on import → clear error pointing at the right extra.
-# That's ~half a day of refactor + test updates; out of scope for the
-# v0.6.x line. If you only need the harness + folder_organizer, you
-# can omit pandas/matplotlib/pypdf from your environment and the
-# folder_organizer skill still works (the others raise ImportError on
-# registration today; the v0.7.0 refactor will skip them gracefully).
+# pandas / openpyxl / matplotlib / pypdf moved out of the base install
+# into the [data] and [pdf] extras. Survey of app/ in v0.9.0 confirmed
+# every import of these libraries is already inside a function body
+# (the comment claiming "eagerly imported at module-load time" was
+# stale by Phase 6.1), so the SkillRegistry registers all skills with
+# zero heavy imports — the dependencies only matter at the moment a
+# skill's plan() / report() actually runs.
+#
+# Install matrix:
+#   pip install localflow-agent             ← harness + folder_organizer
+#   pip install "localflow-agent[data]"     ← + data_reporter + data_analyzer
+#                                              + workspace_visualizer + agent's chart
+#   pip install "localflow-agent[pdf]"      ← + pdf_indexer
+#   pip install "localflow-agent[ui]"       ← + Streamlit + pandas for st.dataframe
+#   pip install "localflow-agent[all]"      ← everything (dev / openai / mcp / ui / data / pdf)
+#
+# Skills whose required imports fail at runtime raise a clear
+# ImportError pointing at the relevant extra — see chart_ops._lazy_import_matplotlib
+# and the per-skill planners for the friendly messages.
 
 [project.optional-dependencies]
 dev = [
@@ -40,6 +42,13 @@ dev = [
     "pytest-cov>=5.0",
     "openai>=1.50",
     "ruff>=0.7",
+    # dev installs always need the same data / pdf libs because pytest
+    # exercises every skill. Including them here means CI matrix only
+    # needs to specify `[dev,mcp]` and still runs the full suite.
+    "pandas>=2.0",
+    "openpyxl>=3.1",
+    "matplotlib>=3.7",
+    "pypdf>=4.0",
 ]
 openai = [
     "openai>=1.50",
@@ -47,16 +56,32 @@ openai = [
 mcp = [
     "mcp>=1.6,<2.0",
 ]
+# Tabular data + chart rendering (data_reporter, data_analyzer,
+# workspace_visualizer, and agent's chart_request post-processor).
+data = [
+    "pandas>=2.0",
+    "openpyxl>=3.1",
+    "matplotlib>=3.7",
+]
+# PDF text extraction (pdf_indexer + agent's PDF preview when scanning).
+pdf = [
+    "pypdf>=4.0",
+]
+# Streamlit UI also needs pandas for st.dataframe rendering on the
+# Plan / Memory / Rollback pages.
 ui = [
     "streamlit>=1.30,<2.0",
+    "pandas>=2.0",
 ]
-# Meta-extra — install everything (LLM providers + MCP + UI + dev tools)
-# in one shot. Useful for full local development.
+# Meta-extra — install everything (LLM providers + MCP + UI + data +
+# PDF + dev tools) in one shot. Useful for full local development.
 all = [
     "localflow-agent[dev]",
     "localflow-agent[openai]",
     "localflow-agent[mcp]",
     "localflow-agent[ui]",
+    "localflow-agent[data]",
+    "localflow-agent[pdf]",
 ]
 
 [project.scripts]

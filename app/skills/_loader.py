@@ -92,12 +92,39 @@ def default_external_skill_dirs() -> list[Path]:
 
 
 DISABLE_ENV = "LOCALFLOW_DISABLE_EXTERNAL_SKILLS"
+ENABLE_ENV = "LOCALFLOW_ENABLE_EXTERNAL_SKILLS"
 
 
-def _external_skills_disabled() -> bool:
-    """Read the kill-switch env var with the usual truthy semantics."""
-    raw = os.environ.get(DISABLE_ENV, "")
+def _truthy(raw: str) -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _external_skills_enabled() -> bool:
+    """Decide whether to actually import any external skill module.
+
+    **v0.9.1 changed the default from opt-out to opt-in.** External
+    skills are TRUSTED Python code that can bypass every harness
+    primitive via plain ``import os``. Loading them by default was a
+    quiet security wart even with the stderr warning. The new policy:
+
+      * ``LOCALFLOW_DISABLE_EXTERNAL_SKILLS=1`` (legacy kill-switch) →
+        always disabled. Still honored for back-compat with scripts /
+        CI that set it.
+      * ``LOCALFLOW_ENABLE_EXTERNAL_SKILLS=1`` → explicit opt-in.
+        Required to load anything.
+      * Neither set → external skills are SKIPPED. The audit table
+        records "skipped: external skills opt-in required" so users
+        notice when an installed plug-in isn't being loaded.
+
+    Existing users who relied on the old auto-load behaviour need to
+    add ``LOCALFLOW_ENABLE_EXTERNAL_SKILLS=1`` to their environment
+    (or `.env`). This is intentional — the warning we shipped in
+    Phase 7 was easy to ignore; making opt-in explicit is the only
+    real defence.
+    """
+    if _truthy(os.environ.get(DISABLE_ENV, "")):
+        return False
+    return _truthy(os.environ.get(ENABLE_ENV, ""))
 
 
 def discover_and_register_external(
@@ -135,15 +162,23 @@ def discover_and_register_external(
 
     findings: list[LoadFinding] = []
 
-    if _external_skills_disabled():
-        # Kill switch is set — record one finding per searched dir so the
-        # audit table is still informative, then return without importing.
+    if not _external_skills_enabled():
+        # v0.9.1: opt-in default. Record one finding per searched dir so
+        # users running `localflow skills` see WHY their plug-in isn't
+        # loading and can opt in deliberately.
+        if _truthy(os.environ.get(DISABLE_ENV, "")):
+            reason = f"disabled by {DISABLE_ENV}=1"
+        else:
+            reason = (
+                f"external skills opt-in required: set {ENABLE_ENV}=1 to load "
+                "(external skills are TRUSTED Python code — see docs/SECURITY.md)"
+            )
         for skills_dir in dirs:
             findings.append(
                 LoadFinding(
                     source_dir=str(skills_dir),
                     status="skipped",
-                    error=f"disabled by {DISABLE_ENV}=1",
+                    error=reason,
                 )
             )
         return findings
@@ -270,11 +305,11 @@ def discover_and_register_external(
             {f.skill_name for f in findings if f.status == "registered" and f.skill_name}
         )
         sys.stderr.write(
-            f"⚠ LocalFlow loaded {registered_count} external skill(s): "
-            f"{', '.join(names)}. External skills are TRUSTED Python code and "
-            f"are NOT sandboxed — they can bypass the harness via direct "
-            f"imports. To disable, set {DISABLE_ENV}=1 in your environment "
-            f"(see docs/SECURITY.md).\n"
+            f"⚠ LocalFlow loaded {registered_count} external skill(s) "
+            f"(opt-in via {ENABLE_ENV}=1): {', '.join(names)}. External "
+            "skills are TRUSTED Python code and are NOT sandboxed — they can "
+            "bypass the harness via direct imports. To disable, unset "
+            f"{ENABLE_ENV} or set {DISABLE_ENV}=1 (see docs/SECURITY.md).\n"
         )
 
     return findings
