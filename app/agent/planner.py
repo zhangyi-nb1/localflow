@@ -71,6 +71,7 @@ def plan_with_llm(
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     on_delta: Callable[[str], None] | None = None,
     on_attempt: Callable[[int], None] | None = None,
+    system_prompt: str | None = None,
 ) -> ActionPlan:
     """Drop-in replacement for ``plan_organization`` that uses an LLM.
 
@@ -85,10 +86,20 @@ def plan_with_llm(
     ``on_delta`` and ``on_attempt`` enable progressive UI: ``on_delta``
     fires with each streamed chunk of the tool_call arguments JSON;
     ``on_attempt`` fires at the start of each (possibly repair) attempt.
+
+    ``system_prompt`` overrides the folder-organizer-flavored
+    :data:`SYSTEM_PROMPT` — the v0.9.0 ``agent`` meta-skill passes its
+    own prompt teaching the model to emit chart actions in addition to
+    moves/index. Pass ``None`` to keep the legacy folder-organizer
+    behaviour (existing callers unchanged).
     """
     if client is None:
         client = _default_client()
-    planner = LLMPlanner(client=client, max_attempts=max_attempts)
+    planner = LLMPlanner(
+        client=client,
+        max_attempts=max_attempts,
+        system_prompt=system_prompt,
+    )
     return planner.plan(task, snapshot, on_delta=on_delta, on_attempt=on_attempt)
 
 
@@ -124,9 +135,18 @@ class LLMPlanner:
     re-sending the workspace snapshot.
     """
 
-    def __init__(self, *, client: LLMClient, max_attempts: int = DEFAULT_MAX_ATTEMPTS) -> None:
+    def __init__(
+        self,
+        *,
+        client: LLMClient,
+        max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+        system_prompt: str | None = None,
+    ) -> None:
         self.client = client
         self.max_attempts = max_attempts
+        # Default: folder-organizer-flavored SYSTEM_PROMPT (back-compat).
+        # The agent skill overrides this with its own multi-capability prompt.
+        self.system_prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
         self.last_attempts: list[AttemptLog] = []
 
     def plan(
@@ -148,7 +168,7 @@ class LLMPlanner:
                 on_attempt(attempt)
             try:
                 response = self.client.generate_structured(
-                    system=SYSTEM_PROMPT,
+                    system=self.system_prompt,
                     messages=messages,
                     tool_name=TOOL_NAME,
                     tool_description=TOOL_DESCRIPTION,

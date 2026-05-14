@@ -422,6 +422,80 @@ reason line so users know exactly what's being chosen.
 
 ---
 
+## Phase 8.3 — agent meta-skill (v0.9.0)
+
+**Goal**: close the v0.8.2 design gap where compound goals like
+"organize then chart then summarize" still routed to a single
+specialist skill that could only do one third of the task. Real-user
+feedback: the multi-skill picker + override panel was rated 蠢 ("dumb")
+and the user wanted "agent 自行决定 + harness 纠错保证质量".
+
+**Shipped**:
+
+- **New `agent` meta-skill** ([app/skills/agent/](localflow/app/skills/agent/)) —
+  the v0.9.0 default. LLM-driven. Allowed actions: every category
+  (mkdir / move / rename / copy / index). Required tool:
+  `chart_ops.bar_png`. Produces a SINGLE ActionPlan covering every
+  step of a compound goal in one cycle.
+- **Custom system prompt** ([app/skills/agent/llm_planner.py](localflow/app/skills/agent/llm_planner.py)) —
+  extends the folder-organizer prompt with a `chart_request`
+  convention: the LLM emits INDEX actions with target_path ending in
+  `.png` and metadata.chart_request = `{kind, title, xlabel, counts}`.
+  Python renders the PNG via `chart_ops.bar_png` after the LLM call.
+  LLM never produces base64 bytes itself, keeping plan.json small +
+  human-readable.
+- **`render_chart_actions` post-processor**: walks the LLM's plan,
+  renders every chart_request to PNG bytes, substitutes
+  `binary_content_b64`. Malformed specs degrade to markdown error
+  placeholders instead of crashing the plan.
+- **Refactor `app/agent/planner.py`**: `plan_with_llm` now accepts a
+  `system_prompt` kwarg (default = legacy folder_organizer prompt for
+  back-compat). The agent skill passes its own. **Pluggable prompts
+  are the only way a new skill can use the existing LLM repair-loop
+  infrastructure without forking it.**
+- **UI simplification** ([app/ui/_autodetect.py](localflow/app/ui/_autodetect.py)
+  + [app/ui/pages/1_Plan.py](localflow/app/ui/pages/1_Plan.py)) —
+  auto-detect always returns `agent` + `llm` (or `rule` for empty
+  goal). Override expander removed. Capability-gap warning removed
+  (no gaps when one skill handles everything). The Plan page is
+  now: goal text area + one-line "agent will plan end-to-end" +
+  Create plan button.
+
+**Files** (new): `app/skills/agent/` (6 files), `tests/test_agent_skill.py`.
+**Files** (modified): `app/agent/planner.py`, `app/skills/__init__.py`,
+`app/ui/_autodetect.py`, `app/ui/pages/1_Plan.py`, `app/ui/_i18n.py`,
+`tests/test_ui_autodetect.py`, `pyproject.toml` (0.8.2 → 0.9.0).
+
+**Tests**: 359 → 357 net (the v0.8.2 autodetect tests were rewritten
+from 27 to 19 to match the new always-agent contract — minus 8;
+`test_agent_skill.py` adds 15 — plus 15; minus 9 from removing the
+v0.8.2 compound + capability-gap cases that the agent now handles
+internally. Lint + format clean.
+
+**§10.7**: NO kernel touches. The `system_prompt` parameter is added
+to the agent planner (which lives in `app/agent/`, NOT
+`app/harness/`). The harness still sees a generic ActionPlan it knows
+how to dry-run + execute + verify + rollback. **16th** zero-kernel-touch
+phase.
+
+**Specialist skills stay in the registry**: folder_organizer /
+pdf_indexer / data_reporter / data_analyzer / workspace_visualizer
+remain available via CLI (`--skill <name>`) and MCP (`create_plan`).
+Only the UI defaults to agent — power users keep their precision tools.
+
+**Worked example** — the user's compound goal:
+
+> 将文件按种类整理，然后在各自文件夹下总结文件的信息，最后把各文件夹的文件数以柱状图绘制然后放在图象文件夹下
+
+v0.8.2 routed to `data_reporter + rule` and produced a markdown file
+pretending to be a chart. v0.9.0 routes to `agent + llm`; the LLM
+decomposes the goal into mkdir + move (organize part) + per-folder
+index.md (summarize part) + INDEX action with chart_request (chart
+part). The Python post-processor renders the real PNG. ONE plan,
+ONE approval, ONE execute.
+
+---
+
 ## Phase 8.2 — workspace_visualizer + smart planner upgrades (v0.8.2)
 
 **Goal**: close the v0.8.1 gap where user testing exposed three real
@@ -539,8 +613,9 @@ post-nav persistence, fresh-session reset). Total 318 → 319.
 | **8.1 (v0.8.0)** | NO | UI UX overhaul: i18n + autodetect + sidebar rewrite |
 | 8.1.1 (v0.8.1) | NO | Sticky unsafe mode (Streamlit page-nav drops query params) |
 | **8.2 (v0.8.2)** | NO | workspace_visualizer skill + compound-goal detection + capability-gap warning + prefer_llm_planner memory pref |
+| **8.3 (v0.9.0)** | NO | agent meta-skill (LLM-driven, one-shot compound execution) + pluggable system prompts + UI collapse to single skill |
 
-**Score**: 1 deliberate exception across 15 deliveries. The rule held.
+**Score**: 1 deliberate exception across 16 deliveries. The rule held.
 
 ---
 

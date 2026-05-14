@@ -1,4 +1,4 @@
-# LocalFlow UI (Streamlit) — v0.8.2
+# LocalFlow UI (Streamlit) — v0.9.0
 
 A localhost-only browser UI that wraps the same harness the CLI and
 MCP server use. Built for users who'd rather click than memorize 5
@@ -8,18 +8,28 @@ CLI commands.
 > through policy_guard, dry-run, approval, executor, verifier, audit,
 > rollback. Nothing in `app/ui/` can perform IO that the CLI couldn't.
 
-**v0.8.0 highlights** (Phase 8.1 UX overhaul):
-- **Language toggle** in the sidebar — pick `English` or `中文`; every
-  label switches instantly. Session-scoped (no disk persistence yet).
-- **Auto-detected skill + planner** on the Plan page — write a goal,
-  LocalFlow picks the right skill (folder_organizer / pdf_indexer /
-  data_reporter / data_analyzer) and decides rule vs LLM based on
-  workspace contents + goal keywords. Manual selection is still
-  available under "Override (advanced)".
-- **Workspace source radio** in the sidebar — replaces the previous
-  dropdown-plus-collapsed-expander layout that silently lost custom
-  paths. Sandbox subdir vs Custom path now live in the same widget.
-- Active workspace badge always visible at the top of the sidebar.
+**v0.9.0 highlights** (Phase 8.3 agent meta-skill):
+- **One skill, one plan, one compound goal**. The Plan page no longer
+  asks you to pick between five specialist skills. It always routes
+  through the new `agent` meta-skill — an LLM-driven planner that
+  decomposes "整理 + 分析 + 绘制柱状图" into a single ActionPlan
+  covering every step. No more "run a second task for the chart".
+- **Override panel removed**. Specialist skills (folder_organizer,
+  workspace_visualizer, …) remain available via CLI (`--skill <name>`)
+  and MCP for power users, but they don't show up in the UI anymore.
+- **Real PNG charts in one go**. The agent's system prompt teaches
+  the LLM to emit `metadata.chart_request` blocks; the skill renders
+  them through `chart_ops.bar_png` after the LLM call. Plan.json
+  stays text-only and small; the harness still sees a single
+  ActionPlan it can dry-run / verify / rollback.
+
+**Earlier highlights** (v0.8.x, still present):
+- Sidebar language toggle (English / 中文)
+- Sticky `?unsafe=1` mode that survives page navigation
+- Radio-driven workspace picker (sandbox subdir vs custom path)
+- Active workspace badge always visible at the top of the sidebar
+- Memory page with `forbidden_paths` + `naming_style` +
+  `prefer_llm_planner` toggles
 
 ## Install
 

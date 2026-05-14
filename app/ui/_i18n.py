@@ -216,8 +216,8 @@ _DICT: dict[str, dict[Lang, str]] = {
     },
     # ───────────────────────── plan page ─────────────────────────
     "plan.subtitle": {
-        "en": "Describe what you want — LocalFlow picks the skill + planner.",
-        "zh": "用一句话描述你想做的事 — LocalFlow 自动选择 skill 与 planner。",
+        "en": "Describe what you want — the agent decomposes and plans end-to-end.",
+        "zh": "用一句话描述你想做的事 — agent 自动拆解并一次性出 plan。",
     },
     "plan.goal.label": {
         "en": "What do you want to do? / 你想做什么？",

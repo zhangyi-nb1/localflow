@@ -515,6 +515,7 @@ UI 自 v0.7.0 推出，至 v0.7.4 经历的关键改进：
 | v0.8.0 | **三大 UX 修复**：① 中英双语切换（左侧栏顶端单选按钮）② Plan 页面自动识别 skill + planner，写 goal 即可，手动选项收进折叠面板 ③ 左侧栏 Source 单选按钮取代旧的下拉 + 折叠 expander，自定义路径输入框现在显式且可见 |
 | v0.8.1 | 修复「点 Plan 后自定义路径被静默切回 sandbox」—— Streamlit 多页切换会丢掉 URL 的 `?unsafe=1`。现在 unsafe 模式一旦启用就锁定到 session_state，跨页切换不会再丢失。 |
 | v0.8.2 | **三大升级**：① 新增 `workspace_visualizer` skill —— 真画 PNG 柱状图（不再是 markdown 假图） ② 复合 goal 自动升级 LLM（含「然后/再/最后」等连接词或 3+ 不同动词时） ③ Memory 新增「Prefer LLM by default」开关 + Plan 页面增加「能力缺口」黄色警告，提示当一个 skill 不能完整覆盖 goal 时该怎么补齐。 |
+| v0.9.0 | **架构性升级 · agent meta-skill**：UI 上不再让用户在 5 个 skill 之间选 —— 永远走新增的 `agent` skill。它的 LLM 一次性出包含 mkdir + move + 写 markdown + 画 PNG 的**单一 ActionPlan**，复合 goal 一个 task 跑完。Override 折叠面板移除，能力缺口警告移除（agent 没有缺口）。Specialist skill 仍在 CLI/MCP 可用；harness 不变，仍由 dry-run / approval / executor / verifier / rollback 五道闸保证安全。 |
 
 ---
 

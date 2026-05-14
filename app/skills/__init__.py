@@ -20,6 +20,7 @@ from app.skills._loader import (
     default_external_skill_dirs,
     discover_and_register_external,
 )
+from app.skills.agent import AgentSkill
 from app.skills.data_analyzer import DataAnalyzerSkill
 from app.skills.data_reporter import DataReporterSkill
 from app.skills.folder_organizer import FolderOrganizerSkill
@@ -37,6 +38,7 @@ _default_registry.register(PdfIndexerSkill(), tool_registry=_tool_registry)
 _default_registry.register(DataReporterSkill(), tool_registry=_tool_registry)
 _default_registry.register(DataAnalyzerSkill(), tool_registry=_tool_registry)
 _default_registry.register(WorkspaceVisualizerSkill(), tool_registry=_tool_registry)
+_default_registry.register(AgentSkill(), tool_registry=_tool_registry)
 
 # Phase 4.1: filesystem skill discovery. Built-ins register FIRST so any
 # external skill with a colliding name fails registration (logged in the
@@ -63,6 +65,7 @@ def get_load_findings() -> list[LoadFinding]:
 
 
 __all__ = [
+    "AgentSkill",
     "ContractReport",
     "DataAnalyzerSkill",
     "DataReporterSkill",

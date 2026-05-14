@@ -107,17 +107,18 @@ Full threat model + per-mitigation tests: [**docs/SECURITY.md**](docs/SECURITY.m
 
 ```
 Core harness:    full lifecycle (plan / dry-run / approval / execute / verify / rollback)
-Skills:          folder_organizer · pdf_indexer · data_reporter · data_analyzer
-                 · workspace_visualizer (new in v0.8.2 — real PNG bar charts)
+Skills:          agent (v0.9.0 default — LLM-driven one-shot compound execution)
+                 + folder_organizer · pdf_indexer · data_reporter
+                 · data_analyzer · workspace_visualizer (specialists, CLI/MCP)
                  + filesystem plug-in loader (Phase 4.1)
 Tool Registry:   15 declarable callable helpers, manifest-validated at register time
 Memory:          forbidden_paths (kernel-side) · naming_style · prefer_llm_planner
 MCP server:      stdio JSON-RPC, 18 tools, approval-token gated execute
-UI (v0.8.2):     Streamlit browser UI · EN/中文 toggle · goal-only Plan page
-                 with skill+planner auto-detect · compound-goal → LLM upgrade
-                 · capability-gap warning · radio-driven workspace picker with
-                 sticky ?unsafe=1 · soft-sandboxed to ./sandbox/
-Tests:           359 passing across 5 OS × Python matrix in CI
+UI (v0.9.0):     Streamlit browser UI · EN/中文 toggle · goal-only Plan page
+                 routing every compound goal through the agent meta-skill;
+                 specialist skills remain CLI/MCP-only. Radio-driven workspace
+                 picker with sticky ?unsafe=1 · soft-sandboxed to ./sandbox/
+Tests:           357 passing across 5 OS × Python matrix in CI
 ```
 
 Three equivalent driver layers, same kernel:
@@ -216,7 +217,7 @@ python -m build
 
 Releases (with verified wheel artifacts) under [**GitHub Releases**](https://github.com/zhangyi-nb1/localflow/releases).
 
-Version scheme: `0.<highest_phase>.<sub>`. Current `0.8.2` = Phase 6.1 + Phase 7 hardening + Phase 8.0 UI + Phase 8.1 UX overhaul + 8.1.1 sticky unsafe fix + Phase 8.2 workspace_visualizer + smart planner upgrades.
+Version scheme: `0.<highest_phase>.<sub>`. Current `0.9.0` = Phase 6.1 + Phase 7 hardening + Phase 8.0 UI + 8.1 UX overhaul + 8.1.1 sticky unsafe + 8.2 workspace_visualizer + smart planner upgrades + **Phase 8.3 agent meta-skill (one-shot compound execution)**.
 
 ---
 

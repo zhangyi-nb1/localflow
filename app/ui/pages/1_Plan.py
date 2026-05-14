@@ -1,9 +1,14 @@
-"""Plan page — describe a goal, LocalFlow picks the skill + planner.
+"""Plan page — describe a goal, agent decides the rest.
 
-Phase 8.1 / v0.8.0 rewrite. The user writes a goal; the page
-auto-detects which skill + planner fits, surfaces the choice with a
-reason string, and offers a collapsed Override expander as the escape
-valve for the cases where the heuristic guesses wrong.
+Phase 8.3 / v0.9.0 simplification. The page is now a goal text area,
+a one-line auto-detect status, and a "Create plan" button. No Override
+expander, no capability-gap warning — the new ``agent`` meta-skill
+handles compound goals end-to-end in a single ActionPlan, so there's
+nothing to override and no gap to warn about.
+
+The auto-detect module always returns ``agent`` + ``llm`` (or ``rule``
+fallback for empty goals). Specialist skills remain in the registry
+for CLI / MCP callers but are no longer surfaced in the UI.
 """
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ from app.memory import MemoryStore, NamingStyle
 from app.schemas import TaskSpec
 from app.skills import SkillError, get_default_registry
 from app.storage.run_store import RunStore
-from app.ui._autodetect import autodetect_planner, autodetect_skill, detect_capability_gap
+from app.ui._autodetect import autodetect_planner, autodetect_skill
 from app.ui._i18n import t
 from app.ui._layout import (
     SESSION_TASK_KEY,
@@ -38,10 +43,9 @@ def main() -> None:
     workspace = require_workspace()
 
     registry = get_default_registry()
-    skill_names = registry.list_names()
 
     # Goal input — outside any form so Streamlit reruns on every change
-    # and the auto-detected badge updates live.
+    # and the auto-detect line updates live.
     goal = st.text_area(
         t("plan.goal.label"),
         placeholder=t("plan.goal.placeholder"),
@@ -49,12 +53,10 @@ def main() -> None:
         key="plan_goal_input",
     )
 
-    # Cheap workspace scan for detection (no hash, no preview). Cached
-    # in session by workspace key so flipping between tabs doesn't
-    # re-scan a 10k-file folder on every keystroke.
+    # Cheap workspace scan kept around for any future heuristics; the
+    # v0.9.0 autodetect ignores it.
     detect_snapshot = _detect_snapshot(workspace)
 
-    # Read the prefer_llm_planner memory pref for planner detection.
     try:
         prefer_llm = MemoryStore().load().prefer_llm_planner
     except Exception:
@@ -62,7 +64,6 @@ def main() -> None:
 
     skill_choice = autodetect_skill(goal, detect_snapshot, registry)
     planner_choice = autodetect_planner(goal, skill_choice.name, registry, prefer_llm=prefer_llm)
-    gap = detect_capability_gap(goal, skill_choice.name, detect_snapshot)
 
     if goal.strip():
         st.markdown(
@@ -79,49 +80,11 @@ def main() -> None:
                 planner_reason=planner_choice.reason,
             )
         )
-        if gap is not None:
-            st.warning(
-                "**"
-                + t("plan.gap.title")
-                + "** — "
-                + gap.message
-                + (
-                    "\n\n" + t("plan.gap.suggest_skill", skill=gap.suggested_skill)
-                    if gap.suggested_skill
-                    else ""
-                )
-                + "\n\n"
-                + t("plan.gap.next_steps")
-            )
     else:
         st.markdown(t("plan.goal.empty_hint"))
 
-    # Override expander — power-user escape valve. Default collapsed.
-    with st.expander(t("plan.override.expander"), expanded=False):
-        override_skill_idx = (
-            skill_names.index(skill_choice.name) if skill_choice.name in skill_names else 0
-        )
-        override_skill = st.selectbox(
-            t("plan.override.skill"),
-            options=skill_names,
-            index=override_skill_idx,
-            help=t("plan.override.skill_help"),
-            key="plan_override_skill",
-        )
-        override_planner = st.radio(
-            t("plan.override.planner"),
-            options=["rule", "llm"],
-            index=0 if planner_choice.name == "rule" else 1,
-            help=t("plan.override.planner_help"),
-            key="plan_override_planner",
-            horizontal=True,
-        )
-
-    # Final picks: override values win (the widgets above default to
-    # the auto-detected values, so if the user doesn't touch them, the
-    # detection wins).
-    skill_name = override_skill
-    planner = override_planner
+    skill_name = skill_choice.name
+    planner = planner_choice.name
 
     submitted = st.button(t("plan.button.create"), type="primary", key="plan_submit")
     if not submitted:
@@ -137,7 +100,6 @@ def main() -> None:
         st.error(t("plan.error.llm_unsupported", skill=skill_name))
         return
 
-    # Mirror CLI: load memory prefs and project onto TaskSpec.
     prefs = MemoryStore().load()
     preferences: dict = {}
     if prefs.naming_style != NamingStyle.ORIGINAL:
@@ -175,8 +137,6 @@ def main() -> None:
         goal=goal,
         skill=skill_name,
         planner=planner,
-        autodetected_skill=skill_choice.name,
-        autodetected_planner=planner_choice.name,
     )
 
     with st.spinner(t("plan.spinner.scanning")):
@@ -216,9 +176,9 @@ def main() -> None:
 
 
 def _detect_snapshot(workspace):
-    """Cheap workspace scan used by autodetect_skill. Cached per
-    workspace path in session_state — keys re-typed in the goal box
-    don't trigger a re-scan."""
+    """Cheap workspace scan cached per workspace path. v0.9.0 autodetect
+    doesn't actually consume the snapshot, but the helper is retained
+    so any future per-workspace UI hints can plug in cheaply."""
     key = f"_detect_snap::{workspace}"
     cached = st.session_state.get(key)
     if cached is not None:

@@ -1,16 +1,20 @@
-"""Phase 8.1 / v0.8.0 — auto-detect skill + planner heuristics.
+"""v0.9.0 — auto-detect collapsed to always-agent.
 
-The Plan page no longer asks the user to pick a Skill manually. The
-heuristic in ``app/ui/_autodetect.py`` chooses a skill based on:
+v0.8.x routed goals across five specialist skills via a keyword
+heuristic. v0.9.0 replaces that with a single ``agent`` meta-skill
+that handles compound goals end-to-end. These tests pin the new
+contract:
 
-  * Keywords in the goal (English + Chinese)
-  * The workspace's file-type distribution
-  * Whether the chosen skill supports LLM planning
-
-These tests exercise every branch of that decision tree using
-synthetic ``WorkspaceSnapshot`` instances. They don't import
-Streamlit — the auto-detect module is deliberately Streamlit-free
-for exactly this reason.
+  * ``autodetect_skill`` always returns ``agent`` (unless the registry
+    is broken, in which case folder_organizer is a defensive fallback).
+  * ``autodetect_planner`` returns ``llm`` for any non-empty goal,
+    ``rule`` for empty goals (which exercise folder_organizer's
+    deterministic fallback inside the agent skill).
+  * ``detect_capability_gap`` always returns None — the agent covers
+    every capability the UI used to gate-keep on.
+  * ``is_compound_goal`` is kept for backwards compatibility (CLI
+    diagnostics, future tooling) but the planner no longer consults
+    it.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ from datetime import datetime, timezone
 from app.schemas import FileMeta, WorkspaceSnapshot
 from app.skills import get_default_registry
 from app.ui._autodetect import (
+    DEFAULT_SKILL,
     autodetect_planner,
     autodetect_skill,
     detect_capability_gap,
@@ -28,7 +33,8 @@ from app.ui._autodetect import (
 
 
 def _snap(file_types: dict[str, int]) -> WorkspaceSnapshot:
-    """Build a synthetic snapshot with N files of each given type."""
+    """Synthesize a snapshot with N files of each given type. Used
+    only to verify autodetect *ignores* the workspace in v0.9.0."""
     files: list[FileMeta] = []
     counter = 0
     for ftype, n in file_types.items():
@@ -48,310 +54,149 @@ def _snap(file_types: dict[str, int]) -> WorkspaceSnapshot:
         root="/fake",
         files=files,
         total_files=len(files),
-        total_size_bytes=sum(f.size_bytes for f in files),
+        total_size_bytes=len(files),
     )
 
 
-# ───────────────────────────────────── autodetect_skill
+# ───────────────────────────────────── autodetect_skill — always agent
 
 
-def test_empty_goal_defaults_to_folder_organizer() -> None:
-    """Until the user types a goal we have nothing to go on — default
-    to the most generic skill."""
+def test_default_skill_is_agent() -> None:
+    """v0.9.0: the only user-facing skill is `agent`. Pin the
+    module-level constant so refactors don't drift it silently."""
+    assert DEFAULT_SKILL == "agent"
+
+
+def test_empty_goal_still_returns_agent() -> None:
     reg = get_default_registry()
     choice = autodetect_skill("", _snap({"text": 3}), reg)
-    assert choice.name == "folder_organizer"
-    assert "goal" in choice.reason.lower()
+    assert choice.name == "agent"
 
 
-def test_data_analyzer_for_csv_plus_analyze_keyword() -> None:
+def test_organize_goal_returns_agent() -> None:
     reg = get_default_registry()
-    snap = _snap({"tabular": 2, "text": 1})
-    choice = autodetect_skill("analyze the sales data", snap, reg)
-    assert choice.name == "data_analyzer"
-    assert "tabular" in choice.reason.lower()
+    choice = autodetect_skill("整理 by file type", _snap({"text": 3, "pdf": 2}), reg)
+    assert choice.name == "agent"
 
 
-def test_data_analyzer_chinese_keyword() -> None:
-    """Chinese intent words should trigger the same routing."""
+def test_chart_goal_returns_agent() -> None:
     reg = get_default_registry()
-    snap = _snap({"tabular": 2})
-    choice = autodetect_skill("帮我分析这些数据", snap, reg)
-    assert choice.name == "data_analyzer"
+    choice = autodetect_skill("draw a bar chart", _snap({"image": 4}), reg)
+    assert choice.name == "agent"
 
 
-def test_data_reporter_for_csv_plus_report_keyword() -> None:
+def test_compound_goal_returns_agent() -> None:
+    """The user's exact testing-grade goal — v0.9.0 routes it cleanly
+    to the agent for one-shot compound execution."""
     reg = get_default_registry()
-    snap = _snap({"tabular": 2})
-    choice = autodetect_skill("generate a report and summary", snap, reg)
-    assert choice.name == "data_reporter"
+    goal = "将文件按种类整理，然后总结，最后绘制柱状图"
+    choice = autodetect_skill(goal, _snap({"pdf": 4, "image": 2, "excel": 1}), reg)
+    assert choice.name == "agent"
 
 
-def test_data_reporter_for_xlsx_treated_as_tabular() -> None:
-    """xlsx files classify as "excel" not "tabular"; the heuristic
-    treats them as tabular for routing purposes."""
+def test_workspace_files_do_not_change_routing() -> None:
+    """v0.8.x routed tabular workspaces to data_analyzer. v0.9.0 leaves
+    routing entirely to the agent's LLM — file types in the snapshot
+    no longer influence the UI's skill pick."""
     reg = get_default_registry()
-    snap = _snap({"excel": 2})
-    choice = autodetect_skill("statistics on this", snap, reg)
-    assert choice.name == "data_reporter"
+    tab_choice = autodetect_skill("anything", _snap({"tabular": 5, "excel": 3}), reg)
+    pdf_choice = autodetect_skill("anything", _snap({"pdf": 5}), reg)
+    assert tab_choice.name == "agent"
+    assert pdf_choice.name == "agent"
 
 
-def test_pdf_indexer_for_pdfs_plus_pdf_keyword() -> None:
-    reg = get_default_registry()
-    snap = _snap({"pdf": 3})
-    choice = autodetect_skill("index all the papers", snap, reg)
-    assert choice.name == "pdf_indexer"
-
-
-def test_pdf_indexer_chinese_keyword() -> None:
-    reg = get_default_registry()
-    snap = _snap({"pdf": 3})
-    choice = autodetect_skill("给所有论文生成索引", snap, reg)
-    assert choice.name == "pdf_indexer"
-
-
-def test_folder_organizer_for_organize_keyword() -> None:
-    reg = get_default_registry()
-    snap = _snap({"text": 2, "image": 2, "pdf": 1})
-    choice = autodetect_skill("organize by file type", snap, reg)
-    assert choice.name == "folder_organizer"
-
-
-def test_folder_organizer_chinese_keyword() -> None:
-    reg = get_default_registry()
-    snap = _snap({"text": 2, "image": 2})
-    choice = autodetect_skill("按文件类型整理", snap, reg)
-    assert choice.name == "folder_organizer"
-
-
-def test_fallback_to_data_reporter_when_tabular_no_keyword() -> None:
-    """Workspace heavily tabular but goal lacks a clear keyword →
-    default to producing a data report, since that's the most useful
-    thing to do with CSV files when the user is vague."""
-    reg = get_default_registry()
-    snap = _snap({"tabular": 5})
-    choice = autodetect_skill("do something useful", snap, reg)
-    assert choice.name == "data_reporter"
-
-
-def test_fallback_to_pdf_indexer_when_pdfs_no_keyword() -> None:
-    reg = get_default_registry()
-    snap = _snap({"pdf": 4})
-    choice = autodetect_skill("do something useful", snap, reg)
-    assert choice.name == "pdf_indexer"
-
-
-def test_universal_fallback_folder_organizer() -> None:
-    """No tabular, no PDFs, no recognized keyword → universal fallback."""
-    reg = get_default_registry()
-    snap = _snap({"image": 3, "video": 2})
-    choice = autodetect_skill("do something useful", snap, reg)
-    assert choice.name == "folder_organizer"
-
-
-def test_empty_snapshot_default_organizer() -> None:
-    reg = get_default_registry()
-    snap = _snap({})
-    choice = autodetect_skill("organize", snap, reg)
-    assert choice.name == "folder_organizer"
-
-
-def test_none_snapshot_handled() -> None:
-    """The Plan page passes None when the cheap scan hasn't completed
-    yet — the function must not crash."""
+def test_no_snapshot_still_returns_agent() -> None:
+    """If the workspace scan hasn't completed yet, autodetect must
+    still produce a sane skill choice."""
     reg = get_default_registry()
     choice = autodetect_skill("organize", None, reg)
-    assert choice.name == "folder_organizer"
+    assert choice.name == "agent"
 
 
 # ───────────────────────────────────── autodetect_planner
 
 
-def test_planner_rule_when_skill_does_not_support_llm() -> None:
-    """pdf_indexer + data_reporter don't override plan_with_llm.
-    Even with semantic intent keywords, the planner falls back to rule."""
+def test_empty_goal_returns_rule() -> None:
+    """An empty goal box can't drive an LLM call. Fall back to the
+    deterministic rule planner so the page still works."""
     reg = get_default_registry()
-    choice = autodetect_planner("summarize semantically", "pdf_indexer", reg)
-    assert choice.name == "rule"
-    assert "doesn't support" in choice.reason.lower()
-
-
-def test_planner_llm_when_intent_keyword_and_skill_supports() -> None:
-    """folder_organizer supports LLM; goal mentions semantic intent →
-    pick llm."""
-    reg = get_default_registry()
-    choice = autodetect_planner("organize by content", "folder_organizer", reg)
-    assert choice.name == "llm"
-
-
-def test_planner_llm_chinese_intent() -> None:
-    reg = get_default_registry()
-    choice = autodetect_planner("按内容智能分类", "folder_organizer", reg)
-    assert choice.name == "llm"
-
-
-def test_planner_rule_when_no_semantic_keyword() -> None:
-    """folder_organizer + plain 'organize' goal → rule planner is
-    sufficient and 100× faster than LLM."""
-    reg = get_default_registry()
-    choice = autodetect_planner("organize by file type", "folder_organizer", reg)
+    choice = autodetect_planner("", "agent", reg)
     assert choice.name == "rule"
 
 
-def test_planner_for_unknown_skill_safely_defaults_to_rule() -> None:
-    """If the skill registry doesn't know the skill (shouldn't happen
-    in production, but guard against it), default to the safer rule
-    planner rather than crashing."""
+def test_non_empty_goal_returns_llm() -> None:
+    reg = get_default_registry()
+    choice = autodetect_planner("organize by file type", "agent", reg)
+    assert choice.name == "llm"
+
+
+def test_chinese_goal_returns_llm() -> None:
+    reg = get_default_registry()
+    choice = autodetect_planner("按文件类型整理", "agent", reg)
+    assert choice.name == "llm"
+
+
+def test_unknown_skill_safely_returns_rule() -> None:
     reg = get_default_registry()
     choice = autodetect_planner("anything", "no_such_skill", reg)
     assert choice.name == "rule"
 
 
-def test_data_analyzer_supports_llm_branch() -> None:
-    """data_analyzer overrides plan_with_llm; semantic intent should
-    route to llm."""
+def test_rule_only_skill_stays_on_rule() -> None:
+    """For skills that don't override plan_with_llm (workspace_visualizer,
+    pdf_indexer, data_reporter), autodetect_planner returns rule even
+    on non-empty goals. The toggle has no LLM to switch to."""
     reg = get_default_registry()
-    choice = autodetect_planner("analyze data by topic", "data_analyzer", reg)
+    for skill in ("workspace_visualizer", "pdf_indexer", "data_reporter"):
+        choice = autodetect_planner("anything", skill, reg)
+        assert choice.name == "rule", skill
+
+
+def test_prefer_llm_is_a_no_op_when_already_llm() -> None:
+    """v0.8.2 added prefer_llm as a way to escape rule-default. v0.9.0
+    already defaults to llm; the flag still flows through but is now
+    a no-op for the agent skill."""
+    reg = get_default_registry()
+    choice = autodetect_planner("organize files", "agent", reg, prefer_llm=True)
     assert choice.name == "llm"
 
 
-# ───────────────────────────────────── v0.8.2 — compound goal → LLM
+# ───────────────────────────────────── detect_capability_gap — always None
 
 
-def test_compound_goal_chinese_marker() -> None:
-    """Goals with 然后/再/最后 are multi-step → LLM."""
+def test_capability_gap_always_none_in_v090() -> None:
+    """The agent handles every capability the v0.8.x UI gated on, so
+    there are no capability gaps to warn about anymore."""
+    snap = _snap({"pdf": 4, "image": 2})
+    for goal in (
+        "整理文件并绘制柱状图",
+        "organize files and chart the counts",
+        "make a bar chart of the data",
+        "",
+    ):
+        gap = detect_capability_gap(goal, "agent", snap)
+        assert gap is None, goal
+
+
+# ───────────────────────────────────── is_compound_goal — legacy helper
+
+
+def test_is_compound_goal_detects_chinese_marker() -> None:
     hit, reason = is_compound_goal("先整理，然后绘制图表")
     assert hit
     assert "然后" in reason or "marker" in reason
 
 
-def test_compound_goal_english_marker() -> None:
-    hit, reason = is_compound_goal("organize the files, then make a report")
-    assert hit
-    assert "then" in reason or "marker" in reason
-
-
-def test_compound_goal_multiple_verbs() -> None:
-    """Three+ distinct action verbs also trigger the compound path."""
-    hit, _ = is_compound_goal("organize sort summarize and visualize the workspace")
+def test_is_compound_goal_detects_english_marker() -> None:
+    hit, _ = is_compound_goal("organize the files, then draw a chart")
     assert hit
 
 
-def test_single_step_is_not_compound() -> None:
+def test_is_compound_goal_single_step_is_false() -> None:
     hit, _ = is_compound_goal("organize by file type")
     assert not hit
 
 
-def test_compound_goal_routes_planner_to_llm() -> None:
-    """The user's exact testing-grade goal — should land on LLM
-    because of the multi-step compound marker."""
-    reg = get_default_registry()
-    goal = "将文件按种类整理，然后总结，最后绘制柱状图"
-    choice = autodetect_planner(goal, "folder_organizer", reg)
-    assert choice.name == "llm"
-    assert "compound" in choice.reason.lower()
-
-
-# ───────────────────────────────────── v0.8.2 — prefer_llm pref
-
-
-def test_prefer_llm_overrides_simple_goal() -> None:
-    """When the user has flipped prefer_llm_planner on, even a simple
-    goal lands on the LLM planner."""
-    reg = get_default_registry()
-    choice = autodetect_planner("organize by file type", "folder_organizer", reg, prefer_llm=True)
-    assert choice.name == "llm"
-    assert "preference" in choice.reason.lower()
-
-
-def test_prefer_llm_does_not_force_rule_skills_to_llm() -> None:
-    """If the skill itself doesn't support LLM (pdf_indexer,
-    data_reporter, workspace_visualizer), the toggle is silently
-    ignored — we can't conjure an LLM planner that doesn't exist."""
-    reg = get_default_registry()
-    choice = autodetect_planner("anything", "pdf_indexer", reg, prefer_llm=True)
-    assert choice.name == "rule"
-
-
-# ───────────────────────────────────── v0.8.2 — workspace_visualizer routing
-
-
-def test_workspace_visualizer_for_chart_no_tabular() -> None:
-    """No tabular data + chart keyword → workspace_visualizer (real PNG)."""
-    reg = get_default_registry()
-    snap = _snap({"pdf": 3, "image": 2})
-    choice = autodetect_skill("draw a bar chart of my file counts", snap, reg)
-    assert choice.name == "workspace_visualizer"
-
-
-def test_workspace_visualizer_chinese_chart_keyword() -> None:
-    reg = get_default_registry()
-    snap = _snap({"image": 4})
-    choice = autodetect_skill("绘制一个柱状图", snap, reg)
-    assert choice.name == "workspace_visualizer"
-
-
-def test_data_analyzer_wins_on_tabular_with_chart_keyword() -> None:
-    """If tabular files dominate, route to data_analyzer (it draws
-    per-column charts), not workspace_visualizer (which charts file
-    counts)."""
-    reg = get_default_registry()
-    snap = _snap({"tabular": 3, "excel": 2})
-    choice = autodetect_skill("chart the sales data", snap, reg)
-    assert choice.name == "data_analyzer"
-
-
-def test_organize_wins_in_mixed_workspace_with_stray_xlsx() -> None:
-    """v0.8.2 regression: a workspace with a single xlsx + many other
-    files was hijacked into data_analyzer when the goal asked for
-    organize+chart. The user wanted to organize their workspace,
-    not analyze the spreadsheet's columns."""
-    reg = get_default_registry()
-    snap = _snap({"excel": 1, "pdf": 4, "image": 4, "text": 2})
-    goal = "将文件按种类整理，然后绘制柱状图"
-    choice = autodetect_skill(goal, snap, reg)
-    assert choice.name == "folder_organizer"
-
-
-# ───────────────────────────────────── v0.8.2 — capability gap
-
-
-def test_capability_gap_for_organize_plus_chart_picks_folder_organizer() -> None:
-    """folder_organizer can't draw charts. Gap helper should warn and
-    nudge toward workspace_visualizer as the second step."""
-    reg = get_default_registry()
-    snap = _snap({"pdf": 4, "image": 2, "text": 2})
-    goal = "整理文件并绘制柱状图"
-    sk = autodetect_skill(goal, snap, reg)
-    assert sk.name == "folder_organizer"
-    gap = detect_capability_gap(goal, sk.name, snap)
-    assert gap is not None
-    assert "workspace_visualizer" == gap.suggested_skill
-
-
-def test_capability_gap_for_organize_plus_chart_picks_visualizer() -> None:
-    """The mirror case: when workspace_visualizer is somehow picked
-    (e.g. user manually overrode), warn that the organize part is
-    missing and nudge toward folder_organizer."""
-    snap = _snap({"pdf": 4, "image": 2})
-    goal = "organize files and chart the counts"
-    gap = detect_capability_gap(goal, "workspace_visualizer", snap)
-    assert gap is not None
-    assert gap.suggested_skill == "folder_organizer"
-
-
-def test_capability_gap_warns_when_chart_routed_to_data_reporter() -> None:
-    """data_reporter writes markdown, not real PNGs. If something
-    routes a chart-asking goal there, warn the user."""
-    snap = _snap({"tabular": 2})
-    gap = detect_capability_gap("draw a chart of the data", "data_reporter", snap)
-    assert gap is not None
-    assert "markdown" in gap.message.lower()
-    assert gap.suggested_skill in ("data_analyzer", "workspace_visualizer")
-
-
-def test_capability_gap_none_for_clean_routing() -> None:
-    """workspace_visualizer + chart-only goal → no gap."""
-    snap = _snap({"pdf": 3})
-    gap = detect_capability_gap("draw a chart", "workspace_visualizer", snap)
-    assert gap is None
+def test_is_compound_goal_empty_is_false() -> None:
+    hit, _ = is_compound_goal("")
+    assert not hit

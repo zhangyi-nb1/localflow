@@ -139,11 +139,65 @@ def build_action_plan_tool_schema() -> dict[str, Any]:
                             "properties": {
                                 "content": {
                                     "type": ["string", "null"],
-                                    "description": "REQUIRED markdown body for index/summarize actions; pass null for mkdir/move/copy/rename.",
-                                }
+                                    "description": "REQUIRED markdown body for index/summarize actions writing text; pass null for mkdir/move/copy/rename AND for index actions writing a PNG chart (those use chart_request instead).",
+                                },
+                                "chart_request": {
+                                    "anyOf": [
+                                        {"type": "null"},
+                                        {
+                                            "type": "object",
+                                            "additionalProperties": False,
+                                            "properties": {
+                                                "kind": {
+                                                    "type": "string",
+                                                    "enum": ["bar"],
+                                                    "description": "Only 'bar' charts are supported in v0.9.0.",
+                                                },
+                                                "title": {
+                                                    "type": "string",
+                                                    "description": "Chart title rendered above the bars.",
+                                                },
+                                                "xlabel": {
+                                                    "type": "string",
+                                                    "description": "X-axis label (e.g. 'category', 'folder').",
+                                                },
+                                                "counts": {
+                                                    "type": "array",
+                                                    "description": "List of category counts. Each entry has a string label and an integer value. Compute from POST-move state.",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "additionalProperties": False,
+                                                        "properties": {
+                                                            "label": {
+                                                                "type": "string",
+                                                                "description": "Category name (e.g. 'papers').",
+                                                            },
+                                                            "value": {
+                                                                "type": "integer",
+                                                                "description": "File count for this category.",
+                                                            },
+                                                        },
+                                                        "required": ["label", "value"],
+                                                    },
+                                                },
+                                            },
+                                            "required": [
+                                                "kind",
+                                                "title",
+                                                "xlabel",
+                                                "counts",
+                                            ],
+                                        },
+                                    ],
+                                    "description": "Chart spec for index actions that write a PNG bar chart. Set on the same action; content must be null in that case. The harness post-processor renders the PNG via chart_ops.bar_png before execute. For non-chart actions, pass null.",
+                                },
+                                "overwrite_existing": {
+                                    "type": ["boolean", "null"],
+                                    "description": "Set true on chart actions and other regenerable artifacts. Defaults to false.",
+                                },
                             },
-                            "required": ["content"],
-                            "description": "Always provide a metadata object. content is the markdown body for index/summarize, or null otherwise.",
+                            "required": ["content", "chart_request", "overwrite_existing"],
+                            "description": "Always provide a metadata object. For text index/summarize actions: content is the markdown body, chart_request is null, overwrite_existing is null/false. For PNG chart index actions: content is null, chart_request is the spec, overwrite_existing is true. For mkdir/move/copy/rename: all three are null.",
                         },
                     },
                     # OpenAI strict mode demands every property be in required;
