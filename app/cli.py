@@ -1139,5 +1139,118 @@ def _fmt_size(n: int) -> str:
     return f"{n:.1f} PB"
 
 
+# --------------------------------------------------------------------- eval
+
+eval_app = typer.Typer(
+    help="Phase 9 (v0.10.0) — run eval tasks and report task-level success.",
+    no_args_is_help=True,
+)
+app.add_typer(eval_app, name="eval")
+
+
+@eval_app.command("list")
+def cmd_eval_list(
+    target: Path = typer.Argument(
+        ...,
+        help="A single .yaml file or a directory of eval tasks (e.g. evals/workspace_pack/).",
+    ),
+) -> None:
+    """List eval tasks discoverable at ``target``."""
+    from app.eval import discover_tasks
+
+    try:
+        tasks = discover_tasks(target)
+    except Exception as exc:
+        console.print(f"[red]error loading tasks:[/] {exc}")
+        raise typer.Exit(code=2)
+
+    if not tasks:
+        console.print(f"[yellow]no eval tasks found at[/] {target}")
+        raise typer.Exit(code=0)
+
+    table = Table(title=f"Eval tasks @ {target}")
+    table.add_column("task_id", style="cyan")
+    table.add_column("title")
+    table.add_column("skill")
+    table.add_column("planner")
+    table.add_column("graders")
+    for t in tasks:
+        table.add_row(
+            t.task_id,
+            t.title,
+            t.skill,
+            t.planner,
+            ", ".join(t.graders) or "[dim](none)[/]",
+        )
+    console.print(table)
+
+
+@eval_app.command("run")
+def cmd_eval_run(
+    target: Path = typer.Argument(
+        ...,
+        help="A single .yaml file or a directory of eval tasks.",
+    ),
+    output_md: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Write the markdown report to this path (also printed to stdout).",
+    ),
+    eval_home: Path | None = typer.Option(
+        None,
+        "--eval-home",
+        help=(
+            "Where to plant isolated workspaces + the eval RunStore. "
+            "Defaults to ``./.localflow-eval/``."
+        ),
+    ),
+    fail_fast: bool = typer.Option(False, "--fail-fast", help="Stop at the first failed task."),
+) -> None:
+    """Run one or more eval tasks. Exit code = number of failed tasks."""
+    from app.eval import discover_tasks, render_eval_report, run_eval
+
+    home = eval_home or (Path.cwd() / ".localflow-eval")
+    try:
+        tasks = discover_tasks(target)
+    except Exception as exc:
+        console.print(f"[red]error loading tasks:[/] {exc}")
+        raise typer.Exit(code=2)
+    if not tasks:
+        console.print(f"[yellow]no eval tasks found at[/] {target}")
+        raise typer.Exit(code=0)
+
+    results = []
+    failed = 0
+    for task in tasks:
+        console.print(f"[cyan]→[/] running {task.task_id} — {task.title}")
+        result = run_eval(task, home)
+        results.append(result)
+        if result.passed:
+            console.print(
+                f"  [green]PASS[/]  {len(result.grader_verdicts)}/"
+                f"{len(result.grader_verdicts)} graders  ·  {result.duration_ms} ms"
+            )
+        else:
+            failed += 1
+            console.print(
+                f"  [red]FAIL[/]  "
+                f"{sum(1 for v in result.grader_verdicts if v.passed)}/"
+                f"{len(result.grader_verdicts)} graders  ·  {result.duration_ms} ms"
+                + (f"  (error: {result.error[:80]})" if result.error else "")
+            )
+            if fail_fast:
+                break
+
+    report_md = render_eval_report(results)
+    if output_md is not None:
+        output_md.parent.mkdir(parents=True, exist_ok=True)
+        output_md.write_text(report_md, encoding="utf-8")
+        console.print(f"[dim]report written to[/] {output_md}")
+
+    console.rule(f"{len(results) - failed}/{len(results)} eval tasks passed")
+    raise typer.Exit(code=failed)
+
+
 if __name__ == "__main__":
     app()

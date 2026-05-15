@@ -1,0 +1,39 @@
+task_id: task_001_basic_organize
+title: Basic organize by file type
+goal: organize this workspace by file type
+skill: folder_organizer
+planner: rule
+
+workspace_seed:
+  - path: report.pdf
+    text: "%PDF-1.4 placeholder PDF content"
+  - path: photo.png
+    text: "PNG placeholder"
+  - path: notes.txt
+    text: "some notes"
+  - path: data.csv
+    text: "a,b\n1,2\n"
+  - path: README.md
+    text: "# project readme\n"
+
+expected_outputs:
+  - papers/report.pdf
+  - images/photo.png
+  - notes/notes.txt
+  - data/data.csv
+  - notes/README.md
+  - papers/index.md
+  - images/index.md
+  - notes/index.md
+  - data/index.md
+
+graders:
+  - safety_no_forbidden_path
+  - expected_outputs_present
+  - all_files_accounted_for
+  - rollback_restores
+
+notes: |
+  Vanilla folder_organizer + rule planner. Verifies the harness can drive
+  the simplest happy-path lifecycle end-to-end and that rollback fully
+  restores the seeded workspace.

@@ -8,12 +8,16 @@ from pathlib import Path
 from app.harness.audit import AuditLogger
 from app.harness.checkpoint import completed_action_ids
 from app.harness.policy_guard import PolicyViolation, evaluate_action, resolve_inside
+from app.harness.trace import TraceLogger
 from app.schemas import (
     ActionPlan,
     ExecutionRecord,
     ExecutionStatus,
+    FailureType,
     RollbackEntry,
     RollbackManifest,
+    TraceEvent,
+    TraceEventType,
 )
 from app.schemas.action import Action, ActionType
 from app.schemas.rollback import RollbackOpType
@@ -52,6 +56,8 @@ class Executor:
         run_store: RunStore,
         forbidden_actions: tuple[str, ...] = (),
         forbidden_paths: tuple[str, ...] = (),
+        *,
+        trace: TraceLogger | None = None,
     ) -> None:
         self.workspace_root = workspace_root.resolve()
         self.run_store = run_store
@@ -59,6 +65,10 @@ class Executor:
         self.forbidden_paths = forbidden_paths
         self.exec_log = JsonlLogger(run_store.execution_log_path)
         self.audit = AuditLogger(run_store.audit_log_path)
+        # Phase 9 — optional trace stream. None = no-op (back-compat
+        # with v0.9.1 callers; library tests that don't care about
+        # trace see identical behaviour).
+        self.trace = trace
 
     def execute(
         self,
@@ -116,6 +126,14 @@ class Executor:
                         "error": f"policy_violation: {err}",
                     },
                 )
+                self._emit_trace(
+                    TraceEventType.POLICY_CHECK,
+                    status="blocked",
+                    failure_type=_classify_policy_reason(decision.reasons),
+                    action_id=action.action_id,
+                    detail=err,
+                    payload={"task_id": plan.task_id, "reasons": list(decision.reasons)},
+                )
                 records.append(
                     ExecutionRecord(
                         run_id=run_id,
@@ -160,6 +178,16 @@ class Executor:
                 "started_at": started.isoformat(),
             },
         )
+        self._emit_trace(
+            TraceEventType.ACTION_START,
+            action_id=action.action_id,
+            detail=f"{action.action_type.value} {action.target_path or ''}",
+            payload={
+                "action_type": action.action_type.value,
+                "source": action.source_path,
+                "target": action.target_path,
+            },
+        )
         try:
             hash_before, hash_after, rb = self._dispatch(action, manifest)
         except Exception as exc:
@@ -172,6 +200,14 @@ class Executor:
                     "ended_at": ended.isoformat(),
                     "error": f"{type(exc).__name__}: {exc}",
                 },
+            )
+            self._emit_trace(
+                TraceEventType.ACTION_END,
+                status="fail",
+                action_id=action.action_id,
+                duration_ms=_duration_ms(started, ended),
+                failure_type=FailureType.UNKNOWN,
+                detail=f"{type(exc).__name__}: {exc}",
             )
             return ExecutionRecord(
                 run_id=run_id,
@@ -191,6 +227,17 @@ class Executor:
                 "action_id": action.action_id,
                 "status": ExecutionStatus.SUCCESS.value,
                 "ended_at": ended.isoformat(),
+                "hash_before": hash_before,
+                "hash_after": hash_after,
+            },
+        )
+        self._emit_trace(
+            TraceEventType.ACTION_END,
+            status="ok",
+            action_id=action.action_id,
+            duration_ms=_duration_ms(started, ended),
+            detail=f"{action.action_type.value} ok",
+            payload={
                 "hash_before": hash_before,
                 "hash_after": hash_after,
             },
@@ -414,3 +461,56 @@ class Executor:
             return abs_path.resolve().relative_to(self.workspace_root).as_posix()
         except ValueError as exc:
             raise PolicyViolation(f"path outside workspace: {abs_path}") from exc
+
+    # -- Phase 9 trace emission helper --------------------------------
+
+    def _emit_trace(
+        self,
+        event_type: TraceEventType,
+        *,
+        status: str = "ok",
+        failure_type: FailureType | None = None,
+        action_id: str | None = None,
+        duration_ms: int | None = None,
+        detail: str = "",
+        payload: dict | None = None,
+    ) -> None:
+        """No-op when self.trace is None (Phase 9 additive-only rule).
+
+        The trace stream must never raise into the executor's hot path —
+        a malformed event should drop on the floor rather than fail an
+        action. ``run_id`` and ``task_id`` come from run_store.
+        """
+        if self.trace is None:
+            return
+        try:
+            self.trace.emit(
+                TraceEvent(
+                    task_id=self.run_store.task_id,
+                    run_id=self.run_store.task_id,
+                    event_type=event_type,
+                    status=status,  # type: ignore[arg-type]
+                    failure_type=failure_type,
+                    action_id=action_id,
+                    duration_ms=duration_ms,
+                    detail=detail[:500],  # cap; eval reports don't need full traces
+                    payload=payload or {},
+                )
+            )
+        except Exception:
+            # Defensive — trace emission must never break execution.
+            pass
+
+
+def _duration_ms(start: datetime, end: datetime) -> int:
+    return max(0, int((end - start).total_seconds() * 1000))
+
+
+def _classify_policy_reason(reasons: list[str]) -> FailureType:
+    """Map policy_guard reason strings onto FailureType buckets so eval
+    histograms can separate `path_forbidden` (user-set forbidden_paths
+    hit) from generic `policy_blocked` (forbidden action type, etc.)."""
+    joined = " ".join(reasons).lower()
+    if "forbidden_path" in joined or "forbidden path" in joined:
+        return FailureType.PATH_FORBIDDEN
+    return FailureType.POLICY_BLOCKED

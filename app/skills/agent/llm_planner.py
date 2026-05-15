@@ -24,6 +24,14 @@ from app.schemas import ActionPlan
 from app.schemas.action import ActionType
 from app.tools import chart_ops
 
+# NOTE: long lines inside AGENT_SYSTEM_PROMPT below are literal prose
+# delivered to the LLM as paragraphs (same as app/agent/prompts.py).
+# Wrapping mid-paragraph via implicit concatenation would insert no
+# newline — same content — but make the source noticeably more verbose
+# without changing what the LLM sees. Existing tests
+# (`test_system_prompt_documents_chart_request_convention`) pin
+# substrings that any rewrap must preserve. Ruff format intentionally
+# leaves triple-quoted strings alone.
 AGENT_SYSTEM_PROMPT = """You are the LocalFlow Agent — an autonomous file-system planner that produces a SINGLE ActionPlan covering a compound user goal end-to-end (no follow-up tasks required, no manual hand-off).
 
 # Your role

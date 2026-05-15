@@ -134,6 +134,9 @@ Full threat model + per-mitigation tests: [**docs/SECURITY.md**](docs/SECURITY.m
 
 ```
 Core harness:    full lifecycle (plan / dry-run / approval / execute / verify / rollback)
+Trace + Eval:    structured trace.jsonl stream + eval suite (v0.10.0)
+                 `localflow eval run evals/workspace_pack/` → markdown report
+                 with per-task grader verdicts + failure-type histogram
 Skills:          agent (v0.9.0 default — LLM-driven one-shot compound execution)
                  + folder_organizer · pdf_indexer · data_reporter
                  · data_analyzer · workspace_visualizer (specialists, CLI/MCP)
@@ -145,7 +148,7 @@ UI (v0.9.0):     Streamlit browser UI · EN/中文 toggle · goal-only Plan page
                  routing every compound goal through the agent meta-skill;
                  specialist skills remain CLI/MCP-only. Radio-driven workspace
                  picker with sticky ?unsafe=1 · soft-sandboxed to ./sandbox/
-Tests:           368 passing across 5 OS × Python matrix in CI
+Tests:           397 passing across 5 OS × Python matrix in CI
 ```
 
 Three equivalent driver layers, same kernel:
@@ -156,7 +159,7 @@ localflow mcp-serve                                    # 2. MCP (Claude Code etc
 localflow ui-serve                                     # 3. Streamlit UI — http://127.0.0.1:8501
 ```
 
-UI walkthrough: [**docs/UI.md**](docs/UI.md) (EN) · [**docs/UI_zh.md**](docs/UI_zh.md) (中文用户指南). Full per-phase changelog and `§10.7` kernel-touch ledger: [**docs/PHASES.md**](docs/PHASES.md)
+UI walkthrough: [**docs/UI.md**](docs/UI.md) (EN) · [**docs/UI_zh.md**](docs/UI_zh.md) (中文用户指南). Eval suite + grader API + trace schema: [**docs/EVAL.md**](docs/EVAL.md). Full per-phase changelog and `§10.7` kernel-touch ledger: [**docs/PHASES.md**](docs/PHASES.md)
 
 ---
 
@@ -227,7 +230,11 @@ docs/         PHASES.md · ARCHITECTURE.md · SECURITY.md · MCP.md
 examples/     messy_downloads (folder_organizer demo)
               pdf_demo (pdf_indexer demo)
               external_skill_example (Phase 4.1 plug-in pattern + contract test)
-tests/        368 tests across all layers
+app/eval/     Trace + eval harness (Phase 9): TraceEvent schema,
+              TraceLogger, grader registry, runner, markdown report.
+              Drives task-level success measurement.
+evals/        Eval task YAMLs (workspace_pack/ holds the v0.10.0 starter set)
+tests/        397 tests across all layers
 ```
 
 ---
@@ -237,7 +244,7 @@ tests/        368 tests across all layers
 ```powershell
 pip install build
 python -m build
-# → dist/localflow_agent-0.9.1-py3-none-any.whl  +  .tar.gz
+# → dist/localflow_agent-0.10.0-py3-none-any.whl  +  .tar.gz
 ```
 
 | Workflow | Trigger | What it does |
@@ -247,26 +254,39 @@ python -m build
 
 Releases (with verified wheel artifacts) under [**GitHub Releases**](https://github.com/zhangyi-nb1/localflow/releases).
 
-Version scheme: `0.<highest_phase>.<sub>`. Current `0.9.1` = Phase 6.1 + Phase 7 hardening + 8.0 UI + 8.1 UX overhaul + 8.1.1 sticky unsafe + 8.2 workspace_visualizer + 8.3 agent meta-skill + **8.3.1 project hygiene (opt-in external skills + [data]/[pdf] extras + UI doc cleanup + agent integration tests)**.
+Version scheme: `0.<highest_phase>.<sub>`. Current `0.10.0` = Phase 6.1 + Phase 7 hardening + 8.0–8.3.1 UI / agent / hygiene + **Phase 9 Trace + Eval Harness** (TraceEvent schema, kernel emission at 7 sites, eval suite skeleton with 4 graders + 3 starter tasks, `localflow eval run/list` CLI).
 
 ---
 
 ## Roadmap
 
-- **v0.9.2+** — Skill manifest signing; per-skill capability scoping
-  in the LLM tool schema (so the agent can't accidentally cross-call
-  into uninvolved skill territory).
-- **v0.10.0+** — WebCollect skill (HTTPS GET → workspace, with domain
-  allow-list + robots.txt + rollback), MCP client (reverse: call
-  external MCP servers as tools), language-preference disk
-  persistence.
+- **v0.10.x** — grow the eval suite from 3 → 20+ starter tasks;
+  offline LLM fixture so LLM-planner eval tasks can run in CI
+  without burning API quota.
+- **Phase 10 (v0.11.0)** — TaskGraph / StagePlan. Multi-stage tasks
+  with per-stage verifier + repair. `stage_id` populated on every
+  trace event.
+- **Phase 11 (v0.12.0)** — Workspace Pack Builder strong demo +
+  the corresponding eval task that proves multi-stage + semantic
+  verifiers gate a real long task.
+- **Phase 12** — Semantic Verifier (LLM-as-judge graders:
+  `summary_grounded`, `chart_matches_csv`, `source_ledger_complete`)
+  + post-execute Repair Loop. The eval report will show pass-rate
+  before/after the repair loop.
+- **Future** — Skill manifest signing; per-skill capability scoping
+  in the LLM tool schema; WebCollect skill; MCP client.
 
-Recently shipped (v0.9.1):
-- External skills are now opt-in via `LOCALFLOW_ENABLE_EXTERNAL_SKILLS=1`
-- `[data]` / `[pdf]` extras — pandas / matplotlib / pypdf out of base install
-- README split into WebUI / CLI Quickstarts; UI doc cleaned of v0.8.x stale sections
-- Agent meta-skill integration tests (illegal action / forbidden path /
-  bad chart spec / rollback restoration)
+Recently shipped:
+- **v0.10.0 — Phase 9 Trace + Eval Harness.** Structured `trace.jsonl`
+  stream emitted at 7 kernel sites (LLM / policy / dry-run / token /
+  action / verifier / rollback) + new `app/eval/` package with grader
+  registry, runner, markdown report. 4 structural graders +
+  3 starter eval tasks. `localflow eval run evals/workspace_pack/`
+  is the foundation Phases 10–12 will measure against.
+- v0.9.1 — External skills are now opt-in via
+  `LOCALFLOW_ENABLE_EXTERNAL_SKILLS=1`; `[data]` / `[pdf]` extras;
+  README split into WebUI / CLI Quickstarts; agent meta-skill
+  integration tests.
 
 Deferred since groundwork is in place: directory-structure preference, report-template preference, common-task recipes (Phase 5.x).
 

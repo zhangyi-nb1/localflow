@@ -51,7 +51,12 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from app.schemas.trace import TraceEvent, TraceEventType
+
+if TYPE_CHECKING:
+    from app.harness.trace import TraceLogger
 
 from app.storage.run_store import RunStore
 
@@ -119,13 +124,21 @@ def _token_path(run_store: RunStore) -> Path:
     return run_store.run_dir / TOKEN_FILE
 
 
-def mint_token(run_store: RunStore, workspace_root: str) -> ApprovalToken:
+def mint_token(
+    run_store: RunStore,
+    workspace_root: str,
+    *,
+    trace: "TraceLogger | None" = None,
+) -> ApprovalToken:
     """Issue a fresh token for the task. Overwrites any prior token
     for the same task (re-running dry-run yields a fresh token).
 
     Caller must ensure ``plan.json`` and ``dry_run.md`` exist for the
     task before calling this — otherwise plan_hash / dry_run_hash
     can't be computed.
+
+    Phase 9: optional ``trace`` kwarg emits TOKEN_MINTED so eval reports
+    can verify the approval ceremony ran.
     """
     plan_path = run_store.plan_path
     dry_run_path = run_store.dry_run_path
@@ -145,6 +158,13 @@ def mint_token(run_store: RunStore, workspace_root: str) -> ApprovalToken:
         expires_at=(now + TOKEN_TTL).isoformat(timespec="seconds"),
     )
     _write_atomic(_token_path(run_store), token.to_dict())
+    _emit(
+        trace,
+        TraceEventType.TOKEN_MINTED,
+        task_id=run_store.task_id,
+        status="ok",
+        detail=f"ttl={int(TOKEN_TTL.total_seconds())}s",
+    )
     return token
 
 
@@ -152,6 +172,8 @@ def validate_and_consume(
     run_store: RunStore,
     token_str: str,
     workspace_root: str,
+    *,
+    trace: "TraceLogger | None" = None,
 ) -> ApprovalToken:
     """Validate ``token_str`` against the stored token and consume it.
 
@@ -166,9 +188,20 @@ def validate_and_consume(
     On success, deletes the token file (one-shot consumption) and
     returns the validated token for caller inspection / logging.
     """
+
+    def _reject(detail: str) -> ApprovalError:
+        _emit(
+            trace,
+            TraceEventType.TOKEN_REJECTED,
+            task_id=run_store.task_id,
+            status="blocked",
+            detail=detail[:200],
+        )
+        return ApprovalError(detail)
+
     token_path = _token_path(run_store)
     if not token_path.exists():
-        raise ApprovalError(
+        raise _reject(
             "no approval token found — call dry_run first, then execute_plan "
             "with the token from its response"
         )
@@ -177,25 +210,25 @@ def validate_and_consume(
         data = json.loads(token_path.read_text(encoding="utf-8"))
         stored = ApprovalToken.from_dict(data)
     except (json.JSONDecodeError, KeyError) as exc:
-        raise ApprovalError(f"corrupt approval_token.json: {exc}") from exc
+        raise _reject(f"corrupt approval_token.json: {exc}") from exc
 
     if not secrets.compare_digest(stored.token, token_str):
-        raise ApprovalError("approval_token does not match the stored token for this task")
+        raise _reject("approval_token does not match the stored token for this task")
 
     now = _utc_now()
     expires_at = datetime.fromisoformat(stored.expires_at)
     if now >= expires_at:
-        raise ApprovalError(
+        raise _reject(
             f"approval_token expired at {stored.expires_at} (now {now.isoformat(timespec='seconds')}); "
             "re-run dry_run to mint a new token"
         )
 
     # Re-hash current plan + dry_run to detect drift.
     if not run_store.plan_path.exists():
-        raise ApprovalError("plan.json missing — cannot validate token")
+        raise _reject("plan.json missing — cannot validate token")
     current_plan_hash = _sha256_file(run_store.plan_path)
     if not secrets.compare_digest(current_plan_hash, stored.plan_hash):
-        raise ApprovalError(
+        raise _reject(
             "plan.json has changed since dry_run; the token is invalid. "
             "Re-run dry_run to issue a fresh token bound to the current plan."
         )
@@ -203,12 +236,10 @@ def validate_and_consume(
     if run_store.dry_run_path.exists():
         current_dry_hash = _sha256_file(run_store.dry_run_path)
         if not secrets.compare_digest(current_dry_hash, stored.dry_run_hash):
-            raise ApprovalError(
-                "dry_run.md has changed since the token was minted; re-run dry_run."
-            )
+            raise _reject("dry_run.md has changed since the token was minted; re-run dry_run.")
 
     if stored.workspace_root != workspace_root:
-        raise ApprovalError(
+        raise _reject(
             f"workspace_root drift: token bound to {stored.workspace_root!r}, "
             f"current request is for {workspace_root!r}"
         )
@@ -217,8 +248,15 @@ def validate_and_consume(
     try:
         token_path.unlink()
     except OSError as exc:
-        raise ApprovalError(f"could not consume token file: {exc}") from exc
+        raise _reject(f"could not consume token file: {exc}") from exc
 
+    _emit(
+        trace,
+        TraceEventType.TOKEN_CONSUMED,
+        task_id=run_store.task_id,
+        status="ok",
+        detail="approval validated",
+    )
     return stored
 
 
@@ -237,3 +275,31 @@ def _write_atomic(path: Path, data: dict[str, Any]) -> None:
         except OSError:
             pass
         raise
+
+
+# -- Phase 9 trace emission helper ---------------------------------------
+
+
+def _emit(
+    trace: "TraceLogger | None",
+    event_type: TraceEventType,
+    *,
+    task_id: str,
+    status: str = "ok",
+    detail: str = "",
+) -> None:
+    """No-op when ``trace`` is None. Approval token events are short —
+    only task_id + status + detail are meaningful, no per-action data."""
+    if trace is None:
+        return
+    try:
+        trace.emit(
+            TraceEvent(
+                task_id=task_id,
+                event_type=event_type,
+                status=status,  # type: ignore[arg-type]
+                detail=detail[:200],
+            )
+        )
+    except Exception:
+        pass

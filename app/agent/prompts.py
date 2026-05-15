@@ -12,6 +12,14 @@ TOOL_DESCRIPTION = (
 )
 
 
+# NOTE on long lines inside SYSTEM_PROMPT below: this is literal prose
+# delivered to the LLM as paragraphs. Wrapping mid-paragraph (via
+# implicit concatenation) would insert no newline — same content — but
+# make the source markedly more verbose with quote-pair noise. The
+# existing tests pin specific substrings ("compound", "chart_request");
+# any rewrap must preserve those exactly. Ruff format intentionally
+# leaves triple-quoted strings alone for this reason. Long lines here
+# are not a formatting bug.
 SYSTEM_PROMPT = """You are the LLM Planner for LocalFlow, a safe automation harness for personal local workspaces.
 
 # Your role

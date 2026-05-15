@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 import uuid
 from collections.abc import Callable
 from typing import Any
@@ -18,7 +19,16 @@ from app.agent.prompts import (
 )
 from app.harness.action_validator import PlanValidationError, validate_plan_structure
 from app.harness.policy_guard import assess_plan
-from app.schemas import ActionPlan, RiskAssessment, TaskSpec, WorkspaceSnapshot
+from app.harness.trace import TraceLogger
+from app.schemas import (
+    ActionPlan,
+    FailureType,
+    RiskAssessment,
+    TaskSpec,
+    TraceEvent,
+    TraceEventType,
+    WorkspaceSnapshot,
+)
 
 DEFAULT_MAX_ATTEMPTS = 3
 
@@ -72,6 +82,7 @@ def plan_with_llm(
     on_delta: Callable[[str], None] | None = None,
     on_attempt: Callable[[int], None] | None = None,
     system_prompt: str | None = None,
+    trace: TraceLogger | None = None,
 ) -> ActionPlan:
     """Drop-in replacement for ``plan_organization`` that uses an LLM.
 
@@ -99,6 +110,7 @@ def plan_with_llm(
         client=client,
         max_attempts=max_attempts,
         system_prompt=system_prompt,
+        trace=trace,
     )
     return planner.plan(task, snapshot, on_delta=on_delta, on_attempt=on_attempt)
 
@@ -141,12 +153,15 @@ class LLMPlanner:
         client: LLMClient,
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
         system_prompt: str | None = None,
+        trace: TraceLogger | None = None,
     ) -> None:
         self.client = client
         self.max_attempts = max_attempts
         # Default: folder-organizer-flavored SYSTEM_PROMPT (back-compat).
         # The agent skill overrides this with its own multi-capability prompt.
         self.system_prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
+        # Phase 9 — optional trace stream.
+        self.trace = trace
         self.last_attempts: list[AttemptLog] = []
 
     def plan(
@@ -166,6 +181,8 @@ class LLMPlanner:
         for attempt in range(1, self.max_attempts + 1):
             if on_attempt is not None:
                 on_attempt(attempt)
+            call_start = time.perf_counter()
+            self._emit_call_start(task, attempt)
             try:
                 response = self.client.generate_structured(
                     system=self.system_prompt,
@@ -176,12 +193,29 @@ class LLMPlanner:
                     on_delta=on_delta,
                 )
             except LLMClientError as exc:
+                self._emit_call_end(
+                    task,
+                    attempt,
+                    call_start,
+                    usage={},
+                    status="fail",
+                    failure_type=FailureType.UNKNOWN,
+                    detail=f"client error: {exc}",
+                )
                 raise PlannerFailure(
                     f"LLM call failed on attempt {attempt}: {exc}", self.last_attempts
                 ) from exc
 
             plan_or_errors = self._validate(task, response.payload)
             if isinstance(plan_or_errors, ActionPlan):
+                self._emit_call_end(
+                    task,
+                    attempt,
+                    call_start,
+                    usage=response.usage,
+                    status="ok",
+                    detail=f"plan accepted ({len(plan_or_errors.actions)} actions)",
+                )
                 self.last_attempts.append(
                     AttemptLog(
                         payload=response.payload,
@@ -193,6 +227,15 @@ class LLMPlanner:
                 return plan_or_errors
 
             errors, outcome = plan_or_errors
+            self._emit_call_end(
+                task,
+                attempt,
+                call_start,
+                usage=response.usage,
+                status="fail",
+                failure_type=_outcome_to_failure_type(outcome),
+                detail=f"{outcome}: {'; '.join(errors)[:200]}",
+            )
             self.last_attempts.append(
                 AttemptLog(
                     payload=response.payload,
@@ -207,6 +250,7 @@ class LLMPlanner:
             # Repair: append the model's response + a tool_result with the
             # error so the next call sees its own prior attempt and the
             # specific harness objections.
+            self._emit_repair(task, attempt, errors)
             messages = self._append_repair_turn(messages, response, errors)
 
         joined = "\n\n".join(
@@ -286,8 +330,80 @@ class LLMPlanner:
         )
         return new_messages
 
+    # -- Phase 9 trace emission helpers (no-op when self.trace is None)
+
+    def _emit_call_start(self, task: TaskSpec, attempt: int) -> None:
+        if self.trace is None:
+            return
+        try:
+            self.trace.emit(
+                TraceEvent(
+                    task_id=task.task_id,
+                    event_type=TraceEventType.LLM_CALL_START,
+                    detail=f"attempt {attempt}",
+                    payload={"attempt": attempt},
+                )
+            )
+        except Exception:
+            pass
+
+    def _emit_call_end(
+        self,
+        task: TaskSpec,
+        attempt: int,
+        call_start: float,
+        *,
+        usage: dict,
+        status: str,
+        failure_type: FailureType | None = None,
+        detail: str = "",
+    ) -> None:
+        if self.trace is None:
+            return
+        duration_ms = int((time.perf_counter() - call_start) * 1000)
+        try:
+            self.trace.emit(
+                TraceEvent(
+                    task_id=task.task_id,
+                    event_type=TraceEventType.LLM_CALL_END,
+                    status=status,  # type: ignore[arg-type]
+                    failure_type=failure_type,
+                    duration_ms=duration_ms,
+                    token_usage=usage,
+                    detail=detail[:300],
+                    payload={"attempt": attempt},
+                )
+            )
+        except Exception:
+            pass
+
+    def _emit_repair(self, task: TaskSpec, attempt: int, errors: list[str]) -> None:
+        if self.trace is None:
+            return
+        try:
+            self.trace.emit(
+                TraceEvent(
+                    task_id=task.task_id,
+                    event_type=TraceEventType.LLM_REPAIR,
+                    status="fail",
+                    detail=("; ".join(errors))[:300],
+                    payload={"attempt": attempt, "errors": errors},
+                )
+            )
+        except Exception:
+            pass
+
 
 # --------------------------------------------------------------------- helpers
+
+
+def _outcome_to_failure_type(outcome: str) -> FailureType:
+    """Map an attempt's outcome string to the canonical FailureType."""
+    if outcome == "schema_invalid":
+        return FailureType.SCHEMA_INVALID
+    if outcome == "policy_blocked":
+        return FailureType.POLICY_BLOCKED
+    return FailureType.UNKNOWN
 
 
 def _format_pydantic_error(err: dict[str, Any]) -> str:

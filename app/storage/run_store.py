@@ -59,6 +59,7 @@ class RunStore:
     ACTIONS_JSON = "actions.json"
     EXECUTION_LOG = "execution_log.jsonl"
     AUDIT_LOG = "audit.jsonl"
+    TRACE_JSONL = "trace.jsonl"  # Phase 9 — structured kernel-event stream
     ROLLBACK_JSON = "rollback_manifest.json"
     VERIFY_JSON = "verify_report.json"
     FINAL_REPORT_MD = "final_report.md"
@@ -120,6 +121,11 @@ class RunStore:
     @property
     def audit_log_path(self) -> Path:
         return self.path(self.AUDIT_LOG)
+
+    @property
+    def trace_path(self) -> Path:
+        """Phase 9 — structured kernel-event stream (TraceLogger)."""
+        return self.path(self.TRACE_JSONL)
 
     @property
     def rollback_path(self) -> Path:

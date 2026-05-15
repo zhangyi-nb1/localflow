@@ -422,6 +422,105 @@ reason line so users know exactly what's being chosen.
 
 ---
 
+## Phase 9 — Trace + Eval Harness (v0.10.0)
+
+**Goal**: address the user's experiment-report diagnosis that
+LocalFlow had reached the Control + Safety + Persistence layers of
+the 5-layer Harness model but stalled at structural Verification with
+no Improvement Harness at all. The report explicitly recommended
+building Trace + Eval **before** anything else — Phases 10–12
+(TaskGraph, Workspace Pack Builder, Semantic Verifier + Repair Loop)
+all need measurable graders to justify their existence. v0.10.0 lands
+that foundation.
+
+**Shipped**:
+
+- **TraceEvent schema** ([app/schemas/trace.py](localflow/app/schemas/trace.py))
+  — closed enum of 13 kernel event types + 14 failure types. The
+  `FailureType` enum is pinned including the Phase 12 placeholder
+  values (`semantic_mismatch`, `summary_not_grounded`, etc.) so the
+  histogram code doesn't need a schema bump when Phase 12 starts
+  emitting them.
+- **TraceLogger** ([app/harness/trace.py](localflow/app/harness/trace.py))
+  — sister to AuditLogger; writes `trace.jsonl` via the same atomic
+  `JsonlLogger` primitive; reads back into typed `TraceEvent`
+  objects; groups by failure_type for histograms.
+- **Emission wired at 7 sites** (additive only — kernel behaviour
+  unchanged when `trace=None`):
+  - `app/agent/planner.py` — LLM_CALL_START / END + LLM_REPAIR + token usage
+  - `app/harness/control_loop.py` — POLICY_CHECK + DRY_RUN_RENDERED
+  - `app/harness/executor.py` — ACTION_START / END + per-action duration
+  - `app/harness/verifier.py` — VERIFIER_CHECK per check with failure_type
+  - `app/harness/rollback.py` — ROLLBACK_ENTRY per replayed op, drift surfaced
+  - `app/mcp/approval.py` — TOKEN_MINTED / CONSUMED / REJECTED
+- **Eval package** ([app/eval/](localflow/app/eval/)):
+  - `schema.py` — `EvalTask`, `GraderContext`, `EvalResult`,
+    `GraderVerdict`, `WorkspaceFile`
+  - `runner.py` — runs one task end-to-end in an isolated workspace
+    + isolated RunStore; runs every grader; runs rollback if
+    `rollback_restores` grader is present; aggregates failure
+    histogram from trace
+  - `report.py` — markdown report with batch summary + failure
+    histogram + per-task verdicts
+  - `graders/structural.py` — 4 starter graders:
+    `safety_no_forbidden_path`, `expected_outputs_present`,
+    `all_files_accounted_for`, `rollback_restores`
+  - Semantic graders deferred to Phase 12 (need LLM-as-judge).
+- **CLI**: `localflow eval list <target>` + `localflow eval run
+  <target>` — exit code = failed task count.
+- **3 starter eval tasks** ([evals/workspace_pack/](localflow/evals/workspace_pack/)):
+  - `task_001_basic_organize` — folder_organizer + rule, exercises
+    Safety + Operational correctness end-to-end
+  - `task_002_compound_chart` — agent skill rule fallback (LLM-free
+    so CI stays deterministic)
+  - `task_003_forbidden_path_blocked` — pins the policy_guard's
+    forbidden_paths behaviour, including `must_pass` filtering so
+    the task passes even when one grader sensibly reports a missing
+    target (the target's move was correctly blocked).
+- **docs/EVAL.md** — task YAML format, grader API, trace schema
+  walkthrough, failure taxonomy table, custom-grader cookbook.
+- **Hygiene**: clarifying comments in `app/agent/prompts.py` +
+  `app/skills/agent/llm_planner.py` explaining why ruff format
+  leaves their long lines alone (literal LLM prose, not a
+  formatting bug). The report's §13.1 concern about "raw GitHub
+  unreadable" was overstated — these lines are intentional, but
+  the comments make that obvious to future reviewers.
+
+**Files**: 6 new files in `app/eval/`, `app/schemas/trace.py`,
+`app/harness/trace.py`, `evals/workspace_pack/` (3 YAMLs),
+`docs/EVAL.md`, plus 4 new test files. Plus additive trace-emission
+in 6 existing files. `pyproject.toml` 0.9.1 → 0.10.0.
+
+**Tests**: 368 → 397 (+29: 8 schema + 6 emission + 10 graders + 5
+runner). Lint + format clean.
+
+**Live end-to-end check** (3 starter tasks against a fresh sandbox):
+all 3 pass with the expected grader verdicts, the report markdown
+populates with the path_forbidden histogram from task_003, and every
+run's `trace.jsonl` is well-formed.
+
+**§10.7**: zero kernel **behaviour** changes. Every trace-emission
+hook accepts an optional `TraceLogger` kwarg defaulting to `None`,
+and the kernel produces byte-identical artifacts whether trace is
+attached or not (pinned by `test_executor_with_trace_none_writes_no_trace_file`).
+The kernel kwarg additions are observation surfaces, not behaviour
+surfaces — this is the 18th consecutive zero-kernel-behaviour phase.
+(Phase 5 remains the lone behaviour-changing exception.)
+
+**What v0.10.0 does NOT claim**: agent semantic correctness is
+unchanged from v0.9.1. This phase builds the **instrumentation** to
+measure it. After this release we have:
+
+- A way to say "task_002 passed 4/4 graders, took 78 ms, 0 trace failures"
+- A trace stream showing which kernel layer caught each LLM mistake
+- A failure-type histogram across the eval suite
+- A grader registry external code can extend
+
+This is the foundation Phases 10–12 will measure their work against.
+Without it, every later "improvement" would be unfalsifiable.
+
+---
+
 ## Phase 8.3.1 — project hygiene + opt-in external skills (v0.9.1)
 
 **Goal**: address review feedback on the v0.9.0 ship — stale doc
@@ -678,8 +777,9 @@ post-nav persistence, fresh-session reset). Total 318 → 319.
 | **8.2 (v0.8.2)** | NO | workspace_visualizer skill + compound-goal detection + capability-gap warning + prefer_llm_planner memory pref |
 | **8.3 (v0.9.0)** | NO | agent meta-skill (LLM-driven, one-shot compound execution) + pluggable system prompts + UI collapse to single skill |
 | 8.3.1 (v0.9.1) | NO | Project hygiene — README split, UI.md cleanup, external skill opt-in default, [data]/[pdf] dep extras, agent integration tests |
+| **9 (v0.10.0)** | NO (additive only) | Trace + Eval Harness: TraceEvent schema + TraceLogger + emission at 7 kernel sites + `app/eval/` package with 4 structural graders + `localflow eval run/list` CLI + 3 starter eval tasks + docs/EVAL.md |
 
-**Score**: 1 deliberate exception across 17 deliveries. The rule held.
+**Score**: 1 deliberate exception across 18 deliveries. The rule held.
 
 ---
 

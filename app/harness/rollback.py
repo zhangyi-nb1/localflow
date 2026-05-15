@@ -5,7 +5,8 @@ from pathlib import Path
 
 from app.harness.audit import AuditLogger
 from app.harness.policy_guard import resolve_inside
-from app.schemas import RollbackManifest
+from app.harness.trace import TraceLogger
+from app.schemas import FailureType, RollbackManifest, TraceEvent, TraceEventType
 from app.schemas.rollback import RollbackEntry, RollbackOpType
 from app.storage.jsonl_logger import JsonlLogger
 from app.storage.run_store import RunStore
@@ -87,11 +88,19 @@ class Rollback:
     that a future verify pass can see what happened.
     """
 
-    def __init__(self, workspace_root: Path, run_store: RunStore) -> None:
+    def __init__(
+        self,
+        workspace_root: Path,
+        run_store: RunStore,
+        *,
+        trace: TraceLogger | None = None,
+    ) -> None:
         self.workspace_root = workspace_root.resolve()
         self.run_store = run_store
         self.exec_log = JsonlLogger(run_store.execution_log_path)
         self.audit = AuditLogger(run_store.audit_log_path)
+        # Phase 9 — optional trace stream.
+        self.trace = trace
 
     def run(self, manifest: RollbackManifest, *, force: bool = False) -> RollbackOutcome:
         """Replay ``manifest`` in reverse to restore the workspace.
@@ -139,6 +148,13 @@ class Rollback:
                         "reason": drift,
                     },
                 )
+                self._emit_trace(
+                    manifest,
+                    entry,
+                    status="skipped",
+                    failure_type=FailureType.ROLLBACK_DRIFT,
+                    detail=f"drift skipped: {drift[:150]}",
+                )
                 continue
             if drift is not None and force:
                 # Force-mode: record the drift but proceed.
@@ -158,6 +174,7 @@ class Rollback:
                     "rollback.apply",
                     {"action_id": entry.action_id, "op": entry.op.value, "status": "success"},
                 )
+                self._emit_trace(manifest, entry, status="ok", detail=f"{entry.op.value} ok")
             except Exception as exc:
                 err = f"{type(exc).__name__}: {exc}"
                 failed.append({"action_id": entry.action_id, "op": entry.op.value, "error": err})
@@ -169,6 +186,13 @@ class Rollback:
                         "status": "failed",
                         "error": err,
                     },
+                )
+                self._emit_trace(
+                    manifest,
+                    entry,
+                    status="fail",
+                    failure_type=FailureType.UNKNOWN,
+                    detail=err[:200],
                 )
 
         self.audit.log(
@@ -298,3 +322,36 @@ class Rollback:
             file_ops.move(backup_abs, tgt)
         else:
             raise ValueError(f"unknown rollback op: {entry.op}")
+
+    # -- Phase 9 trace emission helper --------------------------------
+
+    def _emit_trace(
+        self,
+        manifest: RollbackManifest,
+        entry: RollbackEntry,
+        *,
+        status: str,
+        failure_type: FailureType | None = None,
+        detail: str = "",
+    ) -> None:
+        """No-op when self.trace is None."""
+        if self.trace is None:
+            return
+        try:
+            self.trace.emit(
+                TraceEvent(
+                    task_id=manifest.task_id,
+                    run_id=manifest.run_id,
+                    event_type=TraceEventType.ROLLBACK_ENTRY,
+                    status=status,  # type: ignore[arg-type]
+                    failure_type=failure_type,
+                    action_id=entry.action_id,
+                    detail=detail[:300],
+                    payload={
+                        "op": entry.op.value,
+                        "target_path": entry.target_path,
+                    },
+                )
+            )
+        except Exception:
+            pass

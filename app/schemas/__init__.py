@@ -5,6 +5,7 @@ from app.schemas.risk import RiskAssessment, RiskVerdict
 from app.schemas.rollback import RollbackEntry, RollbackManifest
 from app.schemas.skill import SkillManifest
 from app.schemas.task import TaskSpec
+from app.schemas.trace import FailureType, TraceEvent, TraceEventType, TraceStatus
 from app.schemas.verification import VerificationCheck, VerificationResult
 from app.schemas.workspace import FileMeta, WorkspaceSnapshot
 
@@ -14,6 +15,7 @@ __all__ = [
     "ActionType",
     "ExecutionRecord",
     "ExecutionStatus",
+    "FailureType",
     "FileMeta",
     "RiskAssessment",
     "RiskLevel",
@@ -22,6 +24,9 @@ __all__ = [
     "RollbackManifest",
     "SkillManifest",
     "TaskSpec",
+    "TraceEvent",
+    "TraceEventType",
+    "TraceStatus",
     "VerificationCheck",
     "VerificationResult",
     "WorkspaceSnapshot",

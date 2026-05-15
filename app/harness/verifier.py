@@ -3,9 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.harness.policy_guard import PolicyViolation, resolve_inside
+from app.harness.trace import TraceLogger
 from app.schemas import (
     ActionPlan,
+    FailureType,
     RollbackManifest,
+    TraceEvent,
+    TraceEventType,
     VerificationCheck,
     VerificationResult,
     WorkspaceSnapshot,
@@ -20,8 +24,15 @@ class Verifier:
     It compares plan + manifest + on-disk state to a fixed checklist.
     """
 
-    def __init__(self, workspace_root: Path) -> None:
+    def __init__(
+        self,
+        workspace_root: Path,
+        *,
+        trace: TraceLogger | None = None,
+    ) -> None:
         self.workspace_root = workspace_root.resolve()
+        # Phase 9 — optional trace stream.
+        self.trace = trace
 
     def verify(
         self,
@@ -37,15 +48,22 @@ class Verifier:
     ) -> VerificationResult:
         checks: list[VerificationCheck] = []
 
+        def _record(check: VerificationCheck, failure_type: FailureType | None = None) -> None:
+            """Append the check + emit a parallel TraceEvent. Centralises the
+            trace-emission boilerplate so each call site stays one line."""
+            checks.append(check)
+            self._emit_trace(check, task_id, run_id, failure_type=failure_type)
+
         write_actions = [a for a in plan.actions if a.is_write()]
         accounted = executed_action_ids | skipped_action_ids | failed_action_ids
         missing = [a.action_id for a in plan.actions if a.action_id not in accounted]
-        checks.append(
+        _record(
             VerificationCheck(
                 name="all_actions_accounted",
                 passed=not missing,
                 detail=("missing: " + ", ".join(missing)) if missing else "ok",
-            )
+            ),
+            failure_type=FailureType.MISSING_OUTPUT if missing else None,
         )
 
         # For every successful move: source gone, target exists, no escape.
@@ -63,12 +81,13 @@ class Verifier:
                     continue
                 if src_abs.exists():
                     bad_move.append(f"{action.action_id}: source still at {src_path}")
-        checks.append(
+        _record(
             VerificationCheck(
                 name="moves_relocated_sources",
                 passed=not bad_move,
                 detail="; ".join(bad_move) or "ok",
-            )
+            ),
+            failure_type=FailureType.MISSING_OUTPUT if bad_move else None,
         )
 
         # Rollback manifest covers every successful write.
@@ -87,12 +106,13 @@ class Verifier:
                 if action.action_type != ActionType.MKDIR:
                     true_missing.append(aid)
             missing_rb = true_missing
-        checks.append(
+        _record(
             VerificationCheck(
                 name="rollback_covers_writes",
                 passed=not missing_rb,
                 detail=("uncovered: " + ", ".join(missing_rb)) if missing_rb else "ok",
-            )
+            ),
+            failure_type=FailureType.MISSING_OUTPUT if missing_rb else None,
         )
 
         # No paths escape workspace.
@@ -105,12 +125,13 @@ class Verifier:
                     resolve_inside(self.workspace_root, p)
                 except PolicyViolation as exc:
                     escapes.append(f"{action.action_id}: {exc}")
-        checks.append(
+        _record(
             VerificationCheck(
                 name="no_path_escapes",
                 passed=not escapes,
                 detail="; ".join(escapes) or "ok",
-            )
+            ),
+            failure_type=FailureType.PATH_FORBIDDEN if escapes else None,
         )
 
         # No file loss: every source in the original snapshot is still
@@ -137,24 +158,26 @@ class Verifier:
                 except OSError:
                     pass
         lost = before_hashes - after_hashes
-        checks.append(
+        _record(
             VerificationCheck(
                 name="no_file_loss",
                 passed=not lost,
                 detail=f"{len(lost)} hash(es) missing" if lost else "ok",
-            )
+            ),
+            failure_type=FailureType.MISSING_OUTPUT if lost else None,
         )
 
         # Generated files exist (e.g. index.md).
         missing_generated = [
             p for p in manifest.generated_files if not (self.workspace_root / p).exists()
         ]
-        checks.append(
+        _record(
             VerificationCheck(
                 name="generated_files_present",
                 passed=not missing_generated,
                 detail=("missing: " + ", ".join(missing_generated)) if missing_generated else "ok",
-            )
+            ),
+            failure_type=FailureType.MISSING_OUTPUT if missing_generated else None,
         )
 
         failed = [c for c in checks if not c.passed]
@@ -172,3 +195,31 @@ class Verifier:
             failed_checks=failed,
             summary=summary,
         )
+
+    # -- Phase 9 trace emission helper --------------------------------
+
+    def _emit_trace(
+        self,
+        check: VerificationCheck,
+        task_id: str,
+        run_id: str,
+        *,
+        failure_type: FailureType | None,
+    ) -> None:
+        """No-op when self.trace is None."""
+        if self.trace is None:
+            return
+        try:
+            self.trace.emit(
+                TraceEvent(
+                    task_id=task_id,
+                    run_id=run_id,
+                    event_type=TraceEventType.VERIFIER_CHECK,
+                    status="ok" if check.passed else "fail",
+                    failure_type=failure_type if not check.passed else None,
+                    detail=f"{check.name}: {check.detail[:200]}",
+                    payload={"check_name": check.name, "passed": check.passed},
+                )
+            )
+        except Exception:
+            pass
