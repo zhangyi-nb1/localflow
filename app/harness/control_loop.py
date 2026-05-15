@@ -284,6 +284,84 @@ def _append_revision_log(
         fh.write(line + "\n")
 
 
+# -- Phase 13 composite: execute + verify + (optional) semantic + repair --
+
+
+def run_with_auto_repair(
+    task: TaskSpec,
+    plan: ActionPlan,
+    snapshot: WorkspaceSnapshot,
+    *,
+    skill: Skill,
+    run_store: RunStore,
+    approved: bool,
+    enable_semantic: bool,
+    max_auto_repairs: int,
+    resume: bool = False,
+    trace: TraceLogger | None = None,
+    audit: AuditLogger | None = None,
+):
+    """Composite orchestrator that runs the full execute → verify →
+    (optional) semantic verify → (optional) auto-repair pipeline.
+
+    Returns a tuple ``(plan, outcome, verification, semantic_or_none,
+    repair_or_none)``. The first value is the *final* plan (which may
+    differ from the input plan after one or more repair iterations).
+
+    When ``enable_semantic=False``, this collapses to the existing
+    execute + verify path — no semantic verification, no repair —
+    so existing v0.11 / v0.12 callers see no behaviour change when
+    they wire through this helper.
+    """
+    # Local imports — defer the runtime layer until callers actually
+    # opt in, and avoid a control_loop ↔ semantic_verifier ↔ control_loop
+    # import cycle.
+    from app.harness.repair_loop import run_repair_loop
+    from app.harness.semantic_verifier import SemanticVerifier
+
+    outcome = run_execute(task, plan, run_store, approved=approved, resume=resume, trace=trace)
+    verification = run_verify(task, plan, run_store, outcome, snapshot, trace=trace)
+
+    if not enable_semantic:
+        return plan, outcome, verification, None, None
+
+    if not verification.passed:
+        # Don't bother running semantic verifier on a structurally
+        # failed run — the user will already see the structural fail.
+        return plan, outcome, verification, None, None
+
+    semantic_verifier = SemanticVerifier(Path(task.workspace_root), trace=trace)
+    semantic = semantic_verifier.verify(
+        task=task,
+        plan=plan,
+        execution_records=outcome.records,
+        manifest=outcome.manifest,
+        snapshot_before=snapshot,
+        snapshot_after=None,
+        structural=verification,
+        run_id=outcome.run_id,
+    )
+    run_store.write_model(run_store.semantic_verify_path, semantic)
+
+    if semantic.passed or not semantic.auto_repair_eligible or max_auto_repairs <= 0:
+        return plan, outcome, verification, semantic, None
+
+    final_plan, state, repair_outcome = run_repair_loop(
+        task,
+        snapshot=snapshot,
+        current_plan=plan,
+        current_outcome=outcome,
+        current_structural=verification,
+        current_semantic=semantic,
+        skill=skill,
+        run_store=run_store,
+        max_attempts=max_auto_repairs,
+        trace=trace,
+        audit=audit,
+    )
+    return final_plan, state.outcome, state.structural, state.semantic, repair_outcome
+
+
 # -- Phase 9 trace emission helpers (no-op when trace is None) -----------
 
 

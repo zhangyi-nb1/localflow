@@ -75,6 +75,12 @@ class RunStore:
     # working unchanged.
     PLANS_DIR = "plans"
     REVISIONS_LOG = "revisions.jsonl"
+    # Phase 13 — semantic verification result + auto-repair journal.
+    # Parallel to verify_report.json (structural); kernel modules read
+    # the structural file only, so adding this artifact is invisible to
+    # executor / verifier / rollback.
+    SEMANTIC_VERIFY_JSON = "semantic_verify.json"
+    REPAIRS_LOG = "repairs.jsonl"
 
     def __init__(self, task_id: str, home: Path | None = None) -> None:
         self.task_id = task_id
@@ -215,6 +221,24 @@ class RunStore:
             except (ValueError, IndexError):
                 continue
         return sorted(versions)
+
+    # -- Phase 13 semantic verification + repair artifacts -------------
+
+    @property
+    def semantic_verify_path(self) -> Path:
+        """``<run_dir>/semantic_verify.json`` — the latest
+        :class:`~app.schemas.SemanticVerificationResult`. Overwritten
+        on each repair attempt so the file always reflects the final
+        state the user sees."""
+        return self.path(self.SEMANTIC_VERIFY_JSON)
+
+    @property
+    def repairs_log_path(self) -> Path:
+        """``<run_dir>/repairs.jsonl`` — one JSON line per auto-repair
+        attempt: {ts, attempt, grader, suggested_hint, plan_version,
+        outcome}. Parallel to revisions.jsonl from Phase 11; revisions
+        is user-driven, repairs is harness-driven."""
+        return self.path(self.REPAIRS_LOG)
 
     @property
     def rollback_path(self) -> Path:

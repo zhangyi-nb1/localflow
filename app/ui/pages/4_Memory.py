@@ -28,11 +28,12 @@ def main() -> None:
         st.error(t("memory.error.store", err=str(exc)))
         return
 
-    tab1, tab2, tab3, tab4 = st.tabs(
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
         [
             t("memory.tab.forbidden"),
             t("memory.tab.naming"),
             t("memory.tab.planner"),
+            t("memory.tab.semantic"),
             t("memory.tab.audit"),
         ]
     )
@@ -47,7 +48,51 @@ def main() -> None:
         _render_planner_pref(store, prefs)
 
     with tab4:
+        _render_semantic_pref(store, prefs)
+
+    with tab5:
         _render_audit(store)
+
+
+def _render_semantic_pref(store: MemoryStore, prefs) -> None:
+    """Phase 13 — toggle for the semantic verifier + auto-repair loop."""
+    st.subheader(t("memory.semantic.header"))
+    st.caption(t("memory.semantic.caption"))
+
+    enable_new = st.toggle(
+        t("memory.semantic.enable_toggle"),
+        value=prefs.enable_semantic_verifier,
+        key="memory_enable_semantic_toggle",
+    )
+    st.caption(t("memory.semantic.enable_tradeoff"))
+    if enable_new != prefs.enable_semantic_verifier:
+        result = store.set_enable_semantic_verifier(enable_new)
+        if result.changed:
+            if enable_new:
+                st.success(t("memory.semantic.enable_saved_on"))
+            else:
+                st.success(t("memory.semantic.enable_saved_off"))
+            st.rerun()
+
+    st.divider()
+    st.markdown(f"**{t('memory.semantic.max_label')}**")
+    new_max = st.slider(
+        t("memory.semantic.max_slider"),
+        min_value=0,
+        max_value=5,
+        value=prefs.max_auto_repairs,
+        key="memory_max_auto_repairs_slider",
+    )
+    st.caption(t("memory.semantic.max_help"))
+    if new_max != prefs.max_auto_repairs:
+        if st.button(
+            t("memory.semantic.max_save", old=prefs.max_auto_repairs, new=new_max),
+            type="primary",
+        ):
+            result = store.set_max_auto_repairs(int(new_max))
+            if result.changed:
+                st.success(result.detail)
+                st.rerun()
 
 
 def _render_planner_pref(store: MemoryStore, prefs) -> None:

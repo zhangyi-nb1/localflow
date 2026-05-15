@@ -19,13 +19,42 @@ def _store(tmp_path: Path) -> MemoryStore:
     return MemoryStore(home=tmp_path / "memory")
 
 
+def test_v2_prefs_json_auto_upgrades_to_v3(tmp_path: Path) -> None:
+    """Phase 13 — a prefs.json saved by an older v0.12 install (schema 2,
+    no enable_semantic_verifier / max_auto_repairs fields) must load
+    cleanly and self-upgrade to v3 with defaults. Real-user state from
+    pre-v0.13 installs depends on this."""
+    s = _store(tmp_path)
+    s.prefs_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy = {
+        "forbidden_paths": ["secrets"],
+        "naming_style": "snake_case",
+        "prefer_llm_planner": True,
+        "schema_version": 2,
+    }
+    s.prefs_path.write_text(json.dumps(legacy), encoding="utf-8")
+    prefs = s.load()
+    # Existing fields preserved
+    assert prefs.forbidden_paths == ["secrets"]
+    assert prefs.naming_style == NamingStyle.SNAKE_CASE
+    assert prefs.prefer_llm_planner is True
+    # Phase 13 fields backfilled with defaults
+    assert prefs.enable_semantic_verifier is False
+    assert prefs.max_auto_repairs == 2
+    # In-memory version reflects the upgrade.
+    assert prefs.schema_version == 3
+
+
 def test_load_returns_defaults_when_no_prefs_file(tmp_path: Path) -> None:
     s = _store(tmp_path)
     prefs = s.load()
     assert prefs.forbidden_paths == []
     assert prefs.naming_style == NamingStyle.ORIGINAL
     assert prefs.prefer_llm_planner is False
-    assert prefs.schema_version == 2
+    # Phase 13 — semantic-verifier opt-in defaults, schema bumped to v3.
+    assert prefs.enable_semantic_verifier is False
+    assert prefs.max_auto_repairs == 2
+    assert prefs.schema_version == 3
     assert prefs.is_default()
 
 

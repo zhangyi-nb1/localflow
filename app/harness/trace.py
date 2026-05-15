@@ -134,3 +134,36 @@ class TraceLogger:
                 },
             )
         )
+
+    def emit_repair_triggered(
+        self,
+        *,
+        task_id: str,
+        attempt: int,
+        max_attempts: int,
+        grader: str,
+        suggested_hint: str,
+    ) -> None:
+        """Phase 13 helper — emit one ``repair.triggered`` event when
+        the auto-repair loop fires. ``failure_type`` is pinned to
+        SEMANTIC_MISMATCH because Phase 13's repair loop is exclusively
+        driven by semantic verdicts (structural failures abort the
+        execute path before semantic verify even runs).
+        """
+        from app.schemas.trace import FailureType
+
+        self.emit(
+            TraceEvent(
+                task_id=task_id,
+                event_type=TraceEventType.REPAIR_TRIGGERED,
+                status="fail",
+                failure_type=FailureType.SEMANTIC_MISMATCH,
+                detail=f"attempt {attempt}/{max_attempts} grader={grader}",
+                payload={
+                    "attempt": attempt,
+                    "max_attempts": max_attempts,
+                    "grader": grader,
+                    "suggested_hint": suggested_hint[:300],
+                },
+            )
+        )

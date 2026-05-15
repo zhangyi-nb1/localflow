@@ -67,7 +67,13 @@ def discover_tasks(target: Path) -> list[EvalTask]:
     return [load_task(p) for p in yamls]
 
 
-def run_eval(task: EvalTask, eval_home: Path) -> EvalResult:
+def run_eval(
+    task: EvalTask,
+    eval_home: Path,
+    *,
+    enable_auto_repair: bool = False,
+    max_auto_repairs: int = 2,
+) -> EvalResult:
     """Run one eval task end-to-end. Returns the structured result.
 
     Never raises — failures (plan errors, executor crashes, grader
@@ -78,6 +84,12 @@ def run_eval(task: EvalTask, eval_home: Path) -> EvalResult:
     v0.11.0: when ``task.stages`` is set, this dispatches to the
     multi-stage TaskGraph path. Otherwise, single-skill behaviour
     unchanged from v0.10.x.
+
+    v0.13.0: when ``enable_auto_repair`` is True, the runner wires the
+    semantic verifier + auto-repair loop in place of the plain execute
+    path. The structural pipeline (plan → policy → dry-run) is
+    unchanged. ``--compare-repair`` runs each task twice (once with
+    enable_auto_repair=False, once True) to measure the loop's impact.
     """
     if task.stages is not None:
         return _run_multi_stage_eval(task, eval_home)
@@ -129,17 +141,39 @@ def run_eval(task: EvalTask, eval_home: Path) -> EvalResult:
         assessment = control_loop.run_risk_check(task_spec, plan, trace=trace)
         control_loop.run_dry_run(task_spec, plan, assessment, run_store, trace=trace)
 
-        executor = Executor(
-            workspace_root=workspace_path,
-            run_store=run_store,
-            forbidden_actions=tuple(task_spec.forbidden_actions),
-            forbidden_paths=tuple(task_spec.forbidden_paths),
-            trace=trace,
-        )
-        outcome = executor.execute(plan, approved=True)
-        verification = control_loop.run_verify(
-            task_spec, plan, run_store, outcome, snapshot_before, trace=trace
-        )
+        if enable_auto_repair:
+            # Phase 13 — go through the auto-repair-capable orchestrator
+            # so a semantic-grader rejection triggers rollback + revise
+            # + re-execute up to ``max_auto_repairs`` times.
+            (
+                plan,
+                outcome,
+                verification,
+                _semantic,
+                _repair_outcome,
+            ) = control_loop.run_with_auto_repair(
+                task_spec,
+                plan,
+                snapshot_before,
+                skill=skill,
+                run_store=run_store,
+                approved=True,
+                enable_semantic=True,
+                max_auto_repairs=max_auto_repairs,
+                trace=trace,
+            )
+        else:
+            executor = Executor(
+                workspace_root=workspace_path,
+                run_store=run_store,
+                forbidden_actions=tuple(task_spec.forbidden_actions),
+                forbidden_paths=tuple(task_spec.forbidden_paths),
+                trace=trace,
+            )
+            outcome = executor.execute(plan, approved=True)
+            verification = control_loop.run_verify(
+                task_spec, plan, run_store, outcome, snapshot_before, trace=trace
+            )
 
         # Run pre-rollback graders first.
         ctx_pre = GraderContext(

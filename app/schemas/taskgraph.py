@@ -30,8 +30,11 @@ class StageFailurePolicy(str, Enum):
     """How the runner reacts when a stage's verifier fails or its
     plan / dry-run / execute raises.
 
-    The enum is closed; Phase 10 ships with these three values and
-    test_taskgraph_schema pins the set.
+    Phase 10 introduced ABORT / CONTINUE / SKIP. Phase 13 adds REPAIR
+    — wraps the existing dispatch with one automatic retry-with-
+    repair cycle before falling through to ABORT (or whatever the
+    underlying skill ends up classified as). The set is pinned by
+    test_taskgraph_schema.
     """
 
     ABORT = "abort"
@@ -47,6 +50,14 @@ class StageFailurePolicy(str, Enum):
     runner proceeds to the next stage. Same execution semantics as
     CONTINUE but the status reads SKIPPED instead of FAILED — useful
     when the stage is genuinely optional."""
+
+    REPAIR = "repair"
+    """Phase 13 — when the stage fails (structural OR semantic
+    verifier rejection), invoke the auto-repair loop in-place:
+    rollback, revise with a grader-derived hint, re-execute, re-verify.
+    Bounded by :attr:`StageSpec.max_retries` (default 1). If the
+    repair loop exhausts retries, the stage falls through to ABORT
+    semantics."""
 
 
 class StageStatus(str, Enum):

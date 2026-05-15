@@ -64,8 +64,28 @@ class MemoryPreferences(BaseModel):
             "False — most users want rule planning for simple goals."
         ),
     )
-    schema_version: int = Field(
+    enable_semantic_verifier: bool = Field(
+        default=False,
+        description=(
+            "Phase 13 — when True, the harness runs LLM-as-judge graders "
+            "after structural verify. A rejection can trigger the auto-repair "
+            "loop (see max_auto_repairs). Default False because semantic "
+            "verification adds LLM cost on every execute and changes a "
+            "behaviour pre-existing users wouldn't expect."
+        ),
+    )
+    max_auto_repairs: int = Field(
         default=2,
+        ge=0,
+        le=5,
+        description=(
+            "Phase 13 — cap on automatic plan-revise + re-execute cycles "
+            "after a semantic verifier rejection. 0 means 'run semantic "
+            "verifier in report-only mode'. Hard limit 5 mirrors MAX_REVISIONS."
+        ),
+    )
+    schema_version: int = Field(
+        default=3,
         description="Bump when adding/removing fields to enable migration.",
     )
 
@@ -76,4 +96,6 @@ class MemoryPreferences(BaseModel):
             not self.forbidden_paths
             and self.naming_style == NamingStyle.ORIGINAL
             and self.prefer_llm_planner is False
+            and self.enable_semantic_verifier is False
+            and self.max_auto_repairs == 2
         )

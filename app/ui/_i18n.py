@@ -438,6 +438,28 @@ _DICT: dict[str, dict[Lang, str]] = {
         "zh": "Task `{task_id}` 已执行 + 已校验。",
     },
     "execute.verifier_badge": {"en": "Verifier:", "zh": "Verifier："},
+    # Phase 13 — semantic verifier panel.
+    "execute.semantic.passed": {
+        "en": "Semantic verifier: ✓ {summary}",
+        "zh": "语义 Verifier 通过：✓ {summary}",
+    },
+    "execute.semantic.failed": {
+        "en": "Semantic verifier rejected: {summary}",
+        "zh": "语义 Verifier 拒绝：{summary}",
+    },
+    "execute.semantic.col.grader": {"en": "grader", "zh": "评分器"},
+    "execute.semantic.col.passed": {"en": "passed", "zh": "通过"},
+    "execute.semantic.col.reason": {"en": "reason", "zh": "原因"},
+    "execute.semantic.col.hint": {"en": "suggested hint", "zh": "建议提示"},
+    "execute.semantic.repair_repaired": {"en": "Auto-repaired", "zh": "已自动修复"},
+    "execute.semantic.repair_still_failing": {
+        "en": "Auto-repair attempted but still failing",
+        "zh": "已尝试自动修复但仍未通过",
+    },
+    "execute.semantic.repair_summary": {
+        "en": "{verb} {attempts}× (halt: {halt})",
+        "zh": "{verb}（{attempts} 次，停止原因：{halt}）",
+    },
     "execute.task.done_hint": {
         "en": "To re-run on a fresh state, create a new task from the **📋 Plan** page.",
         "zh": "如要在干净的状态下重新跑，请回到 **📋 Plan** 新建一个 task。",
@@ -635,7 +657,66 @@ _DICT: dict[str, dict[Lang, str]] = {
     "memory.tab.forbidden": {"en": "🚫 Forbidden paths", "zh": "🚫 禁止路径"},
     "memory.tab.naming": {"en": "📝 Naming style", "zh": "📝 命名风格"},
     "memory.tab.planner": {"en": "🤖 Planner preference", "zh": "🤖 Planner 偏好"},
+    "memory.tab.semantic": {"en": "🔁 Semantic + Repair", "zh": "🔁 语义 + 自动修复"},
     "memory.tab.audit": {"en": "📜 Audit log", "zh": "📜 审计日志"},
+    "memory.semantic.header": {
+        "en": "Semantic verifier + auto-repair (v0.13)",
+        "zh": "语义 Verifier + 自动修复（v0.13）",
+    },
+    "memory.semantic.caption": {
+        "en": (
+            "After execute + structural verify, run LLM-as-judge graders to "
+            "catch semantic failures (empty analyses, generic boilerplate, "
+            "hallucinated chart counts). On rejection, automatically rollback "
+            "+ revise + re-execute up to max_auto_repairs times."
+        ),
+        "zh": (
+            "执行 + 结构性 verify 之后再跑 LLM-as-judge 语义评分器，捕捉"
+            "结构性 verifier 抓不到的语义失败（空分析、空泛模板、瞎编的图表数据）。"
+            "拒绝后自动回滚 + 修正 + 重新执行，最多 max_auto_repairs 次。"
+        ),
+    },
+    "memory.semantic.enable_toggle": {
+        "en": "Enable semantic verifier",
+        "zh": "启用语义 Verifier",
+    },
+    "memory.semantic.enable_tradeoff": {
+        "en": (
+            "Trade-off: adds 1+ LLM calls per execute (one per registered "
+            "semantic grader). Off by default — opt-in when you want the "
+            "harness to self-correct, off when you want deterministic, "
+            "cost-bounded runs."
+        ),
+        "zh": (
+            "代价：每次执行多 1+ 次 LLM 调用（每个语义评分器各一次）。"
+            "默认关闭——希望 harness 自我纠错时再启用，要纯确定性、"
+            "可控成本时保持关闭。"
+        ),
+    },
+    "memory.semantic.enable_saved_on": {
+        "en": "Saved. Future `localflow execute` runs will run semantic graders.",
+        "zh": "已保存。后续 `localflow execute` 会跑语义评分器。",
+    },
+    "memory.semantic.enable_saved_off": {
+        "en": "Saved. Semantic verifier disabled.",
+        "zh": "已保存。语义 Verifier 已关闭。",
+    },
+    "memory.semantic.max_label": {
+        "en": "Max auto-repair attempts",
+        "zh": "自动修复最大次数",
+    },
+    "memory.semantic.max_slider": {
+        "en": "Cap on how many rollback → revise → re-execute cycles run per task",
+        "zh": "每个任务允许多少次「回滚 → 修正 → 重新执行」循环",
+    },
+    "memory.semantic.max_help": {
+        "en": "0 = report-only (verdicts shown, but no repair). 5 = upper limit, mirrors MAX_REVISIONS.",
+        "zh": "0 = 只报告不修复（显示评分但不重试）。5 = 上限，与 MAX_REVISIONS 一致。",
+    },
+    "memory.semantic.max_save": {
+        "en": "Save: {old} → {new}",
+        "zh": "保存：{old} → {new}",
+    },
     "memory.planner.header": {
         "en": "Prefer LLM by default",
         "zh": "默认偏好 LLM planner",

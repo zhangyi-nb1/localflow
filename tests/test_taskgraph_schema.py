@@ -17,10 +17,9 @@ from app.schemas import (
 
 
 def test_failure_policy_enum_pinned() -> None:
-    """Phase 10 ships 3 policies. Phase 12 may add REPAIR — that's a
-    deliberate enum change; this test ensures it doesn't drift
-    silently."""
-    assert {p.value for p in StageFailurePolicy} == {"abort", "continue", "skip"}
+    """Phase 10 shipped 3 policies; Phase 13 added REPAIR. Pin the set
+    so any further drift is a deliberate enum change with a test edit."""
+    assert {p.value for p in StageFailurePolicy} == {"abort", "continue", "skip", "repair"}
 
 
 def test_stage_status_enum_pinned() -> None:

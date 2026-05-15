@@ -422,6 +422,75 @@ reason line so users know exactly what's being chosen.
 
 ---
 
+## Phase 13 — Semantic Verifier + Auto-Repair Loop (v0.13.0)
+
+**Trigger**: v0.12 closed the *user-driven* correction loop (manual
+`localflow revise --hint`). The natural follow-up is the *automatic*
+counterpart — give the harness an LLM-as-judge layer that runs
+*after* execute + structural verify, and a retry-with-repair cycle
+that fires when a semantic grader rejects the run.
+
+The three motivating failure modes (all observed in eval traces):
+
+- `data_analyzer` produces `analysis_report.md` whose every analysis
+  ended in `EMPTY_RESULT` (column reference miss) — structural OK,
+  semantically empty.
+- `folder_organizer` writes `papers/index.md` containing generic
+  boilerplate that doesn't mention the actual files it claims to
+  index.
+- `agent` produces a chart whose X-axis labels don't match any
+  category in the source data.
+
+**Shipped**:
+- `app/schemas/semantic.py` — `SemanticVerdict` + `SemanticVerificationResult`
+- `app/agent/judge.py` — thin LLM-as-judge wrapper (typed
+  `{verdict, reason, suggested_hint}` schema; graceful no-op when no
+  API key)
+- `app/eval/graders/semantic.py` — 3 starter graders, registered via
+  the same `@register` decorator as structural ones
+- `app/harness/semantic_verifier.py` — runtime verifier (separate
+  from the structural `Verifier`; §10.7 boundary preserved)
+- `app/harness/repair_loop.py` — orchestrates rollback → revise →
+  re-execute → re-verify, bounded by `max_auto_repairs`
+- `app/harness/control_loop.py` — new `run_with_auto_repair` composite
+  (additive — existing `run_*` functions unchanged)
+- `app/harness/taskgraph_runner.py` — `failure_policy: repair`
+  dispatch inside `_run_one_stage` (existing dispatch at the runner
+  body unchanged)
+- `app/memory/_schema.py` + `_store.py` — schema_version 2 → 3 +
+  `_migrate()` helper + new fields `enable_semantic_verifier` +
+  `max_auto_repairs` + corresponding mutators
+- `app/storage/run_store.py` — `semantic_verify.json` +
+  `repairs.jsonl` artifacts
+- `app/schemas/trace.py` — finally consumes the reserved
+  `REPAIR_TRIGGERED` + `SEMANTIC_MISMATCH` enum values
+- `app/cli.py` — `localflow verify-semantic`, `localflow repair`,
+  `localflow execute --no-auto-repair`, memory toggles for the two
+  new prefs
+- `app/ui/pages/2_Execute.py` — semantic verdict panel after the
+  structural badge (only renders when verifier ran)
+- `app/ui/pages/4_Memory.py` — new "🔁 Semantic + Repair" tab with
+  toggle + slider
+- `app/ui/_i18n.py` — EN + 中文 keys for the new surfaces
+- `app/eval/runner.py` — `enable_auto_repair` + `max_auto_repairs`
+  kwargs; eval runner can be driven through `run_with_auto_repair`
+- `app/cli.py eval run` — `--enable-repair` + `--compare-repair` +
+  `--max-auto-repairs` flags; comparison mode renders a side-by-side
+  markdown table
+- 5 new test modules, 30 new tests (465 → 495 total)
+- `docs/SEMANTIC_VERIFIER.md`
+
+**Kernel touch**: NO. `app/harness/{executor,verifier,rollback}.py`
+remain byte-identical. `control_loop.py` gains one composite +
+`taskgraph_runner.py` gains one branch — both additive. `trace.py`
+adds one helper (`emit_repair_triggered`). **22nd** zero-kernel-touch
+phase.
+
+**§10.7 invariant**: `git diff app/harness/executor.py
+app/harness/verifier.py app/harness/rollback.py` = empty.
+
+---
+
 ## Phase 11 — Plan Refinement Loop + Data-Aware Routing (v0.12.0)
 
 **Trigger**: a real-world v0.11 UI run exposed two coupled failures —
@@ -998,8 +1067,9 @@ post-nav persistence, fresh-session reset). Total 318 → 319.
 | 9.1 (v0.10.1) | NO | CLI + MCP commands now wire trace; starter eval suite grew 3 → 6 tasks |
 | **10 (v0.11.0)** | NO (additive only) | TaskGraph — multi-stage execution: schemas + runner + `TraceLogger.stage()` ctx + `localflow taskgraph` CLI + `EvalTask.stages` + 1 starter multi-stage eval task |
 | **11 (v0.12.0)** | NO (additive only) | Plan Refinement Loop + Data-Aware Routing — `Skill.revise` default + `control_loop.run_revise` + `RunStore` plan versioning + `TraceEventType.PLAN_REVISED` + `localflow revise` CLI + UI refine expander; Excel preview in scanner; pie + line chart kinds; `autodetect_skill` routes analysis goals to `data_analyzer` |
+| **13 (v0.13.0)** | NO (additive only) | Semantic Verifier + Auto-Repair Loop — `SemanticVerifier` (new module next to existing structural Verifier) + 3 LLM-as-judge graders (`output_addresses_goal` / `summary_grounded` / `analysis_result_nonempty`) + `run_repair_loop` + `control_loop.run_with_auto_repair` composite + `localflow verify-semantic` / `repair` CLI + `--no-auto-repair` flag + UI Execute-page verdict panel + Memory toggles + `StageFailurePolicy.REPAIR` wired up (uses Phase 10's reserved `max_retries`) + eval `--compare-repair` mode; emits `REPAIR_TRIGGERED` + `SEMANTIC_MISMATCH` (both reserved since Phase 9) |
 
-**Score**: 1 deliberate exception across 21 deliveries. The rule held.
+**Score**: 1 deliberate exception across 22 deliveries. The rule held.
 
 ---
 

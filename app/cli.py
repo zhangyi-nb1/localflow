@@ -394,6 +394,14 @@ def cmd_execute(
     resume: bool = typer.Option(
         False, "--resume", help="Resume from checkpoint, skipping completed actions."
     ),
+    no_auto_repair: bool = typer.Option(
+        False,
+        "--no-auto-repair",
+        help=(
+            "Phase 13 — skip the semantic verifier + auto-repair loop "
+            "even when memory pref enable_semantic_verifier is True."
+        ),
+    ),
 ) -> None:
     """Approve and execute the plan. Records every change for rollback."""
     store = RunStore(task_id=task_id)
@@ -403,6 +411,7 @@ def cmd_execute(
     plan = store.load_plan()
     snapshot = store.load_workspace()
     trace = TraceLogger(store.trace_path)
+    audit = AuditLogger(store.audit_log_path)
     assessment = control_loop.run_risk_check(task, plan, trace=trace)
 
     if assessment.risk_level.value == "blocked":
@@ -422,7 +431,7 @@ def cmd_execute(
         auto_approve=yes,
         console=console,
     )
-    AuditLogger(store.audit_log_path).log(
+    audit.log(
         "approval.decision",
         approved=decision.approved,
         reason=decision.reason,
@@ -431,21 +440,235 @@ def cmd_execute(
         console.print("[yellow]Execution cancelled.[/]")
         raise typer.Exit(code=1)
 
-    outcome = control_loop.run_execute(task, plan, store, approved=True, resume=resume, trace=trace)
-    verification = control_loop.run_verify(task, plan, store, outcome, snapshot, trace=trace)
+    skill_obj = get_default_registry().require(task.skill)
+
+    # Phase 13 — read memory prefs to decide whether to enable the
+    # semantic verifier + auto-repair loop. The --no-auto-repair CLI
+    # flag forces opt-out for this single run.
+    prefs = MemoryStore().load()
+    enable_semantic = prefs.enable_semantic_verifier and not no_auto_repair
+    max_auto_repairs = prefs.max_auto_repairs if not no_auto_repair else 0
+
+    if enable_semantic:
+        plan, outcome, verification, semantic, repair_outcome = control_loop.run_with_auto_repair(
+            task,
+            plan,
+            snapshot,
+            skill=skill_obj,
+            run_store=store,
+            approved=True,
+            enable_semantic=True,
+            max_auto_repairs=max_auto_repairs,
+            resume=resume,
+            trace=trace,
+            audit=audit,
+        )
+    else:
+        outcome = control_loop.run_execute(
+            task, plan, store, approved=True, resume=resume, trace=trace
+        )
+        verification = control_loop.run_verify(task, plan, store, outcome, snapshot, trace=trace)
+        semantic = None
+        repair_outcome = None
 
     # Skill-specific final_report: each Skill renders its own markdown.
-    skill_obj = get_default_registry().require(task.skill)
     report = skill_obj.report(task=task, plan=plan, outcome=outcome, verification=verification)
     store.write_text(store.final_report_path, report)
 
     badge = "[green]OK[/]" if outcome.success and verification.passed else "[red]FAIL[/]"
     console.print(
         f"\n{badge}  executed: {len(outcome.records)} actions  ·  "
-        f"verify: {'passed' if verification.passed else 'failed'}\n"
+        f"verify: {'passed' if verification.passed else 'failed'}"
+    )
+    if semantic is not None:
+        sem_badge = "[green]OK[/]" if semantic.passed else "[red]FAIL[/]"
+        console.print(f"semantic: {sem_badge}  ·  {semantic.summary}")
+        if repair_outcome is not None and repair_outcome.attempts > 0:
+            verb = "auto-repaired" if repair_outcome.repaired else "auto-repair attempted"
+            console.print(f"{verb} {repair_outcome.attempts}× (halt: {repair_outcome.halt_reason})")
+    console.print(
         f"[dim]Report: {store.final_report_path}[/]\n"
         f"To undo: [bold]localflow rollback --run-id {task_id}[/]"
     )
+
+
+# --------------------------------------------------------------------- verify-semantic (Phase 13)
+
+
+@app.command("verify-semantic")
+def cmd_verify_semantic(
+    task_id: str = typer.Option(..., "--task-id", help="Task identifier (from `execute`)."),
+) -> None:
+    """Phase 13 — run LLM-as-judge semantic graders against an existing
+    run's outputs. Report-only: no rollback, no re-execute, no repair.
+
+    Exit code 0 when every grader passes, 1 otherwise. Useful for
+    grading a completed run after the fact or in CI."""
+    from app.harness.semantic_verifier import SemanticVerifier
+
+    store = RunStore(task_id=task_id)
+    if not store.plan_path.exists():
+        raise typer.BadParameter(f"no plan found for task {task_id}")
+    task = store.load_task()
+    plan = store.load_plan()
+    snapshot = store.load_workspace()
+    structural = store.load_verification() if store.exists(store.VERIFY_JSON) else None
+    if structural is None:
+        console.print("[red]No verify_report.json — run `localflow execute` first.[/]")
+        raise typer.Exit(code=2)
+
+    trace = TraceLogger(store.trace_path)
+    verifier = SemanticVerifier(Path(task.workspace_root), trace=trace)
+    # Reconstruct ExecutionRecord + manifest from on-disk artifacts.
+    manifest = store.load_rollback() if store.exists(store.ROLLBACK_JSON) else None
+    execution_records: list = []
+    if store.exists(store.ACTIONS_JSON):
+        from app.schemas import ExecutionRecord
+
+        raw = store.read_json(store.actions_path)
+        if isinstance(raw, list):
+            execution_records = [ExecutionRecord.model_validate(r) for r in raw]
+    if manifest is None:
+        from app.schemas import RollbackManifest
+
+        manifest = RollbackManifest(
+            task_id=task.task_id, run_id=task.task_id, entries=[], file_hashes_before={}
+        )
+
+    result = verifier.verify(
+        task=task,
+        plan=plan,
+        execution_records=execution_records,
+        manifest=manifest,
+        snapshot_before=snapshot,
+        snapshot_after=None,
+        structural=structural,
+        run_id=task.task_id,
+    )
+    store.write_model(store.semantic_verify_path, result)
+
+    table = Table(title=f"Semantic verdicts — task {task_id}")
+    table.add_column("Grader", style="cyan")
+    table.add_column("Passed")
+    table.add_column("Reason")
+    for v in result.verdicts:
+        badge = "[green]✓[/]" if v.passed else "[red]✗[/]"
+        table.add_row(v.grader, badge, v.reason[:80])
+    console.print(table)
+    console.print(
+        f"\n{'[green]PASSED[/]' if result.passed else '[red]FAILED[/]'} — {result.summary}"
+    )
+    raise typer.Exit(code=0 if result.passed else 1)
+
+
+# --------------------------------------------------------------------- repair (Phase 13)
+
+
+@app.command("repair")
+def cmd_repair(
+    task_id: str = typer.Option(..., "--task-id", help="Task identifier."),
+    max_attempts: int | None = typer.Option(
+        None,
+        "--max-attempts",
+        help=(
+            "Max repair iterations. Default: memory pref max_auto_repairs. "
+            "0 means 'run semantic verifier in report-only mode'."
+        ),
+    ),
+) -> None:
+    """Phase 13 — manually drive one auto-repair cycle on an existing
+    task. Runs the semantic verifier; on rejection, rolls back the
+    most recent execution, calls revise with a grader-derived hint,
+    re-executes + re-verifies.
+
+    Different from ``localflow revise``: revise needs a user hint and
+    only generates a new plan version; repair runs the FULL rollback +
+    re-execute pipeline driven by an auto-generated semantic hint."""
+    from app.harness.repair_loop import run_repair_loop
+    from app.harness.semantic_verifier import SemanticVerifier
+
+    store = RunStore(task_id=task_id)
+    if not store.exists(store.PLAN_JSON):
+        raise typer.BadParameter(f"no plan found for task {task_id}")
+    task = store.load_task()
+    plan = store.load_plan()
+    snapshot = store.load_workspace()
+    if not store.exists(store.VERIFY_JSON):
+        console.print("[red]No verify_report.json — run `localflow execute` first.[/]")
+        raise typer.Exit(code=2)
+    structural = store.load_verification()
+    if not store.exists(store.ROLLBACK_JSON):
+        console.print(
+            "[red]No rollback_manifest.json — task wasn't executed; nothing to repair.[/]"
+        )
+        raise typer.Exit(code=2)
+    manifest = store.load_rollback()
+    from app.harness.executor import ExecutionOutcome
+    from app.schemas import ExecutionRecord
+
+    raw = store.read_json(store.actions_path) if store.exists(store.ACTIONS_JSON) else []
+    execution_records = (
+        [ExecutionRecord.model_validate(r) for r in raw] if isinstance(raw, list) else []
+    )
+    outcome = ExecutionOutcome(
+        run_id=task.task_id,
+        records=execution_records,
+        manifest=manifest,
+        success=structural.passed,
+    )
+
+    trace = TraceLogger(store.trace_path)
+    audit = AuditLogger(store.audit_log_path)
+    sem_verifier = SemanticVerifier(Path(task.workspace_root), trace=trace)
+    semantic = sem_verifier.verify(
+        task=task,
+        plan=plan,
+        execution_records=execution_records,
+        manifest=manifest,
+        snapshot_before=snapshot,
+        snapshot_after=None,
+        structural=structural,
+        run_id=task.task_id,
+    )
+    store.write_model(store.semantic_verify_path, semantic)
+
+    if semantic.passed:
+        console.print("[green]Nothing to repair — semantic verdicts all passed.[/]")
+        return
+
+    prefs = MemoryStore().load()
+    attempts = max_attempts if max_attempts is not None else prefs.max_auto_repairs
+    if attempts <= 0:
+        console.print(
+            "[yellow]Semantic verifier rejected but max_attempts=0 — report-only mode.[/]"
+        )
+        for v in semantic.failed_verdicts:
+            console.print(f"  • {v.grader}: {v.reason}")
+        raise typer.Exit(code=1)
+
+    skill_obj = get_default_registry().require(task.skill)
+    with console.status(f"Auto-repairing (up to {attempts}×)…"):
+        _, state, repair_outcome = run_repair_loop(
+            task,
+            snapshot=snapshot,
+            current_plan=plan,
+            current_outcome=outcome,
+            current_structural=structural,
+            current_semantic=semantic,
+            skill=skill_obj,
+            run_store=store,
+            max_attempts=attempts,
+            trace=trace,
+            audit=audit,
+        )
+
+    badge = "[green]REPAIRED[/]" if repair_outcome.repaired else "[red]STILL FAILING[/]"
+    console.print(
+        f"\n{badge} — {repair_outcome.attempts} attempt(s)  ·  halt: {repair_outcome.halt_reason}"
+    )
+    if state.semantic is not None:
+        console.print(f"final semantic verdict: {state.semantic.summary}")
+    raise typer.Exit(code=0 if repair_outcome.repaired else 1)
 
 
 # --------------------------------------------------------------------- verify
@@ -947,6 +1170,8 @@ def cmd_memory_list() -> None:
     table.add_row("forbidden_paths", "\n".join(prefs.forbidden_paths) or "[dim]—[/]")
     table.add_row("naming_style", prefs.naming_style.value)
     table.add_row("prefer_llm_planner", str(prefs.prefer_llm_planner).lower())
+    table.add_row("enable_semantic_verifier", str(prefs.enable_semantic_verifier).lower())
+    table.add_row("max_auto_repairs", str(prefs.max_auto_repairs))
     table.add_row("schema_version", str(prefs.schema_version))
     console.print(table)
     if prefs.is_default():
@@ -983,7 +1208,12 @@ def cmd_memory_unforbid(
     console.print(f"[{style}]{result.detail}[/]")
 
 
-_SCALAR_KEYS = ("naming_style", "prefer_llm_planner")
+_SCALAR_KEYS = (
+    "naming_style",
+    "prefer_llm_planner",
+    "enable_semantic_verifier",
+    "max_auto_repairs",
+)
 
 
 def _parse_bool_arg(value: str) -> bool:
@@ -1001,13 +1231,18 @@ def _parse_bool_arg(value: str) -> bool:
 @memory_app.command("set")
 def cmd_memory_set(
     key: str = typer.Argument(
-        ..., help="Preference key. Supported: 'naming_style' or 'prefer_llm_planner'."
+        ...,
+        help=(
+            "Preference key: 'naming_style' | 'prefer_llm_planner' | "
+            "'enable_semantic_verifier' | 'max_auto_repairs'."
+        ),
     ),
     value: str = typer.Argument(
         ...,
         help=(
             "Value. For naming_style: original / snake_case / kebab-case / lower. "
-            "For prefer_llm_planner: true / false."
+            "For prefer_llm_planner / enable_semantic_verifier: true / false. "
+            "For max_auto_repairs: 0..5."
         ),
     ),
 ) -> None:
@@ -1023,8 +1258,16 @@ def cmd_memory_set(
     try:
         if key == "naming_style":
             result = store.set_naming_style(value)
-        else:  # prefer_llm_planner
+        elif key == "prefer_llm_planner":
             result = store.set_prefer_llm_planner(_parse_bool_arg(value))
+        elif key == "enable_semantic_verifier":
+            result = store.set_enable_semantic_verifier(_parse_bool_arg(value))
+        else:  # max_auto_repairs
+            try:
+                int_value = int(value)
+            except ValueError as exc:
+                raise ValueError(f"expected integer 0..5, got {value!r}") from exc
+            result = store.set_max_auto_repairs(int_value)
     except ValueError as exc:
         console.print(f"[red]invalid value:[/] {exc}")
         raise typer.Exit(code=2)
@@ -1277,6 +1520,27 @@ def cmd_eval_run(
         ),
     ),
     fail_fast: bool = typer.Option(False, "--fail-fast", help="Stop at the first failed task."),
+    enable_repair: bool = typer.Option(
+        False,
+        "--enable-repair",
+        help=(
+            "Phase 13 — wire the semantic verifier + auto-repair loop "
+            "into every task. Off by default to preserve v0.12 baseline."
+        ),
+    ),
+    compare_repair: bool = typer.Option(
+        False,
+        "--compare-repair",
+        help=(
+            "Phase 13 — run each task TWICE (baseline + with auto-repair) "
+            "and produce a side-by-side comparison report."
+        ),
+    ),
+    max_auto_repairs: int = typer.Option(
+        2,
+        "--max-auto-repairs",
+        help="Cap on repair iterations per task (only when --enable-repair / --compare-repair).",
+    ),
 ) -> None:
     """Run one or more eval tasks. Exit code = number of failed tasks."""
     from app.eval import discover_tasks, render_eval_report, run_eval
@@ -1291,11 +1555,26 @@ def cmd_eval_run(
         console.print(f"[yellow]no eval tasks found at[/] {target}")
         raise typer.Exit(code=0)
 
+    if compare_repair:
+        return _cmd_eval_run_compare(
+            tasks=tasks,
+            home=home,
+            output_md=output_md,
+            fail_fast=fail_fast,
+            max_auto_repairs=max_auto_repairs,
+        )
+
     results = []
     failed = 0
     for task in tasks:
-        console.print(f"[cyan]→[/] running {task.task_id} — {task.title}")
-        result = run_eval(task, home)
+        label = "auto-repair" if enable_repair else "baseline"
+        console.print(f"[cyan]→[/] running {task.task_id} — {task.title} [{label}]")
+        result = run_eval(
+            task,
+            home,
+            enable_auto_repair=enable_repair,
+            max_auto_repairs=max_auto_repairs,
+        )
         results.append(result)
         if result.passed:
             console.print(
@@ -1321,6 +1600,71 @@ def cmd_eval_run(
 
     console.rule(f"{len(results) - failed}/{len(results)} eval tasks passed")
     raise typer.Exit(code=failed)
+
+
+def _cmd_eval_run_compare(
+    *,
+    tasks,
+    home: Path,
+    output_md: Path | None,
+    fail_fast: bool,
+    max_auto_repairs: int,
+) -> None:
+    """Phase 13 — `localflow eval run ... --compare-repair`.
+
+    Runs each task twice (baseline + with auto-repair) and emits a
+    side-by-side markdown table so the user can measure how much the
+    auto-repair loop improves the pass rate."""
+    from app.eval import run_eval as _run_eval
+
+    rows: list[dict] = []
+    failed_after = 0
+    for task in tasks:
+        console.print(f"[cyan]→[/] {task.task_id} (baseline)")
+        baseline = _run_eval(task, home, enable_auto_repair=False)
+        console.print(f"[cyan]→[/] {task.task_id} (repair)")
+        repaired = _run_eval(
+            task,
+            home,
+            enable_auto_repair=True,
+            max_auto_repairs=max_auto_repairs,
+        )
+        delta = "—"
+        if baseline.passed != repaired.passed:
+            delta = "↑ repaired" if repaired.passed and not baseline.passed else "↓ regressed"
+        rows.append(
+            {
+                "task": task.task_id,
+                "title": task.title,
+                "baseline": baseline.passed,
+                "repaired": repaired.passed,
+                "delta": delta,
+            }
+        )
+        if not repaired.passed:
+            failed_after += 1
+            if fail_fast:
+                break
+
+    lines: list[str] = [
+        "# Eval comparison — baseline vs. auto-repair",
+        "",
+        "| Task | Title | Baseline | After Repair | Δ |",
+        "|---|---|---|---|---|",
+    ]
+    for row in rows:
+        lines.append(
+            f"| `{row['task']}` | {row['title']} | "
+            f"{'✓' if row['baseline'] else '✗'} | "
+            f"{'✓' if row['repaired'] else '✗'} | {row['delta']} |"
+        )
+    report_md = "\n".join(lines) + "\n"
+    console.print(report_md)
+    if output_md is not None:
+        output_md.parent.mkdir(parents=True, exist_ok=True)
+        output_md.write_text(report_md, encoding="utf-8")
+        console.print(f"[dim]comparison written to[/] {output_md}")
+    raise typer.Exit(code=failed_after)
 
 
 # --------------------------------------------------------------------- taskgraph

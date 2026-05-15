@@ -45,4 +45,4 @@ def list_names() -> list[str]:
 
 
 # Import the built-in graders at module load so ``@register`` fires.
-from app.eval.graders import structural  # noqa: E402,F401
+from app.eval.graders import semantic, structural  # noqa: E402,F401

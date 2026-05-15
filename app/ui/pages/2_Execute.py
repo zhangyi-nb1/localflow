@@ -116,13 +116,41 @@ def main() -> None:
         if not token_str:
             st.error(t("execute.stage3.token_missing"))
             return
+
+        # Phase 13 — read memory prefs to decide whether to wire the
+        # semantic verifier + auto-repair loop in this execute.
+        from app.memory import MemoryStore as _MS
+
+        prefs = _MS().load()
+        enable_semantic = bool(getattr(prefs, "enable_semantic_verifier", False))
+        max_auto_repairs = int(getattr(prefs, "max_auto_repairs", 0))
+        semantic = None
+        repair_outcome = None
+
         try:
             with st.spinner(t("execute.stage3.token_validate")):
                 validate_and_consume(store, token_str, workspace_root=task.workspace_root)
             with st.spinner(t("execute.stage3.executing")):
-                outcome = control_loop.run_execute(task, plan, store, approved=True)
                 snapshot = store.load_workspace()
-                verification = control_loop.run_verify(task, plan, store, outcome, snapshot)
+                if enable_semantic:
+                    from app.skills import get_default_registry
+
+                    skill_obj = get_default_registry().require(task.skill)
+                    plan, outcome, verification, semantic, repair_outcome = (
+                        control_loop.run_with_auto_repair(
+                            task,
+                            plan,
+                            snapshot,
+                            skill=skill_obj,
+                            run_store=store,
+                            approved=True,
+                            enable_semantic=True,
+                            max_auto_repairs=max_auto_repairs,
+                        )
+                    )
+                else:
+                    outcome = control_loop.run_execute(task, plan, store, approved=True)
+                    verification = control_loop.run_verify(task, plan, store, outcome, snapshot)
         except ApprovalError as exc:
             st.error(t("execute.stage3.approval_err", err=str(exc)))
             return
@@ -144,6 +172,10 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
+        # Phase 13 — render the semantic verdict panel when the verifier ran.
+        if semantic is not None:
+            _render_semantic_panel(semantic, repair_outcome)
+
         if verification.passed:
             st.success(t("execute.success", task_id=task_id, path=str(store.run_dir)))
             col_btn, _ = st.columns([1, 3])
@@ -163,6 +195,48 @@ def main() -> None:
 
         # Clear the now-consumed token from session
         st.session_state.pop(SESSION_TOKEN_KEY, None)
+
+
+def _render_semantic_panel(semantic, repair_outcome) -> None:
+    """Phase 13 — render the semantic verifier verdict table + the
+    auto-repair attempt count (when the loop fired)."""
+    st.markdown("---")
+    if semantic.passed:
+        st.success(t("execute.semantic.passed", summary=semantic.summary))
+    else:
+        st.warning(t("execute.semantic.failed", summary=semantic.summary))
+
+    rows = []
+    for v in semantic.verdicts:
+        rows.append(
+            {
+                t("execute.semantic.col.grader"): v.grader,
+                t("execute.semantic.col.passed"): "✓" if v.passed else "✗",
+                t("execute.semantic.col.reason"): (
+                    (v.reason[:120] + "…") if len(v.reason) > 120 else v.reason
+                ),
+                t("execute.semantic.col.hint"): (v.suggested_hint or "")[:120],
+            }
+        )
+    if rows:
+        import pandas as _pd
+
+        st.dataframe(_pd.DataFrame(rows), width="stretch", hide_index=True)
+
+    if repair_outcome is not None and repair_outcome.attempts > 0:
+        verb = (
+            t("execute.semantic.repair_repaired")
+            if repair_outcome.repaired
+            else t("execute.semantic.repair_still_failing")
+        )
+        st.info(
+            t(
+                "execute.semantic.repair_summary",
+                verb=verb,
+                attempts=repair_outcome.attempts,
+                halt=repair_outcome.halt_reason,
+            )
+        )
 
 
 def _pick_task() -> str | None:

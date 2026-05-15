@@ -135,7 +135,10 @@ def test_read_memory_prefs_returns_defaults(isolated_home: Path) -> None:
     assert result["naming_style"] == "original"
     assert result["forbidden_paths"] == []
     assert result["prefer_llm_planner"] is False
-    assert result["schema_version"] == 2
+    # Phase 13 defaults — semantic verifier opt-in OFF; cap auto-repairs at 2.
+    assert result["enable_semantic_verifier"] is False
+    assert result["max_auto_repairs"] == 2
+    assert result["schema_version"] == 3
 
 
 def test_read_memory_audit_empty_initially(isolated_home: Path) -> None:

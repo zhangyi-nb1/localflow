@@ -98,12 +98,18 @@ class MemoryStore:
 
         Raises MemoryStoreError on JSON/schema corruption — better to
         fail loudly than silently apply defaults over real user state.
+
+        Phase 13: ``_migrate`` upgrades pre-v3 prefs.json files by
+        backfilling new fields with their defaults. No write happens
+        here — the upgraded payload is materialised in memory; the
+        next save() rewrites the file at the new schema_version.
         """
         if not self.prefs_path.exists():
             return MemoryPreferences()
         try:
             raw = self.prefs_path.read_text(encoding="utf-8")
             data = json.loads(raw)
+            data = _migrate(data)
             return MemoryPreferences.model_validate(data)
         except (json.JSONDecodeError, ValidationError) as exc:
             raise MemoryStoreError(f"corrupt prefs.json at {self.prefs_path}: {exc}") from exc
@@ -286,3 +292,82 @@ class MemoryStore:
     def clear_prefer_llm_planner(self) -> MutationResult:
         """Reset to factory default (False)."""
         return self.set_prefer_llm_planner(False)
+
+    # -- mutations: enable_semantic_verifier (Phase 13) ----------------
+
+    def set_enable_semantic_verifier(self, value: bool) -> MutationResult:
+        """Persist the Phase 13 semantic-verifier opt-in toggle. When
+        True, ``localflow execute`` (CLI + UI) runs LLM-as-judge
+        graders after structural verify and can trigger the auto-repair
+        loop. Default False because semantic verification adds LLM cost
+        on every execute."""
+        prefs = self.load()
+        if prefs.enable_semantic_verifier == value:
+            return MutationResult(
+                event="memory.set.noop",
+                changed=False,
+                detail=f"enable_semantic_verifier already {value}",
+            )
+        before = prefs.enable_semantic_verifier
+        prefs.enable_semantic_verifier = value
+        self.save(prefs)
+        self._audit(
+            "memory.set",
+            key="enable_semantic_verifier",
+            before=before,
+            after=value,
+        )
+        return MutationResult(
+            event="memory.set",
+            changed=True,
+            detail=f"enable_semantic_verifier: {before} → {value}",
+        )
+
+    # -- mutations: max_auto_repairs (Phase 13) ------------------------
+
+    def set_max_auto_repairs(self, value: int) -> MutationResult:
+        """Persist the Phase 13 auto-repair attempt cap. 0 means
+        'run semantic verifier in report-only mode'. Bounded [0, 5]
+        at the schema level so the consumer never sees an unsafe value."""
+        prefs = self.load()
+        if prefs.max_auto_repairs == value:
+            return MutationResult(
+                event="memory.set.noop",
+                changed=False,
+                detail=f"max_auto_repairs already {value}",
+            )
+        before = prefs.max_auto_repairs
+        # Validate via the schema's Field(ge=0, le=5) before we touch disk.
+        prefs.max_auto_repairs = value
+        # Re-validate to catch out-of-range values cleanly.
+        MemoryPreferences.model_validate(prefs.model_dump())
+        self.save(prefs)
+        self._audit(
+            "memory.set",
+            key="max_auto_repairs",
+            before=before,
+            after=value,
+        )
+        return MutationResult(
+            event="memory.set",
+            changed=True,
+            detail=f"max_auto_repairs: {before} → {value}",
+        )
+
+
+def _migrate(raw: dict[str, Any]) -> dict[str, Any]:
+    """Upgrade prefs.json payloads from older schema_versions in place.
+
+    Each migration is idempotent: re-running on an already-migrated
+    payload is a no-op. New fields get their schema defaults backfilled
+    so :func:`MemoryPreferences.model_validate` doesn't reject the load.
+
+    Phase 13 introduces v3 by adding ``enable_semantic_verifier`` and
+    ``max_auto_repairs``.
+    """
+    version = int(raw.get("schema_version", 1) or 1)
+    if version < 3:
+        raw.setdefault("enable_semantic_verifier", False)
+        raw.setdefault("max_auto_repairs", 2)
+        raw["schema_version"] = 3
+    return raw

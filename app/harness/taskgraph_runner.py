@@ -49,6 +49,8 @@ from app.schemas import (
     TaskGraph,
     TaskGraphResult,
     TaskSpec,
+    VerificationResult,
+    WorkspaceSnapshot,
 )
 from app.skills import SkillError, get_default_registry
 from app.storage.run_store import RunStore
@@ -274,6 +276,26 @@ def _run_one_stage(
             sub_task, plan, stage_store, outcome, snapshot, trace=trace
         )
 
+        # Phase 13 — when the stage opts into REPAIR policy, run the
+        # semantic verifier in-stage; on rejection, kick the auto-repair
+        # loop (bounded by stage.max_retries). The repair loop may swap
+        # plan / outcome / verification for the post-repair state; we
+        # mirror those back so the StageResult and the aggregated
+        # manifest reflect the FINAL state, not the pre-repair one.
+        if stage.failure_policy == StageFailurePolicy.REPAIR and verification.passed:
+            plan, outcome, verification = _maybe_run_stage_repair(
+                sub_task=sub_task,
+                plan=plan,
+                outcome=outcome,
+                verification=verification,
+                snapshot=snapshot,
+                skill=skill,
+                stage_store=stage_store,
+                max_attempts=max(stage.max_retries, 1),
+                trace=trace,
+                aggregated=aggregated,
+            )
+
         success_count = sum(1 for r in outcome.records if r.status == ExecutionStatus.SUCCESS)
         failed_count = sum(1 for r in outcome.records if r.status == ExecutionStatus.FAILED)
         skipped_count = sum(1 for r in outcome.records if r.status == ExecutionStatus.SKIPPED)
@@ -301,6 +323,65 @@ def _run_one_stage(
             status=StageStatus.FAILED,
             error=(f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-400:]}"),
         )
+
+
+def _maybe_run_stage_repair(
+    *,
+    sub_task: TaskSpec,
+    plan: ActionPlan,
+    outcome,
+    verification: VerificationResult,
+    snapshot: WorkspaceSnapshot,
+    skill,
+    stage_store: RunStore,
+    max_attempts: int,
+    trace: TraceLogger | None,
+    aggregated: RollbackManifest,
+):
+    """Phase 13 — invoke the semantic verifier + auto-repair loop for
+    one stage. Returns the (possibly repaired) ``(plan, outcome, verification)``.
+
+    Imported lazily so installs without the [data] / openai extras can
+    still load taskgraph_runner — semantic verifier triggers an LLM
+    client probe that only happens when REPAIR policy is set.
+    """
+    from app.harness.repair_loop import run_repair_loop
+    from app.harness.semantic_verifier import SemanticVerifier
+
+    workspace_root = Path(sub_task.workspace_root)
+    semantic_verifier = SemanticVerifier(workspace_root, trace=trace)
+    semantic = semantic_verifier.verify(
+        task=sub_task,
+        plan=plan,
+        execution_records=outcome.records,
+        manifest=outcome.manifest,
+        snapshot_before=snapshot,
+        snapshot_after=None,
+        structural=verification,
+        run_id=outcome.run_id,
+    )
+    stage_store.write_model(stage_store.semantic_verify_path, semantic)
+    if semantic.passed or not semantic.auto_repair_eligible:
+        return plan, outcome, verification
+
+    final_plan, state, _repair_outcome = run_repair_loop(
+        sub_task,
+        snapshot=snapshot,
+        current_plan=plan,
+        current_outcome=outcome,
+        current_structural=verification,
+        current_semantic=semantic,
+        skill=skill,
+        run_store=stage_store,
+        max_attempts=max_attempts,
+        trace=trace,
+    )
+    # Merge any rollback-then-re-execute manifest entries into the
+    # aggregated graph-level manifest — the original execution's entries
+    # were already merged, but repair adds new ones.
+    if state.outcome is not outcome:
+        _merge_manifest(aggregated, state.outcome.manifest)
+    return final_plan, state.outcome, state.structural
 
 
 def _prefix_action_ids(plan: ActionPlan, stage_id: str) -> ActionPlan:
