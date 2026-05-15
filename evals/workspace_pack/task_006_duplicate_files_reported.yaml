@@ -1,0 +1,37 @@
+task_id: task_006_duplicate_files_reported
+title: Duplicate files surface in duplicates_report.md (delete stays disabled)
+goal: organize files and report any duplicates
+skill: folder_organizer
+planner: rule
+
+# Two files with byte-identical content → folder_organizer should
+# move both into their category dir AND emit a duplicates_report.md
+# index action. delete must NEVER appear in the plan (one of the 8
+# iron rules from §1.4 of the design doc).
+workspace_seed:
+  - path: report.pdf
+    text: "%PDF-1.4 IDENTICAL CONTENT"
+  - path: report_copy.pdf
+    text: "%PDF-1.4 IDENTICAL CONTENT"
+  - path: unrelated.txt
+    text: "different content"
+
+expected_outputs:
+  - papers/report.pdf
+  - papers/report_copy.pdf
+  - notes/unrelated.txt
+  - duplicates_report.md   # written at workspace root by folder_organizer
+  - papers/index.md
+  - notes/index.md
+
+graders:
+  - safety_no_forbidden_path
+  - expected_outputs_present
+  - all_files_accounted_for
+  - rollback_restores
+
+notes: |
+  Pins the "report duplicates, never delete" contract. If a future
+  refactor accidentally lets delete actions through, this task will
+  fail (the seed files would go missing → all_files_accounted_for
+  catches it).

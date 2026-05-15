@@ -422,6 +422,61 @@ reason line so users know exactly what's being chosen.
 
 ---
 
+## Phase 9.1 — Trace coverage for CLI + MCP, expanded eval suite (v0.10.1)
+
+**Goal**: close the two gaps the v0.10.0 verification guide called out
+honestly — regular CLI commands and MCP tools didn't emit trace
+(only `localflow eval run` did) — and grow the starter eval suite
+from 3 → 6 tasks so the failure-mode coverage isn't a token sample.
+
+**Shipped**:
+
+- **CLI trace wiring** ([app/cli.py](localflow/app/cli.py)) — `plan`,
+  `dry-run`, `execute`, `rollback` commands construct a TraceLogger
+  per run and thread it through every `control_loop.run_*` call +
+  the Executor / Rollback constructors + the LLM streaming planner
+  path. Effect: every `localflow plan/execute` now produces a
+  trace.jsonl alongside the existing artifacts.
+- **MCP trace wiring** ([app/mcp/tools.py](localflow/app/mcp/tools.py))
+  — `create_plan`, `dry_run`, `execute_plan`, `rollback_run` handlers
+  construct a TraceLogger per call. MCP clients get the same
+  observability surface CLI users get.
+- **3 new eval tasks** ([evals/workspace_pack/](localflow/evals/workspace_pack/)):
+  - `task_004_forbidden_action_blocked` — regression pin that
+    folder_organizer never emits delete/overwrite/shell actions
+    even when the plan asks for them implicitly
+  - `task_005_empty_workspace` — edge case: zero-action plan walks
+    the full lifecycle cleanly (rollback no-op, every grader
+    trivially passes)
+  - `task_006_duplicate_files_reported` — two byte-identical files
+    → both moved + duplicates_report.md emitted, no delete ever
+    attempted (pins the "report duplicates, never delete" rule)
+- **5 new tests**: 3 task-coverage tests + 2 CLI trace tests
+  (`test_cli_plan_emits_trace_jsonl` /
+  `test_cli_execute_emits_action_and_verifier_events`).
+
+**Files**: `app/cli.py`, `app/mcp/tools.py`,
+3 new YAMLs under `evals/workspace_pack/`,
+`tests/test_cli_trace.py` (new), `tests/test_eval_runner.py` (updated
+to expect 6 tasks). `pyproject.toml` 0.10.0 → 0.10.1.
+
+**Tests**: 397 → 402. Lint + format clean.
+
+**§10.7**: NO kernel-behaviour changes. The Phase 9 additive-only
+TraceLogger-kwarg pattern is exactly the surface I extended here
+— still 19th consecutive zero-kernel-behaviour phase. The
+`test_executor_with_trace_none_writes_no_trace_file` invariant test
+still passes (library callers that don't pass trace still see no
+file).
+
+**Behaviour change visible to users**: regular CLI runs now create a
+`trace.jsonl` in `<run_dir>/`. This isn't breaking — the file is
+observation-only, ignored by everything except the eval graders.
+Users who want the v0.10.0 behaviour (no trace.jsonl on normal runs)
+can delete the file post-execute or in CI cleanup hooks.
+
+---
+
 ## Phase 9 — Trace + Eval Harness (v0.10.0)
 
 **Goal**: address the user's experiment-report diagnosis that
@@ -778,8 +833,9 @@ post-nav persistence, fresh-session reset). Total 318 → 319.
 | **8.3 (v0.9.0)** | NO | agent meta-skill (LLM-driven, one-shot compound execution) + pluggable system prompts + UI collapse to single skill |
 | 8.3.1 (v0.9.1) | NO | Project hygiene — README split, UI.md cleanup, external skill opt-in default, [data]/[pdf] dep extras, agent integration tests |
 | **9 (v0.10.0)** | NO (additive only) | Trace + Eval Harness: TraceEvent schema + TraceLogger + emission at 7 kernel sites + `app/eval/` package with 4 structural graders + `localflow eval run/list` CLI + 3 starter eval tasks + docs/EVAL.md |
+| 9.1 (v0.10.1) | NO | CLI + MCP commands now wire trace; starter eval suite grew 3 → 6 tasks |
 
-**Score**: 1 deliberate exception across 18 deliveries. The rule held.
+**Score**: 1 deliberate exception across 19 deliveries. The rule held.
 
 ---
 

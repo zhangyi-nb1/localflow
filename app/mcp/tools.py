@@ -39,6 +39,7 @@ from typing import Any, Callable
 from app.harness import control_loop
 from app.harness.audit import AuditLogger
 from app.harness.rollback import Rollback
+from app.harness.trace import TraceLogger
 from app.mcp._serialize import to_jsonable
 from app.mcp.approval import ApprovalError, mint_token, validate_and_consume
 from app.memory import MemoryStore
@@ -288,6 +289,8 @@ def handle_create_plan(args: dict[str, Any]) -> dict[str, Any]:
         skill=skill_name,
     )
 
+    trace = TraceLogger(store.trace_path)
+
     snapshot = control_loop.run_inspect(
         Path(task.workspace_root),
         task_id=task.task_id,
@@ -300,7 +303,7 @@ def handle_create_plan(args: dict[str, Any]) -> dict[str, Any]:
     skill_obj.validate(plan)
     store.save_plan(plan)
 
-    assessment = control_loop.run_risk_check(task, plan)
+    assessment = control_loop.run_risk_check(task, plan, trace=trace)
 
     return {
         "task_id": task.task_id,
@@ -334,10 +337,11 @@ def handle_dry_run(args: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"unknown task_id: {task_id!r}")
     task = store.load_task()
     plan = store.load_plan()
-    assessment = control_loop.run_risk_check(task, plan)
-    md = control_loop.run_dry_run(task, plan, assessment, store)
+    trace = TraceLogger(store.trace_path)
+    assessment = control_loop.run_risk_check(task, plan, trace=trace)
+    md = control_loop.run_dry_run(task, plan, assessment, store, trace=trace)
     # Mint AFTER dry-run files exist on disk (mint reads them to hash).
-    token = mint_token(store, workspace_root=task.workspace_root)
+    token = mint_token(store, workspace_root=task.workspace_root, trace=trace)
     return {
         "task_id": task_id,
         "markdown": md,
@@ -368,17 +372,18 @@ def handle_execute_plan(args: dict[str, Any]) -> dict[str, Any]:
     if not store.exists(store.TASK_JSON):
         raise ValueError(f"unknown task_id: {task_id!r}")
     task = store.load_task()
+    trace = TraceLogger(store.trace_path)
 
     # Validate + consume token BEFORE doing any harness work. If the
     # token is bad, no policy_guard check, no audit log spam.
     try:
-        validate_and_consume(store, approval_token, workspace_root=task.workspace_root)
+        validate_and_consume(store, approval_token, workspace_root=task.workspace_root, trace=trace)
     except ApprovalError as exc:
         raise ValueError(f"approval token rejected: {exc}") from exc
 
     plan = store.load_plan()
     snapshot = store.load_workspace()
-    assessment = control_loop.run_risk_check(task, plan)
+    assessment = control_loop.run_risk_check(task, plan, trace=trace)
     if not assessment.passed:
         return {
             "task_id": task_id,
@@ -388,8 +393,8 @@ def handle_execute_plan(args: dict[str, Any]) -> dict[str, Any]:
             "warnings": list(assessment.warnings),
         }
 
-    outcome = control_loop.run_execute(task, plan, store, approved=True)
-    verification = control_loop.run_verify(task, plan, store, outcome, snapshot)
+    outcome = control_loop.run_execute(task, plan, store, approved=True, trace=trace)
+    verification = control_loop.run_verify(task, plan, store, outcome, snapshot, trace=trace)
     from app.schemas import ExecutionStatus
 
     successful = sum(1 for r in outcome.records if r.status == ExecutionStatus.SUCCESS)
@@ -449,7 +454,8 @@ def handle_rollback_run(args: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"no rollback manifest for task_id={task_id!r}")
     manifest = store.load_rollback()
     task = store.load_task()
-    rb = Rollback(workspace_root=Path(task.workspace_root), run_store=store)
+    trace = TraceLogger(store.trace_path)
+    rb = Rollback(workspace_root=Path(task.workspace_root), run_store=store, trace=trace)
     outcome = rb.run(manifest, force=force)
     return {
         "task_id": task_id,

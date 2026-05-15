@@ -1,4 +1,4 @@
-# LocalFlow eval suite — v0.10.0
+# LocalFlow eval suite — v0.10.1
 
 The eval suite measures **task-level success**, complementing the
 unit tests' code-level success. Each eval task drives a real workspace
@@ -137,6 +137,13 @@ External graders cross the same trust boundary as external skills
 ---
 
 ## Trace stream
+
+**v0.10.1 update**: every kernel-driving entry point now writes
+`trace.jsonl` — the eval runner (since v0.10.0) plus the regular CLI
+commands (`localflow plan/execute/rollback`) and the MCP handlers
+(`create_plan`, `dry_run`, `execute_plan`, `rollback_run`). Trace is
+always-on for CLI / MCP runs from v0.10.1; users who want to
+suppress it can delete the file post-run or filter it in CI cleanup.
 
 Every eval run produces a `trace.jsonl` alongside the run's artifacts.
 Each line is one `TraceEvent`:

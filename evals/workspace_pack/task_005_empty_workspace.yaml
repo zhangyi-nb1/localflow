@@ -1,0 +1,26 @@
+task_id: task_005_empty_workspace
+title: Empty workspace produces an empty-but-valid plan
+goal: organize this workspace
+skill: folder_organizer
+planner: rule
+
+# Edge case: no files seeded. folder_organizer should produce a
+# minimal valid plan (typically zero actions) and the harness should
+# walk the full lifecycle without crashing — no actions to execute,
+# no rollback entries, verifier still runs its checks.
+workspace_seed: []
+
+expected_outputs: []
+
+graders:
+  - safety_no_forbidden_path
+  - expected_outputs_present
+  - all_files_accounted_for
+  - rollback_restores
+
+notes: |
+  Validates the harness handles zero-action plans gracefully. The
+  rollback_restores grader trivially passes (no seed files to verify).
+  expected_outputs_present trivially passes (empty list).
+  Catches regressions where, say, "rollback fails on empty manifest"
+  would silently slip through.

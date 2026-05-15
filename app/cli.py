@@ -46,6 +46,7 @@ from app.harness import control_loop
 from app.harness.approval import ask_approval
 from app.harness.audit import AuditLogger
 from app.harness.rollback import Rollback
+from app.harness.trace import TraceLogger
 from app.memory import (
     MemoryPreferences,
     MemoryStore,
@@ -211,6 +212,10 @@ def cmd_plan(
     store.save_task(task)
     audit = AuditLogger(store.audit_log_path)
     audit.log("task.created", task_id=task.task_id, goal=goal, planner=planner)
+    # v0.10.1: every CLI-driven run gets a trace stream by default.
+    # Trace emission is observation-only (additive — §10.7 invariant
+    # held by the optional-kwarg pattern from Phase 9).
+    trace = TraceLogger(store.trace_path)
 
     snapshot = control_loop.run_inspect(
         workspace,
@@ -247,6 +252,7 @@ def cmd_plan(
                 provider=llm_provider,
                 model=effective_model,
                 skill_obj=skill_obj,
+                trace=trace,
             )
         except KeyboardInterrupt:
             console.print("\n[yellow]Aborted by user (Ctrl+C).[/]")
@@ -266,7 +272,7 @@ def cmd_plan(
             raise typer.Exit(code=2)
 
     skill_obj.validate(plan)
-    assessment = control_loop.run_risk_check(task, plan)
+    assessment = control_loop.run_risk_check(task, plan, trace=trace)
     store.save_plan(plan)
     audit.log(
         "plan.created",
@@ -309,8 +315,9 @@ def cmd_dry_run(
         raise typer.BadParameter(f"no plan found for task {task_id} — run `localflow plan` first")
     task = store.load_task()
     plan = store.load_plan()
-    assessment = control_loop.run_risk_check(task, plan)
-    md = control_loop.run_dry_run(task, plan, assessment, store)
+    trace = TraceLogger(store.trace_path)
+    assessment = control_loop.run_risk_check(task, plan, trace=trace)
+    md = control_loop.run_dry_run(task, plan, assessment, store, trace=trace)
     console.print(Markdown(md))
     console.print(
         f"\n[dim]Wrote: {store.dry_run_path}[/]\n"
@@ -336,7 +343,8 @@ def cmd_execute(
     task = store.load_task()
     plan = store.load_plan()
     snapshot = store.load_workspace()
-    assessment = control_loop.run_risk_check(task, plan)
+    trace = TraceLogger(store.trace_path)
+    assessment = control_loop.run_risk_check(task, plan, trace=trace)
 
     if assessment.risk_level.value == "blocked":
         console.print("[red]Plan blocked by policy guard. Aborting.[/]")
@@ -345,7 +353,7 @@ def cmd_execute(
         raise typer.Exit(code=2)
 
     # Always render a fresh dry-run preview before asking for approval.
-    md = control_loop.run_dry_run(task, plan, assessment, store)
+    md = control_loop.run_dry_run(task, plan, assessment, store, trace=trace)
     console.print(Markdown(md))
 
     write_count = sum(1 for a in plan.actions if a.is_write())
@@ -364,8 +372,8 @@ def cmd_execute(
         console.print("[yellow]Execution cancelled.[/]")
         raise typer.Exit(code=1)
 
-    outcome = control_loop.run_execute(task, plan, store, approved=True, resume=resume)
-    verification = control_loop.run_verify(task, plan, store, outcome, snapshot)
+    outcome = control_loop.run_execute(task, plan, store, approved=True, resume=resume, trace=trace)
+    verification = control_loop.run_verify(task, plan, store, outcome, snapshot, trace=trace)
 
     # Skill-specific final_report: each Skill renders its own markdown.
     skill_obj = get_default_registry().require(task.skill)
@@ -445,7 +453,8 @@ def cmd_rollback(
             console.print("[yellow]Rollback cancelled.[/]")
             raise typer.Exit(code=1)
 
-    rollback = Rollback(workspace_root=Path(task.workspace_root), run_store=store)
+    trace = TraceLogger(store.trace_path)
+    rollback = Rollback(workspace_root=Path(task.workspace_root), run_store=store, trace=trace)
     outcome = rollback.run(manifest, force=force)
     badge = "[green]OK[/]" if outcome.success else "[red]PARTIAL[/]"
     console.print(
@@ -1051,6 +1060,7 @@ def _stream_plan(
     provider: str,
     model: str,
     skill_obj=None,
+    trace: TraceLogger | None = None,
 ):
     """Run ``skill.plan_with_llm`` with a Rich Live display that shows
     streaming tool-call arguments as they arrive.
@@ -1105,6 +1115,7 @@ def _stream_plan(
                 max_attempts=max_repair,
                 on_delta=on_delta,
                 on_attempt=on_attempt,
+                trace=trace,
             )
         else:
             # Legacy path retained for any direct caller; new code goes
@@ -1116,6 +1127,7 @@ def _stream_plan(
             plan = _legacy_plan(
                 task,
                 snapshot,
+                trace=trace,
                 client=client,
                 max_attempts=max_repair,
                 on_delta=on_delta,

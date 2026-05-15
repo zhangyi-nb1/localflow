@@ -13,15 +13,45 @@ EVALS_DIR = Path(__file__).resolve().parent.parent / "evals" / "workspace_pack"
 
 
 def test_discover_loads_all_starter_tasks() -> None:
-    """Phase 9 ships 3 starter tasks. If someone adds more (Phase 9.x)
-    or removes one, this test updates explicitly."""
+    """v0.10.0 shipped 3 starter tasks; v0.10.1 grew to 6. If someone
+    adds more or removes one, this test updates explicitly so suite
+    growth stays deliberate."""
     tasks = discover_tasks(EVALS_DIR)
     task_ids = {t.task_id for t in tasks}
     assert task_ids == {
         "task_001_basic_organize",
         "task_002_compound_chart",
         "task_003_forbidden_path_blocked",
+        "task_004_forbidden_action_blocked",
+        "task_005_empty_workspace",
+        "task_006_duplicate_files_reported",
     }
+
+
+def test_task_004_pipeline_does_not_emit_forbidden_actions(tmp_path: Path) -> None:
+    """v0.10.1 regression: even when forbidden_actions explicitly
+    contains delete/overwrite, folder_organizer's rule planner must
+    never emit them. The whole pipeline runs cleanly + all graders pass."""
+    tasks = discover_tasks(EVALS_DIR / "task_004_forbidden_action_blocked.yaml")
+    result = run_eval(tasks[0], tmp_path)
+    assert result.passed, [(v.name, v.passed, v.detail) for v in result.grader_verdicts]
+
+
+def test_task_005_empty_workspace_doesnt_crash(tmp_path: Path) -> None:
+    """Empty workspace → zero-action plan → harness completes cleanly,
+    rollback is a no-op, every grader trivially passes."""
+    tasks = discover_tasks(EVALS_DIR / "task_005_empty_workspace.yaml")
+    result = run_eval(tasks[0], tmp_path)
+    assert result.passed, [(v.name, v.passed, v.detail) for v in result.grader_verdicts]
+
+
+def test_task_006_duplicate_files_reported(tmp_path: Path) -> None:
+    """Two byte-identical files → duplicates_report.md gets written +
+    both files moved into the same category, no delete attempted.
+    This is the v0.10.1 regression test for the 'never delete' rule."""
+    tasks = discover_tasks(EVALS_DIR / "task_006_duplicate_files_reported.yaml")
+    result = run_eval(tasks[0], tmp_path)
+    assert result.passed, [(v.name, v.passed, v.detail) for v in result.grader_verdicts]
 
 
 def test_task_001_runs_clean(tmp_path: Path) -> None:
