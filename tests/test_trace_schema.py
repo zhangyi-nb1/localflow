@@ -154,6 +154,55 @@ def test_logger_group_by_failure_counts_buckets(tmp_path: Path) -> None:
     assert FailureType.UNKNOWN not in groups
 
 
+def test_stage_context_manager_tags_emitted_events(tmp_path: Path) -> None:
+    """Phase 10 — `with trace.stage(...)` populates ``stage_id`` on
+    every event emitted in the block (unless the event explicitly
+    sets one)."""
+    logger = TraceLogger(tmp_path / "trace.jsonl")
+    with logger.stage("s1_organize"):
+        logger.emit(TraceEvent(task_id="t", event_type=TraceEventType.DRY_RUN_RENDERED))
+    with logger.stage("s2_chart"):
+        logger.emit(TraceEvent(task_id="t", event_type=TraceEventType.ACTION_START))
+    # Outside any stage block — no stage_id injection.
+    logger.emit(TraceEvent(task_id="t", event_type=TraceEventType.ACTION_END))
+
+    events = logger.read_all()
+    assert events[0].stage_id == "s1_organize"
+    assert events[1].stage_id == "s2_chart"
+    assert events[2].stage_id is None
+
+
+def test_stage_context_nested_restores_outer_on_exit(tmp_path: Path) -> None:
+    """Nested `with` blocks must restore the outer stage on exit so
+    surrounding code sees the parent's stage_id (useful for future
+    nested TaskGraph patterns)."""
+    logger = TraceLogger(tmp_path / "trace.jsonl")
+    with logger.stage("outer"):
+        with logger.stage("inner"):
+            logger.emit(TraceEvent(task_id="t", event_type=TraceEventType.ACTION_START))
+        logger.emit(TraceEvent(task_id="t", event_type=TraceEventType.ACTION_END))
+
+    events = logger.read_all()
+    assert events[0].stage_id == "inner"
+    assert events[1].stage_id == "outer"
+
+
+def test_event_with_explicit_stage_id_is_not_overwritten(tmp_path: Path) -> None:
+    """If the emitter already set ``stage_id`` on the event, the
+    context manager doesn't overwrite it. Explicit always wins."""
+    logger = TraceLogger(tmp_path / "trace.jsonl")
+    with logger.stage("ambient"):
+        logger.emit(
+            TraceEvent(
+                task_id="t",
+                event_type=TraceEventType.ACTION_START,
+                stage_id="explicit",
+            )
+        )
+    events = logger.read_all()
+    assert events[0].stage_id == "explicit"
+
+
 def test_logger_skips_malformed_lines(tmp_path: Path) -> None:
     """A user (or a partially-flushed crash) leaves a bad line; the
     logger reads what it can without crashing."""

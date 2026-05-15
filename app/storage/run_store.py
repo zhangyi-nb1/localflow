@@ -64,6 +64,11 @@ class RunStore:
     VERIFY_JSON = "verify_report.json"
     FINAL_REPORT_MD = "final_report.md"
     BACKUPS_DIR = "backups"
+    # Phase 10 — multi-stage execution artifacts. Each stage's plan /
+    # dry-run / actions live under <run_dir>/stages/<stage_id>/.
+    STAGES_DIR = "stages"
+    TASKGRAPH_JSON = "taskgraph.json"
+    TASKGRAPH_RESULT_JSON = "taskgraph_result.json"
 
     def __init__(self, task_id: str, home: Path | None = None) -> None:
         self.task_id = task_id
@@ -126,6 +131,35 @@ class RunStore:
     def trace_path(self) -> Path:
         """Phase 9 — structured kernel-event stream (TraceLogger)."""
         return self.path(self.TRACE_JSONL)
+
+    # -- Phase 10 multi-stage artifacts --------------------------------
+
+    @property
+    def stages_root(self) -> Path:
+        """``<run_dir>/stages/`` — parent dir for all per-stage subdirs."""
+        return self.run_dir / self.STAGES_DIR
+
+    def stage_dir(self, stage_id: str) -> Path:
+        """Return (and create) ``<run_dir>/stages/<stage_id>/``.
+
+        The directory is created on first access so the TaskGraphRunner
+        doesn't need separate ``mkdir`` plumbing. The per-stage artifacts
+        (plan.json / dry_run.md / actions.json) land here via
+        :class:`app.harness.taskgraph_runner.StageRunStore`.
+        """
+        d = self.stages_root / stage_id
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    @property
+    def taskgraph_path(self) -> Path:
+        """``<run_dir>/taskgraph.json`` — the persisted graph spec."""
+        return self.path(self.TASKGRAPH_JSON)
+
+    @property
+    def taskgraph_result_path(self) -> Path:
+        """``<run_dir>/taskgraph_result.json`` — aggregated stage results."""
+        return self.path(self.TASKGRAPH_RESULT_JSON)
 
     @property
     def rollback_path(self) -> Path:

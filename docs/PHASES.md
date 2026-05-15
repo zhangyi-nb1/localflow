@@ -422,6 +422,105 @@ reason line so users know exactly what's being chosen.
 
 ---
 
+## Phase 10 — TaskGraph / Multi-Stage Execution (v0.11.0)
+
+**Goal**: give compound goals a deterministic alternative to the v0.9
+`agent` meta-skill. The user's original "整理然后画图" goal can now be
+solved two ways:
+
+- **agent** (v0.9): one LLM call, one ActionPlan — flexible but
+  every step is at the model's mercy.
+- **TaskGraph** (v0.11): a static YAML graph of skill invocations —
+  zero LLM cost, byte-deterministic, per-stage failure policy.
+
+Both paths coexist; users pick the right tool. The eval suite from
+v0.10 will quantify which one wins on which workload.
+
+**Shipped**:
+
+- **TaskGraph schemas** ([app/schemas/taskgraph.py](localflow/app/schemas/taskgraph.py))
+  — `StageSpec` / `TaskGraph` / `StageResult` / `TaskGraphResult` +
+  `StageFailurePolicy` (abort / continue / skip) +
+  `StageStatus` (passed / failed / skipped / aborted). Phase 12's
+  REPAIR policy + `max_retries` semantics are reserved (schema field
+  exists, runner ignores them for now).
+- **RunStore extension** ([app/storage/run_store.py](localflow/app/storage/run_store.py))
+  — `stage_dir(stage_id)` + `stages_root` + `taskgraph_path` /
+  `taskgraph_result_path`. One-line addition per property, no
+  rewrites of existing path helpers.
+- **TraceLogger.stage()** ([app/harness/trace.py](localflow/app/harness/trace.py))
+  — `with trace.stage("s1_organize"):` decorates every event emitted
+  inside the block with `stage_id="s1_organize"`. Implemented via
+  `contextvars.ContextVar` — single-threaded today, future-proof for
+  parallel stages. Existing emission sites unchanged.
+- **TaskGraphRunner** ([app/harness/taskgraph_runner.py](localflow/app/harness/taskgraph_runner.py))
+  — walks stages sequentially through the standard
+  `control_loop.run_*` pipeline. Per-stage `StageRunStore` (a thin
+  RunStore subclass) redirects each stage's artifacts under
+  `<run_dir>/stages/<stage_id>/`. One graph-level `trace.jsonl` +
+  one aggregated `rollback_manifest.json` at the top.
+  action_ids are stage-prefixed (`s1.a-001` etc.) to keep them
+  unique across the merged manifest.
+- **EvalTask.stages** ([app/eval/schema.py](localflow/app/eval/schema.py))
+  — optional field. When set, `run_eval()` dispatches to the
+  TaskGraph path; when absent, single-skill behaviour from v0.10
+  unchanged. The multi-stage runner synthesises an aggregated
+  ActionPlan from every stage's plan.json so existing graders
+  (which read `ctx.plan.actions`) see the union of all stages'
+  actions.
+- **CLI** ([app/cli.py](localflow/app/cli.py)) —
+  `localflow taskgraph describe <yaml>` (preview) +
+  `localflow taskgraph run <yaml> [--workspace ...] [--yes]`
+  (single approval ceremony on the graph spec; per-stage plans
+  generated just-in-time; rollback via existing
+  `localflow rollback --run-id <id>`).
+- **`task_007_organize_then_chart`** ([evals/workspace_pack/](localflow/evals/workspace_pack/task_007_organize_then_chart.yaml))
+  — first multi-stage starter task. Stage 1: folder_organizer.
+  Stage 2: workspace_visualizer. The v0.9-original compound goal,
+  solved deterministically. Eval suite now 7/7.
+
+**Files**: 1 new schema, 1 new runner, 1 new CLI subcommand group,
+1 new starter task YAML, 1 new doc (`docs/TASKGRAPH.md`),
+4 new test files (`test_taskgraph_schema.py` +
+`test_taskgraph_runner.py` + `test_eval_multi_stage.py` +
+extensions to `test_trace_schema.py` + `test_cli_trace.py`).
+`pyproject.toml` 0.10.1 → 0.11.0.
+
+**Tests**: 402 → 430 (+28: 11 schema + 9 runner + 3 multi-stage eval
++ 3 trace stage-ctx + 2 CLI taskgraph). Lint + format clean.
+
+**§10.7**: NO kernel-BEHAVIOUR changes. The TaskGraphRunner is a new
+file SIBLING to control_loop.py — it composes the existing
+`control_loop.run_*` functions, does not modify them. `TraceLogger`
+gains the `stage()` context manager (additive — events without a
+contextual stage still emit `stage_id=None` exactly as before). All
+6 v0.10.1 eval tasks (no `stages` field) continue to pass via the
+single-skill path unchanged. **20th** consecutive zero-kernel-behaviour
+phase.
+
+**Behaviour change visible to users**: `<run_dir>/` now optionally
+contains a `stages/` subdirectory + `taskgraph.json` +
+`taskgraph_result.json` when the run was driven by a TaskGraph.
+Existing single-skill runs are byte-identical to v0.10.1.
+
+**Worked example** — the user's v0.9 complaint goal handled both
+ways:
+
+```powershell
+# Path 1 — LLM (existing v0.9):
+localflow plan ./workspace --goal "organize then chart" --skill agent --planner llm
+
+# Path 2 — static composition (new v0.11):
+localflow taskgraph run my_graph.yaml --yes
+#   where my_graph.yaml = folder_organizer → workspace_visualizer
+```
+
+Both produce a valid run_dir + trace + rollback manifest. The user
+picks based on whether the goal is novel (agent) or repeatable
+(TaskGraph).
+
+---
+
 ## Phase 9.1 — Trace coverage for CLI + MCP, expanded eval suite (v0.10.1)
 
 **Goal**: close the two gaps the v0.10.0 verification guide called out
@@ -834,8 +933,9 @@ post-nav persistence, fresh-session reset). Total 318 → 319.
 | 8.3.1 (v0.9.1) | NO | Project hygiene — README split, UI.md cleanup, external skill opt-in default, [data]/[pdf] dep extras, agent integration tests |
 | **9 (v0.10.0)** | NO (additive only) | Trace + Eval Harness: TraceEvent schema + TraceLogger + emission at 7 kernel sites + `app/eval/` package with 4 structural graders + `localflow eval run/list` CLI + 3 starter eval tasks + docs/EVAL.md |
 | 9.1 (v0.10.1) | NO | CLI + MCP commands now wire trace; starter eval suite grew 3 → 6 tasks |
+| **10 (v0.11.0)** | NO (additive only) | TaskGraph — multi-stage execution: schemas + runner + `TraceLogger.stage()` ctx + `localflow taskgraph` CLI + `EvalTask.stages` + 1 starter multi-stage eval task |
 
-**Score**: 1 deliberate exception across 19 deliveries. The rule held.
+**Score**: 1 deliberate exception across 20 deliveries. The rule held.
 
 ---
 

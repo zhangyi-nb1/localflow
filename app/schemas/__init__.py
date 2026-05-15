@@ -5,6 +5,14 @@ from app.schemas.risk import RiskAssessment, RiskVerdict
 from app.schemas.rollback import RollbackEntry, RollbackManifest
 from app.schemas.skill import SkillManifest
 from app.schemas.task import TaskSpec
+from app.schemas.taskgraph import (
+    StageFailurePolicy,
+    StageResult,
+    StageSpec,
+    StageStatus,
+    TaskGraph,
+    TaskGraphResult,
+)
 from app.schemas.trace import FailureType, TraceEvent, TraceEventType, TraceStatus
 from app.schemas.verification import VerificationCheck, VerificationResult
 from app.schemas.workspace import FileMeta, WorkspaceSnapshot
@@ -23,6 +31,12 @@ __all__ = [
     "RollbackEntry",
     "RollbackManifest",
     "SkillManifest",
+    "StageFailurePolicy",
+    "StageResult",
+    "StageSpec",
+    "StageStatus",
+    "TaskGraph",
+    "TaskGraphResult",
     "TaskSpec",
     "TraceEvent",
     "TraceEventType",

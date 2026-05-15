@@ -135,9 +135,12 @@ Full threat model + per-mitigation tests: [**docs/SECURITY.md**](docs/SECURITY.m
 ```
 Core harness:    full lifecycle (plan / dry-run / approval / execute / verify / rollback)
 Trace + Eval:    structured trace.jsonl stream emitted by every CLI + MCP
-                 + eval run (v0.10.1) · eval suite with 6 starter tasks +
+                 + eval run (v0.10.1) · eval suite with 7 starter tasks +
                  `localflow eval run evals/workspace_pack/` → markdown report
                  with per-task grader verdicts + failure-type histogram
+TaskGraph:       multi-stage execution (v0.11.0) — YAML graph of skill
+                 invocations, per-stage failure policy, aggregated rollback.
+                 `localflow taskgraph run my_graph.yaml --yes`
 Skills:          agent (v0.9.0 default — LLM-driven one-shot compound execution)
                  + folder_organizer · pdf_indexer · data_reporter
                  · data_analyzer · workspace_visualizer (specialists, CLI/MCP)
@@ -149,7 +152,7 @@ UI (v0.9.0):     Streamlit browser UI · EN/中文 toggle · goal-only Plan page
                  routing every compound goal through the agent meta-skill;
                  specialist skills remain CLI/MCP-only. Radio-driven workspace
                  picker with sticky ?unsafe=1 · soft-sandboxed to ./sandbox/
-Tests:           402 passing across 5 OS × Python matrix in CI
+Tests:           430 passing across 5 OS × Python matrix in CI
 ```
 
 Three equivalent driver layers, same kernel:
@@ -160,7 +163,7 @@ localflow mcp-serve                                    # 2. MCP (Claude Code etc
 localflow ui-serve                                     # 3. Streamlit UI — http://127.0.0.1:8501
 ```
 
-UI walkthrough: [**docs/UI.md**](docs/UI.md) (EN) · [**docs/UI_zh.md**](docs/UI_zh.md) (中文用户指南). Eval suite + grader API + trace schema: [**docs/EVAL.md**](docs/EVAL.md). Full per-phase changelog and `§10.7` kernel-touch ledger: [**docs/PHASES.md**](docs/PHASES.md)
+UI walkthrough: [**docs/UI.md**](docs/UI.md) (EN) · [**docs/UI_zh.md**](docs/UI_zh.md) (中文用户指南). Eval suite + grader API + trace schema: [**docs/EVAL.md**](docs/EVAL.md). TaskGraph schema + multi-stage CLI: [**docs/TASKGRAPH.md**](docs/TASKGRAPH.md). Full per-phase changelog and `§10.7` kernel-touch ledger: [**docs/PHASES.md**](docs/PHASES.md)
 
 ---
 
@@ -235,7 +238,7 @@ app/eval/     Trace + eval harness (Phase 9): TraceEvent schema,
               TraceLogger, grader registry, runner, markdown report.
               Drives task-level success measurement.
 evals/        Eval task YAMLs (workspace_pack/ holds the v0.10.0 starter set)
-tests/        402 tests across all layers
+tests/        430 tests across all layers
 ```
 
 ---
@@ -245,7 +248,7 @@ tests/        402 tests across all layers
 ```powershell
 pip install build
 python -m build
-# → dist/localflow_agent-0.10.1-py3-none-any.whl  +  .tar.gz
+# → dist/localflow_agent-0.11.0-py3-none-any.whl  +  .tar.gz
 ```
 
 | Workflow | Trigger | What it does |
@@ -255,29 +258,34 @@ python -m build
 
 Releases (with verified wheel artifacts) under [**GitHub Releases**](https://github.com/zhangyi-nb1/localflow/releases).
 
-Version scheme: `0.<highest_phase>.<sub>`. Current `0.10.1` = Phase 6.1 + Phase 7 hardening + 8.0–8.3.1 UI / agent / hygiene + Phase 9 Trace + Eval Harness + **Phase 9.1** (CLI + MCP now also emit trace.jsonl; starter eval suite grew 3 → 6 tasks).
+Version scheme: `0.<highest_phase>.<sub>`. Current `0.11.0` = Phase 6.1 + Phase 7 hardening + 8.0–8.3.1 UI / agent / hygiene + Phase 9 Trace + Eval Harness + Phase 9.1 trace coverage + **Phase 10 TaskGraph** (multi-stage execution via static YAML graphs; per-stage failure policy; aggregated rollback; `localflow taskgraph describe/run` CLI).
 
 ---
 
 ## Roadmap
 
-- **v0.10.x** — grow the eval suite from 3 → 20+ starter tasks;
-  offline LLM fixture so LLM-planner eval tasks can run in CI
-  without burning API quota.
-- **Phase 10 (v0.11.0)** — TaskGraph / StagePlan. Multi-stage tasks
-  with per-stage verifier + repair. `stage_id` populated on every
-  trace event.
-- **Phase 11 (v0.12.0)** — Workspace Pack Builder strong demo +
-  the corresponding eval task that proves multi-stage + semantic
-  verifiers gate a real long task.
+- **v0.11.x** — multi-stage eval task growth; per-stage rollback
+  (`localflow rollback --stage <id>`); MCP `taskgraph_run` tool.
+- **Phase 11 (v0.12.0)** — Workspace Pack Builder strong demo: a
+  5-8 stage TaskGraph that turns a messy research workspace into a
+  deliverable knowledge pack (topic dirs / index.md per topic / data
+  charts / source ledger / final README).
 - **Phase 12** — Semantic Verifier (LLM-as-judge graders:
   `summary_grounded`, `chart_matches_csv`, `source_ledger_complete`)
   + post-execute Repair Loop. The eval report will show pass-rate
-  before/after the repair loop.
+  before/after the repair loop. A new `failure_policy: repair`
+  on StageSpec triggers the loop automatically.
 - **Future** — Skill manifest signing; per-skill capability scoping
   in the LLM tool schema; WebCollect skill; MCP client.
 
 Recently shipped:
+- **v0.11.0 — Phase 10 TaskGraph.** Multi-stage execution: a YAML
+  graph of skill invocations driven through the standard harness
+  pipeline, with per-stage failure policy and aggregated rollback.
+  New `localflow taskgraph describe/run` CLI. `EvalTask.stages`
+  opens the same path through the eval suite. The v0.9-original
+  "整理然后画图" compound goal can now be solved deterministically
+  via static composition (no LLM required).
 - **v0.10.1 — Phase 9.1 trace coverage + eval suite growth.**
   CLI and MCP now construct a TraceLogger per run; every
   `localflow plan/execute/rollback` produces a `trace.jsonl` next

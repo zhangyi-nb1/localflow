@@ -1264,5 +1264,160 @@ def cmd_eval_run(
     raise typer.Exit(code=failed)
 
 
+# --------------------------------------------------------------------- taskgraph
+
+taskgraph_app = typer.Typer(
+    help="Phase 10 (v0.11.0) — drive multi-stage tasks via static graph YAML.",
+    no_args_is_help=True,
+)
+app.add_typer(taskgraph_app, name="taskgraph")
+
+
+@taskgraph_app.command("describe")
+def cmd_taskgraph_describe(
+    graph: Path = typer.Argument(..., help="Path to a TaskGraph YAML file."),
+) -> None:
+    """Print the parsed TaskGraph spec (stages + skills + policies).
+
+    Doesn't run anything; useful for reviewing a graph before
+    invoking ``localflow taskgraph run`` on it.
+    """
+    import yaml
+
+    from app.schemas import TaskGraph
+
+    try:
+        raw = yaml.safe_load(graph.read_text(encoding="utf-8"))
+        tg = TaskGraph.model_validate(raw)
+    except Exception as exc:
+        console.print(f"[red]invalid graph YAML:[/] {exc}")
+        raise typer.Exit(code=2)
+
+    table = Table(title=f"TaskGraph @ {graph}")
+    table.add_column("#", style="dim", justify="right")
+    table.add_column("stage_id", style="cyan")
+    table.add_column("title")
+    table.add_column("skill")
+    table.add_column("planner")
+    table.add_column("policy", style="yellow")
+    for i, s in enumerate(tg.stages, 1):
+        table.add_row(
+            str(i),
+            s.stage_id,
+            s.title,
+            s.skill,
+            s.planner,
+            s.failure_policy.value,
+        )
+    console.print(table)
+    console.print(
+        f"[dim]Goal:[/] {tg.user_goal}\n"
+        f"[dim]Workspace:[/] {tg.workspace_root}\n"
+        f"[dim]Forbidden actions:[/] {', '.join(tg.forbidden_actions) or '(none)'}\n"
+        f"[dim]Forbidden paths:[/] {', '.join(tg.forbidden_paths) or '(none)'}"
+    )
+
+
+@taskgraph_app.command("run")
+def cmd_taskgraph_run(
+    graph: Path = typer.Argument(..., help="Path to a TaskGraph YAML file."),
+    workspace: Optional[Path] = typer.Option(
+        None,
+        "--workspace",
+        "-w",
+        help=(
+            "Override the graph's workspace_root. Useful when the YAML uses a "
+            "placeholder path. Defaults to the graph's declared workspace_root."
+        ),
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Approve the graph spec without prompting."
+    ),
+) -> None:
+    """Plan + execute every stage of a TaskGraph end-to-end.
+
+    Single approval ceremony at the start: the user approves the
+    GRAPH SPEC (which stages, which skills, which planners). Per-stage
+    ActionPlans are generated just-in-time as previous stages
+    complete; per-stage dry-runs are written + traced but not
+    prompted on. This is the only way multi-stage works in a
+    non-interactive (CI / MCP) context.
+    """
+    import yaml
+
+    from app.harness.taskgraph_runner import run_taskgraph
+    from app.schemas import TaskGraph
+
+    try:
+        raw = yaml.safe_load(graph.read_text(encoding="utf-8"))
+        tg = TaskGraph.model_validate(raw)
+    except Exception as exc:
+        console.print(f"[red]invalid graph YAML:[/] {exc}")
+        raise typer.Exit(code=2)
+
+    if workspace is not None:
+        tg = tg.model_copy(update={"workspace_root": str(workspace.resolve())})
+
+    # Render the spec for the user to confirm.
+    console.print(
+        Panel.fit(
+            f"[bold]TaskGraph: {graph.name}[/]\n"
+            f"Goal: {tg.user_goal}\n"
+            f"Workspace: {tg.workspace_root}\n"
+            f"Stages: {len(tg.stages)}\n"
+            + "\n".join(
+                f"  {i + 1}. [{s.failure_policy.value}] {s.stage_id} — {s.skill} ({s.planner})"
+                for i, s in enumerate(tg.stages)
+            ),
+            title="Approval required",
+            border_style="cyan",
+        )
+    )
+    if not yes:
+        confirm = typer.confirm("Run this graph?")
+        if not confirm:
+            console.print("[yellow]TaskGraph cancelled.[/]")
+            raise typer.Exit(code=1)
+
+    store = RunStore.create()
+    trace = TraceLogger(store.trace_path)
+    result = run_taskgraph(tg, store, trace=trace, approved=True)
+
+    table = Table(title=f"TaskGraph run: {store.task_id}")
+    table.add_column("stage_id", style="cyan")
+    table.add_column("status")
+    table.add_column("actions", justify="right")
+    table.add_column("verifier")
+    table.add_column("duration", justify="right")
+    for s in result.stages:
+        badge = {
+            "passed": "[green]PASSED[/]",
+            "failed": "[red]FAILED[/]",
+            "skipped": "[dim]SKIPPED[/]",
+            "aborted": "[yellow]ABORTED[/]",
+        }.get(s.status.value, s.status.value)
+        verifier = (
+            "—"
+            if s.verifier_passed is None
+            else ("[green]ok[/]" if s.verifier_passed else "[red]fail[/]")
+        )
+        table.add_row(
+            s.stage_id,
+            badge,
+            str(s.action_count),
+            verifier,
+            f"{s.duration_ms} ms",
+        )
+    console.print(table)
+    badge = "[green]PASSED[/]" if result.passed else "[red]FAILED[/]"
+    console.print(
+        f"{badge}  total {result.duration_ms} ms  ·  "
+        f"run_id [bold]{result.task_id}[/]  ·  "
+        f"to undo: [bold]localflow rollback --run-id {result.task_id}[/]"
+    )
+    if not result.passed:
+        raise typer.Exit(code=1)
+
+
 if __name__ == "__main__":
     app()

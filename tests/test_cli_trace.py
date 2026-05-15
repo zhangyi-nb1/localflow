@@ -120,3 +120,94 @@ def test_cli_execute_emits_action_and_verifier_events(
     assert "action.end" in types
     assert "verifier.check" in types
     assert "dry_run.rendered" in types
+
+
+# ───────────────────────────────────── Phase 10 — taskgraph CLI
+
+
+def test_cli_taskgraph_describe_renders_stage_table(
+    tmp_path: Path,
+    isolated_run_home: Path,
+) -> None:
+    """`localflow taskgraph describe <yaml>` prints a table summarising
+    the stages without running anything."""
+    import yaml
+
+    graph_yaml = tmp_path / "g.yaml"
+    graph_yaml.write_text(
+        yaml.safe_dump(
+            {
+                "user_goal": "organize then chart",
+                "workspace_root": "/tmp/ws",
+                "stages": [
+                    {"stage_id": "s1", "title": "Organize", "skill": "folder_organizer"},
+                    {"stage_id": "s2", "title": "Chart", "skill": "workspace_visualizer"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["taskgraph", "describe", str(graph_yaml)],
+        env=os.environ.copy() | {"LOCALFLOW_HOME": str(isolated_run_home)},
+    )
+    assert result.exit_code == 0, result.output
+    # Both stage_ids appear in the rendered table.
+    assert "s1" in result.output
+    assert "s2" in result.output
+    assert "folder_organizer" in result.output
+    assert "workspace_visualizer" in result.output
+
+
+def test_cli_taskgraph_run_executes_end_to_end(
+    tmp_path: Path,
+    isolated_run_home: Path,
+) -> None:
+    """`localflow taskgraph run --yes` should:
+    - exit 0
+    - create taskgraph.json + taskgraph_result.json + stages/ at run_dir
+    - populate trace.jsonl with events tagged stage_id=s1 and =s2
+    """
+    import yaml
+
+    from app.harness.trace import TraceLogger as TL
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "a.pdf").write_text("doc")
+    (ws / "b.png").write_text("img")
+    (ws / "c.txt").write_text("note")
+
+    graph_yaml = tmp_path / "g.yaml"
+    graph_yaml.write_text(
+        yaml.safe_dump(
+            {
+                "user_goal": "organize then chart",
+                "workspace_root": str(ws),
+                "stages": [
+                    {"stage_id": "s1", "title": "Organize", "skill": "folder_organizer"},
+                    {"stage_id": "s2", "title": "Chart", "skill": "workspace_visualizer"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["taskgraph", "run", str(graph_yaml), "--yes"],
+        env=os.environ.copy() | {"LOCALFLOW_HOME": str(isolated_run_home)},
+    )
+    assert result.exit_code == 0, result.output
+
+    run_dir = next((isolated_run_home / "runs").iterdir())
+    assert (run_dir / "taskgraph.json").exists()
+    assert (run_dir / "taskgraph_result.json").exists()
+    assert (run_dir / "stages" / "s1").exists()
+    assert (run_dir / "stages" / "s2").exists()
+    events = TL(run_dir / "trace.jsonl").read_all()
+    stage_ids = {e.stage_id for e in events if e.stage_id is not None}
+    assert "s1" in stage_ids
+    assert "s2" in stage_ids

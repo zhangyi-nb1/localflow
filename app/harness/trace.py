@@ -18,10 +18,20 @@ crash-safe writes. Reads parse each line back into the typed
 from __future__ import annotations
 
 from collections import defaultdict
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
+from typing import Iterator
 
 from app.schemas.trace import FailureType, TraceEvent
 from app.storage.jsonl_logger import JsonlLogger
+
+# Phase 10 — contextual stage_id for multi-stage TaskGraph runs.
+# ContextVar is the canonical thread-safe / async-safe primitive for
+# this kind of ambient context; Phase 10's runner is single-threaded
+# but using ContextVar keeps us future-proof if Phase 10.x adds
+# parallel stages.
+_STAGE_CTX: ContextVar[str | None] = ContextVar("trace_stage", default=None)
 
 
 class TraceLogger:
@@ -35,9 +45,36 @@ class TraceLogger:
         self._jsonl = JsonlLogger(self.path)
 
     def emit(self, event: TraceEvent) -> None:
-        """Write one TraceEvent to disk. Atomic per record."""
+        """Write one TraceEvent to disk. Atomic per record.
+
+        Phase 10: if a ``stage()`` context manager is active and the
+        event doesn't already carry a ``stage_id``, inject the
+        contextual one. Existing emission sites stay unchanged —
+        they emit ``stage_id=None`` and the runner's `with
+        trace.stage(...)` block tags every nested event.
+        """
+        if event.stage_id is None:
+            ctx_stage = _STAGE_CTX.get()
+            if ctx_stage is not None:
+                event = event.model_copy(update={"stage_id": ctx_stage})
         payload = event.model_dump(mode="json", exclude={"ts", "event_type"})
         self._jsonl.write(event.event_type.value, payload)
+
+    @contextmanager
+    def stage(self, stage_id: str) -> Iterator[None]:
+        """Decorate every event emitted inside the block with this
+        ``stage_id`` (unless the event explicitly sets one).
+
+        Nested ``with trace.stage(...)`` blocks restore the outer
+        stage_id on exit — useful for Phase 11's potential nested
+        TaskGraph patterns. Single-threaded today (Phase 10 sequential
+        runner); ContextVar is future-proof for parallel stages.
+        """
+        token = _STAGE_CTX.set(stage_id)
+        try:
+            yield
+        finally:
+            _STAGE_CTX.reset(token)
 
     def read_all(self) -> list[TraceEvent]:
         """Re-parse every line into a TraceEvent. Skips malformed

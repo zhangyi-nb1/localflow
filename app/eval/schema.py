@@ -19,6 +19,7 @@ from app.schemas import (
     ActionPlan,
     ExecutionRecord,
     RollbackManifest,
+    StageSpec,
     TaskSpec,
     TraceEvent,
     VerificationResult,
@@ -60,6 +61,15 @@ class EvalTask(BaseModel):
         description=(
             "Subset of ``graders`` whose failure marks the whole task as failed. "
             "Empty (default) means every grader must pass."
+        ),
+    )
+    stages: list[StageSpec] | None = Field(
+        default=None,
+        description=(
+            "Phase 10: when set, the eval runner walks a TaskGraph "
+            "instead of the single-skill path. The ``skill`` + ``planner`` "
+            "fields are ignored. Each stage's ``expected_outputs`` is "
+            "additive to the task-level ``expected_outputs``."
         ),
     )
     notes: str | None = None
