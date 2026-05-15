@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 from app.harness.action_validator import validate_plan_structure
@@ -22,8 +24,15 @@ from app.schemas import (
     VerificationResult,
     WorkspaceSnapshot,
 )
+from app.skills._base import Skill, SkillError
 from app.storage.run_store import RunStore
 from app.tools.file_scan import scan_workspace
+
+# Phase 11 — hard cap on plan refinement iterations per task. After 5
+# revisions the user is better off restarting with a clearer initial
+# goal than continuing to chase the LLM. Kept here (not in Skill /
+# RunStore) so the cap stays a harness-level invariant.
+MAX_REVISIONS = 5
 
 
 @dataclass
@@ -163,6 +172,116 @@ def run_verify(
     )
     run_store.save_verification(result)
     return result
+
+
+# -- Phase 11 plan refinement loop ---------------------------------------
+
+
+def run_revise(
+    task: TaskSpec,
+    snapshot: WorkspaceSnapshot,
+    prior_plan: ActionPlan,
+    user_hint: str,
+    *,
+    skill: Skill,
+    run_store: RunStore,
+    trace: TraceLogger | None = None,
+    audit: AuditLogger | None = None,
+) -> tuple[ActionPlan, int]:
+    """Drive one refinement turn over an existing task.
+
+    Walks the skill's :meth:`Skill.revise` (default delegates to
+    ``plan_with_llm`` with the prior plan + user hint as a synthetic
+    "your previous plan was wrong because…" repair turn), validates
+    the new plan, persists ``plans/plan_v<n>.json`` (mirroring to
+    ``plan.json``), appends a row to ``revisions.jsonl``, and emits
+    one ``plan.revised`` trace event.
+
+    Caps revisions at :data:`MAX_REVISIONS` — beyond that we surface
+    a clear "restart with a better initial goal" message rather than
+    letting the user burn LLM budget chasing a brittle prompt.
+
+    Returns ``(new_plan, new_version)``. Raises :class:`SkillError`
+    when the cap is hit or the skill rejects refinement (rule-only
+    skills can't honour free-form hints).
+
+    Critically: nothing on disk besides ``plans/`` + ``plan.json`` +
+    ``revisions.jsonl`` is touched. The executor / verifier / rollback
+    code paths are unaware that refinement happened. §10.7 holds.
+    """
+    if not user_hint or not user_hint.strip():
+        raise SkillError("user_hint is required for revise — empty hint rejected")
+
+    versions = run_store.list_plan_versions()
+    if not versions:
+        # Backfill v1 from the existing plan.json so the audit trail is
+        # complete. Tasks created before v0.12 had no plans/ subdir.
+        run_store.save_plan_version(prior_plan, 1)
+        versions = [1]
+    next_version = max(versions) + 1
+    if next_version > MAX_REVISIONS:
+        raise SkillError(
+            f"plan already revised {MAX_REVISIONS} times — consider restarting "
+            f"with a clearer initial goal"
+        )
+
+    new_plan = skill.revise(task, snapshot, prior_plan, user_hint.strip(), trace=trace)
+    skill.validate(new_plan)
+    run_store.save_plan_version(new_plan, next_version)
+    _append_revision_log(run_store, next_version, user_hint.strip(), prior_plan, new_plan)
+
+    if trace is not None:
+        try:
+            trace.emit_plan_revised(
+                task_id=task.task_id,
+                prior_plan_id=prior_plan.plan_id,
+                new_plan_id=new_plan.plan_id,
+                version=next_version,
+                user_hint=user_hint.strip(),
+            )
+        except Exception:
+            pass
+    if audit is not None:
+        try:
+            audit.log(
+                "plan.revised",
+                task_id=task.task_id,
+                version=next_version,
+                prior_plan_id=prior_plan.plan_id,
+                new_plan_id=new_plan.plan_id,
+                hint=user_hint.strip()[:300],
+            )
+        except Exception:
+            pass
+
+    return new_plan, next_version
+
+
+def _append_revision_log(
+    run_store: RunStore,
+    version: int,
+    user_hint: str,
+    prior_plan: ActionPlan,
+    new_plan: ActionPlan,
+) -> None:
+    """Append one row to ``<run_dir>/revisions.jsonl``.
+
+    Hand-rolled (not via :class:`AuditLogger` which is for cross-task
+    state mutations) so the file lives next to the rest of this run's
+    artifacts and travels in the run dir's tarball.
+    """
+    row = {
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "version": version,
+        "prior_plan_id": prior_plan.plan_id,
+        "new_plan_id": new_plan.plan_id,
+        "user_hint": user_hint,
+        "prior_action_count": len(prior_plan.actions),
+        "new_action_count": len(new_plan.actions),
+    }
+    line = json.dumps(row, ensure_ascii=False)
+    with run_store.revisions_log_path.open("a", encoding="utf-8") as fh:
+        fh.write(line + "\n")
 
 
 # -- Phase 9 trace emission helpers (no-op when trace is None) -----------

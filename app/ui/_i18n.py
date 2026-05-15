@@ -342,6 +342,75 @@ _DICT: dict[str, dict[Lang, str]] = {
         "en": "Last plan: {task_id}",
         "zh": "上一次规划：{task_id}",
     },
+    # ───────────────────────── Phase 11: refinement loop ─────────────
+    "plan.summary.version_chip": {
+        "en": "Plan v{version}",
+        "zh": "Plan 第 {version} 版",
+    },
+    "plan.summary.version_chip_revised": {
+        "en": "Plan v{version} (revised {revisions}×)",
+        "zh": "Plan 第 {version} 版（已修正 {revisions} 次）",
+    },
+    "plan.refine.expander": {
+        "en": "🔄 Not what you wanted? Refine the plan ({remaining} revision(s) left)",
+        "zh": "🔄 计划不符合预期？补充细节重新规划（剩余 {remaining} 次）",
+    },
+    "plan.refine.intro": {
+        "en": (
+            "Tell the agent what your previous plan got wrong. It will re-plan "
+            "**without** executing anything — no rollback needed. You can iterate up "
+            "to {max_revisions} times per task."
+        ),
+        "zh": (
+            "告诉 agent 上一版 plan 哪里偏离了你的意图，它会**不执行**地重新生成 plan —— "
+            "不需要回滚。每个任务最多迭代 {max_revisions} 次。"
+        ),
+    },
+    "plan.refine.hint_label": {
+        "en": "What was wrong / what do you actually want?",
+        "zh": "上一版哪里不对 / 你实际想要什么？",
+    },
+    "plan.refine.hint_placeholder": {
+        "en": (
+            "Example: 'I wanted you to analyze the data INSIDE the Excel file, "
+            "not just organize folders.' Or: 'Use a pie chart for the category "
+            "proportions instead of a bar chart.'"
+        ),
+        "zh": (
+            "例如：「我希望你分析 Excel 表里的数据，而不是整理文件夹。」"
+            "或：「用饼图展示分类占比，不要柱状图。」"
+        ),
+    },
+    "plan.refine.button": {"en": "🔁 Re-plan with this hint", "zh": "🔁 用这条提示重新规划"},
+    "plan.refine.spinner": {
+        "en": "Re-planning with your clarification…",
+        "zh": "根据你的提示重新规划中…",
+    },
+    "plan.refine.error_empty": {
+        "en": "Hint cannot be empty. Tell the agent what was wrong.",
+        "zh": "提示不能为空。请告诉 agent 哪里不对。",
+    },
+    "plan.refine.error_unsupported": {
+        "en": "Skill `{skill}` does not support refinement (no LLM planner).",
+        "zh": "Skill `{skill}` 不支持修正（没有 LLM 规划器）。",
+    },
+    "plan.refine.error_generic": {
+        "en": "Refinement failed: {err}",
+        "zh": "修正失败：{err}",
+    },
+    "plan.refine.success": {
+        "en": "Refined to v{version}. Review the new plan above.",
+        "zh": "已生成第 {version} 版。请查看上方的新 plan。",
+    },
+    "plan.refine.max_reached": {
+        "en": (
+            "Plan revised {max_revisions} times already — consider restarting "
+            "with a clearer initial goal."
+        ),
+        "zh": (
+            "本 task 已修正 {max_revisions} 次 —— 建议放弃这条线索，重新从一个更清晰的目标开始。"
+        ),
+    },
     # ───────────────────────── execute page ─────────────────────────
     "execute.subtitle": {
         "en": "Dry-run → review → approve → execute → verify.",

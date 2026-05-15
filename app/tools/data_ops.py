@@ -172,6 +172,98 @@ def read_and_describe(
     ]
 
 
+DEFAULT_PREVIEW_MAX_CHARS = 2000
+"""Hard cap on tabular preview text — matches text_ops.DEFAULT_MAX_CHARS so
+``WorkspaceSnapshot.FileMeta.text_preview`` stays a similar size regardless
+of file_type."""
+
+
+def extract_tabular_preview(
+    abs_path: Path,
+    *,
+    max_rows: int = 10,
+    max_chars: int = DEFAULT_PREVIEW_MAX_CHARS,
+) -> str | None:
+    """Phase 11 — render the first ``max_rows`` of a CSV/Excel as
+    markdown so :class:`~app.schemas.workspace.FileMeta.text_preview`
+    can carry it to the LLM.
+
+    Multi-sheet Excel files emit one markdown block per sheet, each
+    prefixed by ``### (sheet: <name>)``. The combined output is hard-
+    capped at ``max_chars`` (default 2000) so the workspace snapshot
+    prompt stays manageable. On any read error returns ``None`` so the
+    scanner gracefully falls back to "no preview" without crashing.
+
+    Phase 11 design note: this is the *only* place the scanner reaches
+    for pandas. The import is lazy (already inside ``read_tabular``)
+    so users without the ``[data]`` extra still get a working scanner
+    — they just see no preview for spreadsheets.
+    """
+    if not abs_path.exists() or not abs_path.is_file():
+        return None
+    try:
+        reads = read_tabular(abs_path, abs_path.name, max_rows=max_rows)
+    except Exception:
+        return None
+    if not reads:
+        return None
+
+    pieces: list[str] = []
+    for tr in reads:
+        if tr.error is not None or tr.df is None:
+            continue
+        sheet_label = _extract_sheet_label(tr.display_path)
+        if sheet_label:
+            pieces.append(f"### (sheet: {sheet_label})")
+        block = _df_to_markdown(tr.df, max_rows=max_rows)
+        if block:
+            pieces.append(block)
+    if not pieces:
+        return None
+
+    preview = "\n\n".join(pieces).strip()
+    if len(preview) > max_chars:
+        preview = preview[: max_chars - 3] + "..."
+    return preview
+
+
+def _extract_sheet_label(display_path: str) -> str | None:
+    import re
+
+    m = re.search(r"\(sheet:\s*(.+?)\)\s*$", display_path)
+    return m.group(1).strip() if m else None
+
+
+def _df_to_markdown(df: Any, *, max_rows: int) -> str:
+    """Render a DataFrame as a compact markdown table.
+
+    We avoid pandas' ``DataFrame.to_markdown`` (requires the ``tabulate``
+    package) and roll a deliberately small renderer. Long cell values are
+    truncated so a single wide string column doesn't blow past max_chars
+    on its own.
+    """
+    columns = [str(c) for c in df.columns]
+    if not columns:
+        return ""
+    head = df.head(max_rows)
+    lines: list[str] = []
+    lines.append("| " + " | ".join(columns) + " |")
+    lines.append("|" + "|".join(["---"] * len(columns)) + "|")
+    for _, row in head.iterrows():
+        cells = []
+        for c in columns:
+            cell = row[c]
+            s = "" if cell is None else str(cell)
+            if len(s) > 40:
+                s = s[:37] + "..."
+            cells.append(s.replace("|", "\\|"))
+        lines.append("| " + " | ".join(cells) + " |")
+    remaining = max(0, int(len(df)) - len(head))
+    if remaining:
+        lines.append(f"_…+{remaining} more row(s) not shown_")
+    return "\n".join(lines)
+
+
 def summarize_dataframe(
     display_path: str,
     df: Any | None,

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import io
 import logging
-from typing import TYPE_CHECKING, Iterable, Mapping
+from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
 logging.getLogger("matplotlib").setLevel(logging.ERROR)
 
@@ -77,12 +77,12 @@ def bar_png(
     """
     plt = _lazy_import_matplotlib()
     items = list(counts.items()) if isinstance(counts, Mapping) else list(counts)
-    items.sort(key=lambda kv: -int(kv[1]))
+    items.sort(key=lambda kv: -float(kv[1]))
     if len(items) > max_bars:
-        other_total = sum(int(v) for _, v in items[max_bars:])
+        other_total = sum(float(v) for _, v in items[max_bars:])
         items = items[:max_bars] + [("(other)", other_total)]
     labels = [_clip(str(k), 20) for k, _ in items]
-    values = [int(v) for _, v in items]
+    values = [float(v) for _, v in items]
 
     fig, ax = plt.subplots(figsize=(7.0, 4.0))
     if not items:
@@ -95,6 +95,102 @@ def bar_png(
     ax.set_xlabel(_clip(xlabel, 50))
     ax.set_ylabel("count")
     ax.grid(True, axis="y", alpha=0.3)
+    return _fig_to_png(fig, plt)
+
+
+# --------------------------------------------------------------------- Phase 11: pie + line
+
+
+MAX_PIE_SLICES = 8
+"""Cap pie slices — beyond 8, the chart becomes unreadable.
+
+Slices beyond the cap are collapsed into ``(other)`` so the proportion
+view still adds up to 100%.
+"""
+
+
+def pie_png(
+    counts: Mapping[str, float] | Iterable[tuple[str, float]],
+    *,
+    title: str,
+    max_slices: int = MAX_PIE_SLICES,
+) -> bytes:
+    """Render a pie chart of category → value. Returns PNG bytes.
+
+    Accepts the same shapes as :func:`bar_png`. Slices beyond
+    ``max_slices`` are merged into ``(other)``. Negative values are
+    clamped to zero because a negative slice has no geometric meaning;
+    the planner heuristic only routes truly positive series to pie.
+    """
+    plt = _lazy_import_matplotlib()
+    items = list(counts.items()) if isinstance(counts, Mapping) else list(counts)
+    cleaned: list[tuple[str, float]] = []
+    for k, v in items:
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if fv < 0:
+            fv = 0.0
+        cleaned.append((str(k), fv))
+    cleaned.sort(key=lambda kv: -kv[1])
+    if len(cleaned) > max_slices:
+        other_total = sum(v for _, v in cleaned[max_slices:])
+        cleaned = cleaned[:max_slices] + [("(other)", other_total)]
+
+    fig, ax = plt.subplots(figsize=(7.0, 5.0))
+    total = sum(v for _, v in cleaned)
+    if total <= 0:
+        ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+    else:
+        labels = [_clip(k, 20) for k, _ in cleaned]
+        values = [v for _, v in cleaned]
+        ax.pie(values, labels=labels, autopct="%1.1f%%", startangle=90)
+        ax.axis("equal")
+    ax.set_title(_clip(title))
+    return _fig_to_png(fig, plt)
+
+
+def line_png(
+    x_values: Iterable[Any],
+    y_values: Iterable[Any],
+    *,
+    title: str,
+    xlabel: str,
+    ylabel: str,
+) -> bytes:
+    """Render a line chart with one series. Returns PNG bytes.
+
+    ``x_values`` may be datetimes, numbers, or strings — matplotlib
+    handles the conversion. ``y_values`` are coerced to float;
+    non-numerics drop their (x, y) pair.
+    """
+    plt = _lazy_import_matplotlib()
+    xs_raw = list(x_values)
+    ys_raw = list(y_values)
+    xs: list[Any] = []
+    ys: list[float] = []
+    for x, y in zip(xs_raw, ys_raw):
+        try:
+            yv = float(y)
+        except (TypeError, ValueError):
+            continue
+        xs.append(x)
+        ys.append(yv)
+
+    fig, ax = plt.subplots(figsize=(8.0, 4.0))
+    if not xs:
+        ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
+    else:
+        ax.plot(xs, ys, marker="o")
+        for label in ax.get_xticklabels():
+            label.set_rotation(30)
+            label.set_ha("right")
+    ax.set_title(_clip(title))
+    ax.set_xlabel(_clip(xlabel, 50))
+    ax.set_ylabel(_clip(ylabel, 50))
+    ax.grid(True, alpha=0.3)
     return _fig_to_png(fig, plt)
 
 

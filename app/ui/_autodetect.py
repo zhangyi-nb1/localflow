@@ -37,6 +37,40 @@ from app.skills import SkillRegistry
 # v0.9.0 default — exposed for tests and the Plan page reason line.
 DEFAULT_SKILL = "agent"
 
+# Phase 11 — keywords that indicate the user actually wants the data in
+# their spreadsheets read, not just their files organised. When detected
+# alongside an .xlsx / .csv in the workspace, we route to data_analyzer
+# instead of the agent meta-skill. Tested via tests/test_autodetect_data_routing.py.
+#
+# Deliberately scoped to **analysis verbs** — generic chart-kind words
+# ("柱状图" / "bar chart") aren't enough on their own because the agent
+# meta-skill legitimately handles "chart of file-type counts" goals.
+# The discriminator is "are we interpreting the data INSIDE the file",
+# which is what verbs like 分析 / 解读 / analyze / interpret capture.
+DATA_VERB_HINTS_ZH: tuple[str, ...] = (
+    "分析",
+    "解读",
+    "统计",
+    "分布",
+    "趋势",
+    "汇总",
+    "聚合",
+    "可视化数据",
+)
+DATA_VERB_HINTS_EN: tuple[str, ...] = (
+    "analyze",
+    "analyse",
+    "interpret the data",
+    "summarize the data",
+    "summarise the data",
+    "aggregate",
+    "statistics",
+    "distribution",
+    "trend",
+    "correlate",
+)
+DATA_FILE_TYPES = frozenset({"tabular", "excel"})
+
 
 @dataclass(frozen=True)
 class SkillChoice:
@@ -65,19 +99,54 @@ class CapabilityGap:
     suggested_skill: str | None
 
 
+def _looks_like_data_analysis_goal(goal: str, snapshot: WorkspaceSnapshot | None) -> bool:
+    """Return True when the goal mentions data analysis AND the workspace
+    actually contains a tabular file. Both halves are required — analysis
+    verbs alone (no .csv/.xlsx) should still route to the agent
+    meta-skill so empty workspaces and PDF-only workspaces don't get
+    pointed at a skill that can't help them.
+    """
+    if snapshot is None:
+        return False
+    if not (goal or "").strip():
+        return False
+    has_data_file = any(getattr(f, "file_type", "") in DATA_FILE_TYPES for f in snapshot.files)
+    if not has_data_file:
+        return False
+    goal_lower = goal.lower()
+    if any(h in goal_lower for h in DATA_VERB_HINTS_EN):
+        return True
+    if any(h in goal for h in DATA_VERB_HINTS_ZH):
+        return True
+    return False
+
+
 def autodetect_skill(
     goal: str,
     snapshot: WorkspaceSnapshot | None,
     registry: SkillRegistry,
 ) -> SkillChoice:
-    """Always return the agent skill.
+    """Pick a skill given the goal + workspace snapshot.
 
-    The function still takes the legacy parameters so existing call
-    sites and tests don't break. Routing decisions now live inside the
-    agent's LLM planner instead of this module.
+    Phase 11 — when the workspace contains a data file AND the goal
+    contains an analysis verb (in Chinese or English), route to
+    ``data_analyzer`` so its pandas-based planner reads real cell
+    values instead of the agent meta-skill describing the file
+    metadata. Falls back to ``agent`` for everything else.
     """
-    name = DEFAULT_SKILL
     available = set(registry.list_names())
+
+    if _looks_like_data_analysis_goal(goal, snapshot) and "data_analyzer" in available:
+        return SkillChoice(
+            name="data_analyzer",
+            reason=(
+                "goal mentions data analysis + workspace contains .csv/.xlsx — "
+                "routing to data_analyzer so the LLM picks an AnalysisSpec "
+                "(groupby/aggregation/chart) against real cell values"
+            ),
+        )
+
+    name = DEFAULT_SKILL
     if name not in available:
         # Defensive fallback — should never fire in a clean install
         # because AgentSkill is registered eagerly in app/skills/__init__.py.

@@ -422,6 +422,69 @@ reason line so users know exactly what's being chosen.
 
 ---
 
+## Phase 11 — Plan Refinement Loop + Data-Aware Routing (v0.12.0)
+
+**Trigger**: a real-world v0.11 UI run exposed two coupled failures —
+the agent meta-skill received an Excel file with NO content preview
+(only filename + hash) and so produced a meta-description of the
+workspace + a file-type bar chart instead of analyzing the data. The
+report literally confessed `"未能直接读取表格单元格内容"`. And the
+harness had no in-loop fix-up surface — the only recovery options
+were "rollback + retype goal" or "live with the wrong plan".
+
+**Goal**: turn the bug into a demonstration of the harness's
+correction capability. Two tracks:
+
+**Track A — Data-aware routing + Excel preview + pie/line**:
+- `app/ui/_autodetect.py`: when the goal mentions analysis verbs
+  (分析/解读/统计/analyze/interpret/aggregate/...) AND the workspace
+  contains a tabular file, route to `data_analyzer` instead of the
+  agent meta-skill. `data_analyzer` reads cells via pandas.
+- `app/tools/data_ops.py` adds `extract_tabular_preview()` —
+  `file_scan` now extracts the first ~10 rows of every .xlsx/.csv
+  as a markdown table into `FileMeta.text_preview`. The LLM sees
+  real data when reasoning about a spreadsheet.
+- `app/tools/chart_ops.py` gains `pie_png` + `line_png`. The
+  `ChartRequest.kind` literal extends to include `pie`.
+  `data_analyzer/planner.py` picks `pie` for ≤6-category groupby
+  results and `line` for datetime + numeric pairs.
+
+**Track B — Plan refinement loop**:
+- `Skill.revise(task, snapshot, prior_plan, hint)` default in
+  `app/skills/_base.py` — delegates to `plan_with_llm` with
+  `prior_plan_actions` + `user_hint` threaded through. The agent
+  planner synthesizes a "your previous plan was X; the user said Y;
+  please re-plan" user message before the first LLM turn — reuses the
+  same single-call codepath as a fresh plan, no new state machine.
+- `RunStore` gains `plans/plan_v<n>.json` versioning + `revisions.jsonl`
+  audit log. `plan.json` always mirrors the latest version so
+  executor / verifier / rollback are oblivious.
+- `control_loop.run_revise()` is the orchestration entry point —
+  caps at `MAX_REVISIONS = 5`, validates the revised plan, emits one
+  `TraceEventType.PLAN_REVISED` event.
+- `localflow revise --task-id <id> --hint "..."` CLI surface.
+- UI: Plan page renders a refine expander below the plan summary
+  with EN + 中文 i18n. Click → text-area → `重新规划` button →
+  Streamlit re-render with the new plan. Iterate up to 5 times.
+
+**Files**: NEW `app/harness/control_loop.run_revise` + 5 test modules
++ `docs/REFINE.md`. EXTENDED `app/agent/{planner,analysis_planner}.py`,
+`app/skills/_base.py`, `app/skills/data_analyzer/planner.py`,
+`app/storage/run_store.py`, `app/schemas/{trace,analysis}.py`,
+`app/tools/{chart_ops,data_ops,file_scan}.py`, `app/ui/_autodetect.py`,
+`app/ui/pages/1_Plan.py`, `app/ui/_i18n.py`, `app/cli.py`.
+
+**Tests**: 35 new (430 → 465).
+
+**Kernel touch**: NO. `control_loop.run_revise` is a new function
+that sits next to existing `run_*` orchestrators; it calls into
+existing kernel modules but does not mutate their behaviour. The
+executor / verifier / rollback never see "plan versions" because they
+read `plan.json` which mirrors the latest. **21st** zero-kernel-touch
+phase.
+
+---
+
 ## Phase 10 — TaskGraph / Multi-Stage Execution (v0.11.0)
 
 **Goal**: give compound goals a deterministic alternative to the v0.9
@@ -934,8 +997,9 @@ post-nav persistence, fresh-session reset). Total 318 → 319.
 | **9 (v0.10.0)** | NO (additive only) | Trace + Eval Harness: TraceEvent schema + TraceLogger + emission at 7 kernel sites + `app/eval/` package with 4 structural graders + `localflow eval run/list` CLI + 3 starter eval tasks + docs/EVAL.md |
 | 9.1 (v0.10.1) | NO | CLI + MCP commands now wire trace; starter eval suite grew 3 → 6 tasks |
 | **10 (v0.11.0)** | NO (additive only) | TaskGraph — multi-stage execution: schemas + runner + `TraceLogger.stage()` ctx + `localflow taskgraph` CLI + `EvalTask.stages` + 1 starter multi-stage eval task |
+| **11 (v0.12.0)** | NO (additive only) | Plan Refinement Loop + Data-Aware Routing — `Skill.revise` default + `control_loop.run_revise` + `RunStore` plan versioning + `TraceEventType.PLAN_REVISED` + `localflow revise` CLI + UI refine expander; Excel preview in scanner; pie + line chart kinds; `autodetect_skill` routes analysis goals to `data_analyzer` |
 
-**Score**: 1 deliberate exception across 20 deliveries. The rule held.
+**Score**: 1 deliberate exception across 21 deliveries. The rule held.
 
 ---
 

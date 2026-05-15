@@ -196,7 +196,11 @@ def _render_chart(df: Any, req: ChartRequest, group_keys: list[str] | None) -> b
 
     Histogram → ``chart_ops.histogram_png(series)`` directly on x column.
     Bar       → ``chart_ops.bar_png(x→y dict)`` from two columns.
-    Line      → matplotlib direct (chart_ops doesn't have line_png yet).
+    Line      → ``chart_ops.line_png(x_values, y_values)`` — Phase 11
+                consolidated this in chart_ops so all kinds share one
+                rendering surface.
+    Pie       → ``chart_ops.pie_png(x→y dict)`` — Phase 11. Same shape
+                as bar but renders proportions.
     """
     title = req.title or _default_title(req)
 
@@ -215,41 +219,32 @@ def _render_chart(df: Any, req: ChartRequest, group_keys: list[str] | None) -> b
         return chart_ops.bar_png(counts, title=title, xlabel=req.x)
 
     if req.kind == "line":
-        # chart_ops doesn't have line_png; render inline via matplotlib.
-        return _render_line(df, req, title)
+        if req.y is None or req.y not in df.columns:
+            return None
+        return chart_ops.line_png(
+            df[req.x].tolist(),
+            df[req.y].tolist(),
+            title=title,
+            xlabel=req.x,
+            ylabel=req.y,
+        )
+
+    if req.kind == "pie":
+        # Pie's x is the category column. Y is optional: when present we
+        # sum y per category; otherwise we count rows per category — same
+        # convention bar_png-from-counts uses.
+        if req.x not in df.columns:
+            return None
+        if req.y is not None and req.y in df.columns:
+            sub = df[[req.x, req.y]].copy()
+            sub = sub.groupby(req.x, dropna=False)[req.y].sum().reset_index()
+            counts = {str(k): _to_number(v) for k, v in zip(sub[req.x], sub[req.y])}
+        else:
+            vc = df[req.x].value_counts(dropna=False)
+            counts = {str(k): float(v) for k, v in vc.items()}
+        return chart_ops.pie_png(counts, title=title)
 
     return None
-
-
-def _render_line(df: Any, req: ChartRequest, title: str) -> bytes | None:
-    if req.y is None or req.y not in df.columns:
-        return None
-    import io
-
-    plt = _lazy_matplotlib()
-    fig, ax = plt.subplots(figsize=(7.0, 4.0))
-    ax.plot(df[req.x].tolist(), df[req.y].tolist(), marker="o")
-    ax.set_title(title)
-    ax.set_xlabel(req.x)
-    ax.set_ylabel(req.y)
-    ax.grid(True, alpha=0.3)
-    for label in ax.get_xticklabels():
-        label.set_rotation(30)
-        label.set_ha("right")
-    fig.tight_layout()
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=100, bbox_inches="tight")
-    plt.close(fig)
-    return buf.getvalue()
-
-
-def _lazy_matplotlib():
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    return plt
 
 
 def _default_title(req: ChartRequest) -> str:

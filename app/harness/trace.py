@@ -23,7 +23,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Iterator
 
-from app.schemas.trace import FailureType, TraceEvent
+from app.schemas.trace import FailureType, TraceEvent, TraceEventType
 from app.storage.jsonl_logger import JsonlLogger
 
 # Phase 10 — contextual stage_id for multi-stage TaskGraph runs.
@@ -107,3 +107,30 @@ class TraceLogger:
                 continue
             out[evt.failure_type].append(evt)
         return dict(out)
+
+    def emit_plan_revised(
+        self,
+        *,
+        task_id: str,
+        prior_plan_id: str,
+        new_plan_id: str,
+        version: int,
+        user_hint: str,
+    ) -> None:
+        """Phase 11 helper — emit a single ``plan.revised`` event when the
+        user supplied a clarification and the planner produced a new
+        ActionPlan. Kept as a typed helper so emission sites don't have
+        to assemble the TraceEvent fields by hand."""
+        self.emit(
+            TraceEvent(
+                task_id=task_id,
+                event_type=TraceEventType.PLAN_REVISED,
+                detail=f"v{version}: {user_hint[:200]}",
+                payload={
+                    "prior_plan_id": prior_plan_id,
+                    "new_plan_id": new_plan_id,
+                    "version": version,
+                    "user_hint": user_hint,
+                },
+            )
+        )

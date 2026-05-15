@@ -18,6 +18,8 @@ import streamlit as st
 
 from app.harness import control_loop
 from app.harness.audit import AuditLogger
+from app.harness.control_loop import MAX_REVISIONS
+from app.harness.trace import TraceLogger
 from app.memory import MemoryStore, NamingStyle
 from app.schemas import TaskSpec
 from app.skills import SkillError, get_default_registry
@@ -162,6 +164,9 @@ def main() -> None:
 
     _render_plan_summary(task, plan, assessment, snapshot)
 
+    # Phase 11 — let the user refine the plan in-place before approving.
+    _render_refine_section(task, snapshot, plan, skill_obj, store)
+
     next_steps = st.container()
     with next_steps:
         st.success(t("plan.success.created", task_id=task.task_id))
@@ -197,19 +202,97 @@ def _detect_snapshot(workspace):
 
 
 def _maybe_show_last_plan() -> None:
-    """If user revisits Plan page after creating one, show it again."""
+    """If user revisits Plan page after creating one, show it again.
+
+    The refinement expander lives outside the collapsible block so it
+    stays visible (and clickable) without forcing the user to expand
+    the plan summary first.
+    """
     task_id = st.session_state.get(SESSION_TASK_KEY)
     if not task_id:
         return
     store = RunStore(task_id=task_id)
     if not (store.exists(store.TASK_JSON) and store.exists(store.PLAN_JSON)):
         return
+    task = store.load_task()
+    plan = store.load_plan()
+    snapshot = store.load_workspace()
+    assessment = control_loop.run_risk_check(task, plan)
     with st.expander(t("plan.last_plan.expander", task_id=task_id), expanded=False):
-        task = store.load_task()
-        plan = store.load_plan()
-        assessment = control_loop.run_risk_check(task, plan)
-        snapshot = store.load_workspace()
         _render_plan_summary(task, plan, assessment, snapshot)
+    skill_obj = get_default_registry().get(task.skill)
+    if skill_obj is not None:
+        _render_refine_section(task, snapshot, plan, skill_obj, store)
+
+
+def _render_refine_section(
+    task: TaskSpec,
+    snapshot,
+    plan,
+    skill_obj,
+    store: RunStore,
+) -> None:
+    """Phase 11 — the refinement form rendered below the plan summary.
+
+    Shows a remaining-counter and either a hint text-area + button or
+    a "max reached" warning. On submit, calls
+    :func:`control_loop.run_revise`, persists the new plan version,
+    and forces a Streamlit re-render so the page shows the new plan
+    immediately (and the form reflects the decremented counter).
+    """
+    versions = store.list_plan_versions()
+    current_version = max(versions) if versions else 1
+    remaining = MAX_REVISIONS - current_version
+
+    if remaining <= 0:
+        st.warning(t("plan.refine.max_reached", max_revisions=MAX_REVISIONS))
+        return
+
+    if not skill_obj.supports_revise():
+        return  # rule-only skills silently hide the refine UI
+
+    with st.expander(
+        t("plan.refine.expander", remaining=remaining),
+        expanded=False,
+    ):
+        st.markdown(t("plan.refine.intro", max_revisions=MAX_REVISIONS))
+        hint_key = f"refine_hint_{task.task_id}_{current_version}"
+        hint = st.text_area(
+            t("plan.refine.hint_label"),
+            placeholder=t("plan.refine.hint_placeholder"),
+            height=120,
+            key=hint_key,
+        )
+        if st.button(t("plan.refine.button"), key=f"refine_btn_{task.task_id}"):
+            if not hint.strip():
+                st.error(t("plan.refine.error_empty"))
+                return
+            trace = TraceLogger(store.trace_path)
+            audit = AuditLogger(store.audit_log_path)
+            try:
+                with st.spinner(t("plan.refine.spinner")):
+                    _, new_version = control_loop.run_revise(
+                        task,
+                        snapshot,
+                        plan,
+                        hint.strip(),
+                        skill=skill_obj,
+                        run_store=store,
+                        trace=trace,
+                        audit=audit,
+                    )
+            except SkillError as exc:
+                msg = str(exc)
+                if "does not support refinement" in msg:
+                    st.error(t("plan.refine.error_unsupported", skill=skill_obj.manifest.name))
+                else:
+                    st.error(t("plan.refine.error_generic", err=msg))
+                return
+            except Exception as exc:  # pragma: no cover — defensive UI guard
+                st.error(t("plan.refine.error_generic", err=str(exc)))
+                return
+            st.success(t("plan.refine.success", version=new_version))
+            st.rerun()
 
 
 def _render_plan_summary(task, plan, assessment, snapshot) -> None:

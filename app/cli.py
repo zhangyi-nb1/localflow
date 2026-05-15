@@ -325,6 +325,65 @@ def cmd_dry_run(
     )
 
 
+# --------------------------------------------------------------------- revise
+
+
+@app.command("revise")
+def cmd_revise(
+    task_id: str = typer.Option(..., "--task-id", help="Task identifier from a prior `plan`."),
+    hint: str = typer.Option(
+        ...,
+        "--hint",
+        "-h",
+        help=(
+            "Clarification for the LLM — what the previous plan got wrong "
+            "or what you actually want."
+        ),
+    ),
+) -> None:
+    """Generate a revised plan v(N+1) for an existing task — Phase 11.
+
+    No execution happens. The harness re-asks the skill's LLM planner
+    with your prior plan + the hint, validates the new plan, and writes
+    ``plans/plan_v<n>.json`` + mirrors to ``plan.json`` so a subsequent
+    ``localflow execute --task-id <id>`` runs the refined version. The
+    workspace stays untouched. Capped at 5 revisions per task.
+    """
+    store = RunStore(task_id=task_id)
+    if not store.plan_path.exists():
+        raise typer.BadParameter(f"no plan found for task {task_id} — run `localflow plan` first")
+    task = store.load_task()
+    prior_plan = store.load_plan()
+    snapshot = store.load_workspace()
+    skill_obj = get_default_registry().require(task.skill)
+    trace = TraceLogger(store.trace_path)
+    audit = AuditLogger(store.audit_log_path)
+
+    try:
+        with console.status(f"Asking {task.skill} to revise plan…"):
+            new_plan, new_version = control_loop.run_revise(
+                task,
+                snapshot,
+                prior_plan,
+                hint,
+                skill=skill_obj,
+                run_store=store,
+                trace=trace,
+                audit=audit,
+            )
+    except SkillError as exc:
+        console.print(f"[red]Revise failed:[/] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    console.print(
+        f"[green]Revised:[/] task {task_id} now at plan v{new_version}  "
+        f"·  {len(new_plan.actions)} actions\n"
+        f"[dim]Saved: {store.plan_version_path(new_version)}[/]\n"
+        f"Next: [bold]localflow dry-run --task-id {task_id}[/]"
+        f" then [bold]localflow execute --task-id {task_id}[/]"
+    )
+
+
 # --------------------------------------------------------------------- execute
 
 

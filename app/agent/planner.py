@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 import uuid
@@ -21,6 +22,7 @@ from app.harness.action_validator import PlanValidationError, validate_plan_stru
 from app.harness.policy_guard import assess_plan
 from app.harness.trace import TraceLogger
 from app.schemas import (
+    Action,
     ActionPlan,
     FailureType,
     RiskAssessment,
@@ -83,6 +85,8 @@ def plan_with_llm(
     on_attempt: Callable[[int], None] | None = None,
     system_prompt: str | None = None,
     trace: TraceLogger | None = None,
+    prior_plan_actions: list[Action] | None = None,
+    user_hint: str | None = None,
 ) -> ActionPlan:
     """Drop-in replacement for ``plan_organization`` that uses an LLM.
 
@@ -103,6 +107,13 @@ def plan_with_llm(
     own prompt teaching the model to emit chart actions in addition to
     moves/index. Pass ``None`` to keep the legacy folder-organizer
     behaviour (existing callers unchanged).
+
+    Phase 11 (refinement loop): when ``prior_plan_actions`` AND
+    ``user_hint`` are both set, the planner prepends a synthetic
+    "your previous plan was X; user said Y; please re-plan" user
+    message so the LLM rewrites its plan with the clarification in
+    context. This reuses the same single-LLM-call codepath as a fresh
+    plan — no new state machine.
     """
     if client is None:
         client = _default_client()
@@ -112,7 +123,14 @@ def plan_with_llm(
         system_prompt=system_prompt,
         trace=trace,
     )
-    return planner.plan(task, snapshot, on_delta=on_delta, on_attempt=on_attempt)
+    return planner.plan(
+        task,
+        snapshot,
+        on_delta=on_delta,
+        on_attempt=on_attempt,
+        prior_plan_actions=prior_plan_actions,
+        user_hint=user_hint,
+    )
 
 
 def _default_client() -> LLMClient:
@@ -171,11 +189,26 @@ class LLMPlanner:
         *,
         on_delta: Callable[[str], None] | None = None,
         on_attempt: Callable[[int], None] | None = None,
+        prior_plan_actions: list[Action] | None = None,
+        user_hint: str | None = None,
     ) -> ActionPlan:
         tool_schema = build_action_plan_tool_schema()
         messages: list[dict[str, Any]] = [
             {"role": "user", "content": render_user_prompt(task, snapshot)}
         ]
+        # Phase 11: a refinement turn appends one more user message that
+        # echoes the prior plan + the user's clarification. The first
+        # iteration of the repair loop then runs naturally — the LLM
+        # sees its prior attempt, the user's correction, and produces
+        # a fresh submit_action_plan tool_use.
+        if prior_plan_actions is not None and user_hint:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": _build_refinement_message(prior_plan_actions, user_hint),
+                }
+            )
+            self._emit_repair(task, attempt=0, errors=[f"user_hint: {user_hint[:200]}"])
         self.last_attempts = []
 
         for attempt in range(1, self.max_attempts + 1):
@@ -428,3 +461,34 @@ def _path_for_guard(workspace_root: str):
     from pathlib import Path
 
     return Path(workspace_root)
+
+
+def _build_refinement_message(prior_plan_actions: list[Action], user_hint: str) -> str:
+    """Phase 11: synthesize the user-turn body for a refinement call.
+
+    The LLM sees a compact JSON dump of every action from the prior plan
+    plus the user's clarification. The framing tells it explicitly that
+    the previous attempt missed the user's intent so it doesn't just
+    tweak — it re-plans from scratch with the hint in mind.
+    """
+    try:
+        prior_json = json.dumps(
+            [a.model_dump(mode="json") for a in prior_plan_actions],
+            ensure_ascii=False,
+            indent=2,
+        )
+    except Exception:
+        prior_json = "(prior plan could not be serialised — re-plan from scratch)"
+    return (
+        "REVISION REQUEST — your previous plan did NOT match the user's intent.\n\n"
+        "Your previous plan emitted the following actions:\n\n"
+        f"```json\n{prior_json}\n```\n\n"
+        "The user reviewed it and provided this clarification:\n\n"
+        f"> {user_hint.strip()}\n\n"
+        "Please regenerate a fresh ActionPlan from scratch that addresses "
+        "the user's clarification. Do not simply tweak the prior plan — "
+        "consider whether your prior decomposition itself was wrong (e.g. "
+        "you tried to organize files when the user wanted to analyze data "
+        "inside one of them). Use the same submit_action_plan tool to "
+        "submit the revised plan."
+    )

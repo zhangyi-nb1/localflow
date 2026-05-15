@@ -178,6 +178,10 @@ def build_plan_from_results(
 # --------------------------------------------------------------------- spec heuristic
 
 
+DATETIME_KEYWORDS = ("date", "time", "timestamp", "year", "month", "day")
+PIE_FRIENDLY_MAX_CATEGORIES = 6
+
+
 def _choose_default_spec(
     source_file: str,
     df: Any,
@@ -186,13 +190,16 @@ def _choose_default_spec(
     """Pick a sensible default analysis for a DataFrame.
 
     Heuristic:
-      1. Find the categorical column with the lowest cardinality
-         between 2..15 (good groupby key).
-      2. Find the numeric column with the highest std (most interesting
-         to aggregate).
-      3. Produce: groupby(cat).agg({num: mean}) + bar chart.
-      4. Fall back: if no categorical found, just histogram the numeric.
-      5. Fall back: if no numeric found, skip.
+      1. Datetime-like column + numeric column → ``line`` chart of the
+         numeric over time. Most natural visualization for time series.
+      2. Categorical column with ≤6 distinct values + numeric → ``pie``
+         chart of the proportion (real "share of total" insight). Bar
+         remains available via :func:`build_pie_companion_spec` for
+         skills that want both views.
+      3. Categorical column with 7..15 values + numeric → groupby+bar
+         (existing behaviour, the most legible >6-category view).
+      4. Numeric column alone → histogram (existing).
+      5. No analyzable columns → skip.
     """
     import pandas as pd
 
@@ -219,20 +226,44 @@ def _choose_default_spec(
         if 2 <= uniq <= 15:
             cat_cols.append((str(col), uniq))
 
+    datetime_cols = _detect_datetime_columns(df)
+
     numeric_cols.sort(key=lambda t: -t[1])  # highest std first
-    cat_cols.sort(key=lambda t: t[1])  # lowest cardinality first (most readable bar)
+    cat_cols.sort(key=lambda t: t[1])  # lowest cardinality first (most readable)
+    base_file = source_file.split("  (sheet:")[0].strip()
+
+    # 1. Datetime + numeric → line chart of the trend.
+    if datetime_cols and numeric_cols:
+        dt_col = datetime_cols[0]
+        num_name, _ = numeric_cols[0]
+        return AnalysisSpec(
+            source_file=base_file,
+            sheet=sheet,
+            sort_by=[dt_col],
+            sort_descending=False,
+            chart=ChartRequest(
+                kind="line",
+                x=dt_col,
+                y=num_name,
+                title=f"{num_name} over {dt_col}",
+            ),
+        )
 
     if numeric_cols and cat_cols:
         num_name, _ = numeric_cols[0]
-        cat_name, _ = cat_cols[0]
+        cat_name, cat_card = cat_cols[0]
+        # 2. ≤6 categories → pie is the right proportion-view; the heuristic
+        # picks it over bar because the user explicitly asked for "饼图" in
+        # the v0.12.0 motivating goal, and pie reads better at low cardinality.
+        chart_kind = "pie" if cat_card <= PIE_FRIENDLY_MAX_CATEGORIES else "bar"
         return AnalysisSpec(
-            source_file=source_file.split("  (sheet:")[0].strip(),
+            source_file=base_file,
             sheet=sheet,
             groupby=GroupBy(by=[cat_name], aggregations={num_name: AggregationOp.MEAN}),
             sort_by=[num_name],
             sort_descending=True,
             chart=ChartRequest(
-                kind="bar",
+                kind=chart_kind,
                 x=cat_name,
                 y=num_name,
                 title=f"Mean {num_name} by {cat_name}",
@@ -242,7 +273,7 @@ def _choose_default_spec(
     if numeric_cols:
         num_name, _ = numeric_cols[0]
         return AnalysisSpec(
-            source_file=source_file.split("  (sheet:")[0].strip(),
+            source_file=base_file,
             sheet=sheet,
             chart=ChartRequest(
                 kind="histogram",
@@ -252,6 +283,35 @@ def _choose_default_spec(
         )
 
     return None
+
+
+def _detect_datetime_columns(df: Any) -> list[str]:
+    """Return column names that pandas reads as datetime OR whose name
+    matches a common date/time keyword (case-insensitive).
+
+    The keyword fallback catches CSV-loaded date columns that pandas
+    leaves as object dtype (no implicit parsing). The planner only
+    asks the engine to render a line chart against these, so even a
+    string-typed ``date`` column produces a sensible chart.
+    """
+    import pandas as pd
+
+    matches: list[str] = []
+    for col in df.columns:
+        s = df[col]
+        if pd.api.types.is_datetime64_any_dtype(s):
+            matches.append(str(col))
+            continue
+        col_lower = str(col).lower()
+        if any(k in col_lower for k in DATETIME_KEYWORDS):
+            # require the column to have at least one parseable date-like
+            # entry to avoid false positives on e.g. "data_id" matching "data"
+            try:
+                pd.to_datetime(s.dropna().head(5), errors="raise")
+            except Exception:
+                continue
+            matches.append(str(col))
+    return matches
 
 
 def _sheet_name_or_none(display_path: str) -> str | None:

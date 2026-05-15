@@ -104,11 +104,22 @@ def _extract_preview(path: Path, file_type: str) -> str | None:
     """Dispatch to the right content extractor based on file_type.
 
     PDFs go through pypdf; text-like types (text/structured/tabular/code)
-    are read directly. Everything else (image/audio/video/archive/other)
-    has no readable text and returns None.
+    are read directly. Phase 11: Excel + plain tabular (csv/tsv) now go
+    through ``data_ops.extract_tabular_preview`` so the LLM can see real
+    cell values instead of guessing from a filename. Everything else
+    (image/audio/video/archive/other) has no readable text and returns
+    None.
     """
     if file_type == "pdf":
         return pdf_ops.extract_text_preview(path)
+    if file_type in ("excel", "tabular"):
+        # Lazy import — only paid when the scanner actually hits a data
+        # file. Installs without the [data] extra fall back to None.
+        try:
+            from app.tools import data_ops
+        except ImportError:
+            return None
+        return data_ops.extract_tabular_preview(path)
     if text_ops.can_preview_as_text(file_type):
         return text_ops.extract_text_preview(path)
     return None

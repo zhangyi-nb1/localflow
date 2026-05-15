@@ -110,6 +110,48 @@ class Skill(ABC):
         for clearer error messages without forcing a call."""
         return type(self).plan_with_llm is not Skill.plan_with_llm
 
+    def revise(
+        self,
+        task: TaskSpec,
+        snapshot: WorkspaceSnapshot,
+        prior_plan: ActionPlan,
+        user_hint: str,
+        **kwargs,
+    ) -> ActionPlan:
+        """Phase 11 — produce a revised plan given a prior plan + the
+        user's clarification text.
+
+        Default behaviour: delegate to :meth:`plan_with_llm` with
+        ``prior_plan_actions`` + ``user_hint`` kwargs threaded through.
+        Skills that have a deterministic refinement story (or want to
+        veto refinement entirely) can override.
+
+        Raises :class:`SkillError` if this skill has no LLM planner —
+        rule-only skills can't honour a free-form natural-language hint.
+        """
+        if not self.supports_llm():
+            raise SkillError(
+                f"skill {self.manifest.name!r} does not support refinement: "
+                f"it has no LLM planner, and a free-form natural-language "
+                f"hint cannot be honoured by the rule planner alone"
+            )
+        return self.plan_with_llm(
+            task,
+            snapshot,
+            prior_plan_actions=prior_plan.actions,
+            user_hint=user_hint,
+            **kwargs,
+        )
+
+    def supports_revise(self) -> bool:
+        """True iff this skill supports user-driven plan refinement.
+
+        Default: same as :meth:`supports_llm` (the default revise
+        implementation passes through to plan_with_llm). Skills with a
+        custom non-LLM refinement path can override.
+        """
+        return self.supports_llm()
+
     @abstractmethod
     def validate(self, plan: ActionPlan) -> None:
         """Skill-specific structural validation beyond Pydantic + Policy

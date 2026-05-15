@@ -51,6 +51,9 @@ class TraceEventType(str, Enum):
     VERIFIER_CHECK = "verifier.check"
     ROLLBACK_ENTRY = "rollback.entry"
     REPAIR_TRIGGERED = "repair.triggered"
+    # Phase 11 — user-initiated plan refinement loop. Emitted by
+    # control_loop.run_revise once per accepted revision turn.
+    PLAN_REVISED = "plan.revised"
 
 
 class FailureType(str, Enum):

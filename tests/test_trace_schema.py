@@ -33,6 +33,9 @@ def test_every_event_type_used_in_kernel_pinned() -> None:
         "verifier.check",
         "rollback.entry",
         "repair.triggered",
+        # Phase 11 — emitted by control_loop.run_revise when the user
+        # supplies a refinement hint and the planner returns a new plan.
+        "plan.revised",
     }
     actual = {e.value for e in TraceEventType}
     assert actual == expected, f"unexpected drift: {actual ^ expected}"

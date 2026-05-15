@@ -93,11 +93,16 @@ class ChartRequest(BaseModel):
     aggregated) result frame.
     """
 
-    kind: Literal["bar", "histogram", "line"] = Field(
+    kind: Literal["bar", "histogram", "line", "pie"] = Field(
         ...,
-        description="Chart type. 'bar' requires y; 'histogram' uses only x.",
+        description=(
+            "Chart type. 'bar' / 'line' require y; 'histogram' uses only x; "
+            "'pie' uses x as the category column and y as the (optional) "
+            "numeric column — when y is None the slice values come from the "
+            "post-groupby count of x."
+        ),
     )
-    x: str = Field(..., description="Column for the X axis.")
+    x: str = Field(..., description="Column for the X axis (or pie categories).")
     y: str | None = Field(default=None, description="Required for 'bar' and 'line'.")
     title: str | None = Field(default=None, description="Plot title; default derived from x/y.")
 

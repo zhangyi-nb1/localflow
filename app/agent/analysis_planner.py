@@ -31,8 +31,8 @@ from app.agent.analysis_prompts import (
     render_user_prompt,
 )
 from app.agent.client import LLMClient, LLMClientError, StructuredResponse
-from app.agent.planner import _default_client
-from app.schemas import ActionPlan, TaskSpec, WorkspaceSnapshot
+from app.agent.planner import _build_refinement_message, _default_client
+from app.schemas import Action, ActionPlan, TaskSpec, WorkspaceSnapshot
 from app.schemas.analysis import (
     AggregationOp,
     AnalysisOutcome,
@@ -57,6 +57,9 @@ def plan_analysis_with_llm(
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     on_delta=None,
     on_attempt=None,
+    prior_plan_actions: list[Action] | None = None,
+    user_hint: str | None = None,
+    **_extra: Any,
 ) -> ActionPlan:
     """Build an ActionPlan whose specs come from the LLM, not heuristics.
 
@@ -64,6 +67,10 @@ def plan_analysis_with_llm(
     of the harness — dry-run, executor, verifier, rollback — doesn't
     care which planner produced the plan. Outline §10.7 ("new Skill
     doesn't touch Harness Kernel") holds for both planner variants.
+
+    Phase 11: when ``prior_plan_actions`` + ``user_hint`` are supplied,
+    a refinement user turn is prepended that echoes the prior plan +
+    the clarification — same mechanic as the main agent planner.
     """
     if client is None:
         client = _default_client()
@@ -73,6 +80,13 @@ def plan_analysis_with_llm(
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": render_user_prompt(task, snapshot)}
     ]
+    if prior_plan_actions is not None and user_hint:
+        messages.append(
+            {
+                "role": "user",
+                "content": _build_refinement_message(prior_plan_actions, user_hint),
+            }
+        )
 
     response: StructuredResponse | None = None
 

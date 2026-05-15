@@ -134,6 +134,9 @@ Full threat model + per-mitigation tests: [**docs/SECURITY.md**](docs/SECURITY.m
 
 ```
 Core harness:    full lifecycle (plan / dry-run / approval / execute / verify / rollback)
+                 + plan refinement loop (v0.12.0) — `localflow revise`
+                 keeps the task_id, generates plan_v(N+1) under plans/,
+                 no execute / no rollback, capped at 5 iterations
 Trace + Eval:    structured trace.jsonl stream emitted by every CLI + MCP
                  + eval run (v0.10.1) · eval suite with 7 starter tasks +
                  `localflow eval run evals/workspace_pack/` → markdown report
@@ -145,6 +148,17 @@ Skills:          agent (v0.9.0 default — LLM-driven one-shot compound executio
                  + folder_organizer · pdf_indexer · data_reporter
                  · data_analyzer · workspace_visualizer (specialists, CLI/MCP)
                  + filesystem plug-in loader (Phase 4.1)
+Routing:         auto-detect (v0.12.0) routes data-analysis goals
+                 (Chinese / English verbs) to data_analyzer when the
+                 workspace contains .xlsx / .csv; everything else still
+                 flows to the agent meta-skill
+Data preview:    file_scan (v0.12.0) extracts the first ~10 rows of every
+                 .xlsx / .csv into FileMeta.text_preview as a markdown
+                 table, so the LLM reads cell content instead of guessing
+                 from the filename
+Chart kinds:     bar · histogram · line · pie (v0.12.0) — covers the
+                 common AnalysisSpec output shapes; pie auto-picked for
+                 ≤6-category groupby, line auto-picked for datetime+numeric
 Tool Registry:   15 declarable callable helpers, manifest-validated at register time
 Memory:          forbidden_paths (kernel-side) · naming_style · prefer_llm_planner
 MCP server:      stdio JSON-RPC, 18 tools, approval-token gated execute
@@ -152,7 +166,9 @@ UI (v0.9.0):     Streamlit browser UI · EN/中文 toggle · goal-only Plan page
                  routing every compound goal through the agent meta-skill;
                  specialist skills remain CLI/MCP-only. Radio-driven workspace
                  picker with sticky ?unsafe=1 · soft-sandboxed to ./sandbox/
-Tests:           430 passing across 5 OS × Python matrix in CI
+                 + refine expander (v0.12.0): one-click re-plan with a
+                 clarifying hint before the user approves anything
+Tests:           465 passing across 5 OS × Python matrix in CI
 ```
 
 Three equivalent driver layers, same kernel:
@@ -163,7 +179,7 @@ localflow mcp-serve                                    # 2. MCP (Claude Code etc
 localflow ui-serve                                     # 3. Streamlit UI — http://127.0.0.1:8501
 ```
 
-UI walkthrough: [**docs/UI.md**](docs/UI.md) (EN) · [**docs/UI_zh.md**](docs/UI_zh.md) (中文用户指南). Eval suite + grader API + trace schema: [**docs/EVAL.md**](docs/EVAL.md). TaskGraph schema + multi-stage CLI: [**docs/TASKGRAPH.md**](docs/TASKGRAPH.md). Full per-phase changelog and `§10.7` kernel-touch ledger: [**docs/PHASES.md**](docs/PHASES.md)
+UI walkthrough: [**docs/UI.md**](docs/UI.md) (EN) · [**docs/UI_zh.md**](docs/UI_zh.md) (中文用户指南). Plan refinement loop walkthrough: [**docs/REFINE.md**](docs/REFINE.md). Eval suite + grader API + trace schema: [**docs/EVAL.md**](docs/EVAL.md). TaskGraph schema + multi-stage CLI: [**docs/TASKGRAPH.md**](docs/TASKGRAPH.md). Full per-phase changelog and `§10.7` kernel-touch ledger: [**docs/PHASES.md**](docs/PHASES.md)
 
 ---
 
@@ -258,27 +274,43 @@ python -m build
 
 Releases (with verified wheel artifacts) under [**GitHub Releases**](https://github.com/zhangyi-nb1/localflow/releases).
 
-Version scheme: `0.<highest_phase>.<sub>`. Current `0.11.0` = Phase 6.1 + Phase 7 hardening + 8.0–8.3.1 UI / agent / hygiene + Phase 9 Trace + Eval Harness + Phase 9.1 trace coverage + **Phase 10 TaskGraph** (multi-stage execution via static YAML graphs; per-stage failure policy; aggregated rollback; `localflow taskgraph describe/run` CLI).
+Version scheme: `0.<highest_phase>.<sub>`. Current `0.12.0` = Phase 6.1 + Phase 7 hardening + 8.0–8.3.1 UI / agent / hygiene + Phase 9 Trace + Eval Harness + Phase 9.1 trace coverage + Phase 10 TaskGraph + **Phase 11 Plan Refinement Loop + Data-Aware Routing** (user-driven plan revision under same task_id, capped at 5 iterations; `localflow revise --hint` CLI; UI refine expander; Excel preview in scanner; pie + line chart kinds; auto-routing of data-analysis goals to `data_analyzer`).
 
 ---
 
 ## Roadmap
 
-- **v0.11.x** — multi-stage eval task growth; per-stage rollback
-  (`localflow rollback --stage <id>`); MCP `taskgraph_run` tool.
-- **Phase 11 (v0.12.0)** — Workspace Pack Builder strong demo: a
+- **v0.12.x** — multi-stage eval task growth; per-stage rollback
+  (`localflow rollback --stage <id>`); MCP `taskgraph_run` +
+  `plan_refine` tools.
+- **Phase 12 (v0.13.0)** — Workspace Pack Builder strong demo: a
   5-8 stage TaskGraph that turns a messy research workspace into a
   deliverable knowledge pack (topic dirs / index.md per topic / data
-  charts / source ledger / final README).
-- **Phase 12** — Semantic Verifier (LLM-as-judge graders:
+  charts / source ledger / final README). Builds on TaskGraph
+  (v0.11) + Plan Refinement (v0.12).
+- **Phase 13** — Semantic Verifier (LLM-as-judge graders:
   `summary_grounded`, `chart_matches_csv`, `source_ledger_complete`)
-  + post-execute Repair Loop. The eval report will show pass-rate
-  before/after the repair loop. A new `failure_policy: repair`
-  on StageSpec triggers the loop automatically.
+  + automatic post-execute Repair Loop that drives `run_revise`
+  internally on grader rejection. A new `failure_policy: repair`
+  on StageSpec triggers the loop automatically. The eval report
+  will show pass-rate before/after the repair loop.
 - **Future** — Skill manifest signing; per-skill capability scoping
   in the LLM tool schema; WebCollect skill; MCP client.
 
 Recently shipped:
+- **v0.12.0 — Phase 11 Plan Refinement Loop + Data-Aware Routing.**
+  Two-track release driven by a real-world UI bug report. (Track A)
+  Excel files now get a markdown-table preview in the workspace
+  snapshot so the LLM sees real cell content; auto-detect routes
+  goals like "分析这个 Excel" to `data_analyzer` (which reads cells
+  via pandas); chart_ops gained pie + line kinds; data_analyzer's
+  rule planner picks pie for ≤6-category groupby and line for
+  datetime + numeric. (Track B) `localflow revise --hint "..."`
+  + UI refine expander let the user supply a clarification and get
+  `plans/plan_v(N+1).json` without executing or rolling back —
+  capped at 5 iterations per task. New `Skill.revise` ABC method,
+  new `control_loop.run_revise`, new `TraceEventType.PLAN_REVISED`,
+  new `revisions.jsonl` audit log. 35 new tests (430 → 465).
 - **v0.11.0 — Phase 10 TaskGraph.** Multi-stage execution: a YAML
   graph of skill invocations driven through the standard harness
   pipeline, with per-stage failure policy and aggregated rollback.
