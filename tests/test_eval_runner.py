@@ -13,10 +13,10 @@ EVALS_DIR = Path(__file__).resolve().parent.parent / "evals" / "workspace_pack"
 
 
 def test_discover_loads_all_starter_tasks() -> None:
-    """v0.10.0 shipped 3; v0.10.1 grew to 6; v0.11.0 adds the first
-    multi-stage task (task_007) for 7 total. If someone adds more or
-    removes one, this test updates explicitly so suite growth stays
-    deliberate."""
+    """v0.10.0 shipped 3; v0.10.1 grew to 6; v0.11.0 added task_007
+    (first multi-stage); v0.14.0 adds task_010 (the 5-stage Workspace
+    Pack Builder demo). If someone adds more or removes one, this test
+    updates explicitly so suite growth stays deliberate."""
     tasks = discover_tasks(EVALS_DIR)
     task_ids = {t.task_id for t in tasks}
     assert task_ids == {
@@ -27,6 +27,7 @@ def test_discover_loads_all_starter_tasks() -> None:
         "task_005_empty_workspace",
         "task_006_duplicate_files_reported",
         "task_007_organize_then_chart",
+        "task_010_workspace_pack",
     }
 
 

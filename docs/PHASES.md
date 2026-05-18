@@ -422,6 +422,61 @@ reason line so users know exactly what's being chosen.
 
 ---
 
+## Phase 14 — Workspace Pack Builder (v0.14.0)
+
+**Trigger**: v0.10-v0.13 each shipped a substrate piece (TaskGraph,
+Plan Refinement, Data-Aware Routing, Auto-Repair). Each was a
+capability in isolation. The experiment report's `Section 8` calls
+out **Workspace Pack Builder** as the canonical strong demo proving
+those layers actually stack into a real-world pipeline. v0.14
+delivers exactly that.
+
+**Goal**: turn a messy research workspace (PDFs + CSVs + images +
+notes) into a deliverable knowledge pack via one command. Compose
+every existing skill into a 5-stage TaskGraph; bundle the example
+workspace + a runnable YAML graph + an eval task that benchmarks
+the pipeline under v0.13's `--compare-repair` mode.
+
+**Shipped**:
+- `examples/research_pack/seed.py` — script planting a 10-file
+  messy workspace (3 PDFs with real %PDF headers so pypdf can
+  extract titles, 1 CSV with 30 rows of synthetic experiment data,
+  1 XLSX with model scores, 2 PNGs, 2 notes, 1 unknown-type stub).
+- `examples/research_pack/workspace_pack.yaml` — the canonical
+  5-stage TaskGraph (folder_organizer → pdf_indexer → data_analyzer
+  → workspace_visualizer → agent). Stages 1-4 rule-planned;
+  stage 5 LLM-planned with `failure_policy: skip` so CI without an
+  API key still produces stages 1-4 outputs.
+- `examples/research_pack/README.md` — quickstart.
+- `app/eval/graders/structural.py` — new `every_input_accounted_for`
+  grader (Phase 14 coverage check: each seeded file must be either
+  moved to a target dir OR cited by basename in a generated `.md`
+  report).
+- `evals/workspace_pack/task_010_workspace_pack.yaml` — eval task
+  with 6 graders + `must_pass` set tuned so the task passes in CI
+  even when stage 5 skips.
+- `tests/test_coverage_grader.py` — 4 tests pinning the grader's
+  two coverage branches + empty-seed + missing-file edge case.
+- `tests/test_pack_builder_demo.py` — 4 tests including a real
+  end-to-end run of stages 1-4 against the seeded workspace.
+- `docs/PACK_BUILDER.md` — full walkthrough.
+
+**Live verification** (run during development):
+- `python examples/research_pack/seed.py` plants 10 files.
+- `localflow taskgraph run examples/research_pack/workspace_pack.yaml --yes`
+  with an LLM key configured: ALL 5 stages PASSED, total ~19 s
+  (16 s of which is stage 5's LLM call). The produced workspace
+  contained the full pack: README.md, pdf_index.md,
+  analysis_report.md, analysis_charts/ (with pie charts —
+  v0.12.0's Phase 12 heuristic kicked in for the model column),
+  per-category dirs with index.md files, duplicates_report.md,
+  file_counts_summary.md, sources ledger.
+
+**Kernel touch**: NO. Pure composition + 1 grader + YAML + docs.
+**23rd** zero-kernel-touch phase. `app/harness/*` unchanged.
+
+---
+
 ## Phase 13 — Semantic Verifier + Auto-Repair Loop (v0.13.0)
 
 **Trigger**: v0.12 closed the *user-driven* correction loop (manual
@@ -1068,8 +1123,9 @@ post-nav persistence, fresh-session reset). Total 318 → 319.
 | **10 (v0.11.0)** | NO (additive only) | TaskGraph — multi-stage execution: schemas + runner + `TraceLogger.stage()` ctx + `localflow taskgraph` CLI + `EvalTask.stages` + 1 starter multi-stage eval task |
 | **11 (v0.12.0)** | NO (additive only) | Plan Refinement Loop + Data-Aware Routing — `Skill.revise` default + `control_loop.run_revise` + `RunStore` plan versioning + `TraceEventType.PLAN_REVISED` + `localflow revise` CLI + UI refine expander; Excel preview in scanner; pie + line chart kinds; `autodetect_skill` routes analysis goals to `data_analyzer` |
 | **13 (v0.13.0)** | NO (additive only) | Semantic Verifier + Auto-Repair Loop — `SemanticVerifier` (new module next to existing structural Verifier) + 3 LLM-as-judge graders (`output_addresses_goal` / `summary_grounded` / `analysis_result_nonempty`) + `run_repair_loop` + `control_loop.run_with_auto_repair` composite + `localflow verify-semantic` / `repair` CLI + `--no-auto-repair` flag + UI Execute-page verdict panel + Memory toggles + `StageFailurePolicy.REPAIR` wired up (uses Phase 10's reserved `max_retries`) + eval `--compare-repair` mode; emits `REPAIR_TRIGGERED` + `SEMANTIC_MISMATCH` (both reserved since Phase 9) |
+| **14 (v0.14.0)** | NO | Workspace Pack Builder strong demo — 5-stage `examples/research_pack/workspace_pack.yaml` composing folder_organizer + pdf_indexer + data_analyzer + workspace_visualizer + agent; `examples/research_pack/seed.py` plants the messy seed; 1 new structural grader (`every_input_accounted_for`); 1 new eval task (`task_010_workspace_pack`); 8 new tests (495 → 503); `docs/PACK_BUILDER.md` walkthrough. No new harness primitives — pure composition demo proving v0.10-v0.13 substrate stacks. |
 
-**Score**: 1 deliberate exception across 22 deliveries. The rule held.
+**Score**: 1 deliberate exception across 23 deliveries. The rule held.
 
 ---
 

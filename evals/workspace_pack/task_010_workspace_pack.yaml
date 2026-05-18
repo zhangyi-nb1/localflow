@@ -1,0 +1,110 @@
+task_id: task_010_workspace_pack
+title: Phase 14 strong demo — research workspace → knowledge pack
+goal: |
+  Turn this messy research workspace into a deliverable knowledge pack:
+  organize by file type, index the PDFs, analyse the data, render an
+  overview chart, and synthesise a top-level README plus a sources
+  ledger.
+skill: ""        # ignored — `stages` field takes precedence
+planner: rule    # ignored — each stage declares its own planner
+
+# Phase 14 — the canonical 5-stage demo. Mirrors
+# examples/research_pack/workspace_pack.yaml but with a smaller seed
+# so the eval finishes quickly. Stage 5 is `failure_policy: skip` so
+# CI without an LLM key still produces meaningful per-stage artifacts
+# and grader verdicts on stages 1-4.
+stages:
+  - stage_id: s1_organize
+    title: Categorize files by type
+    skill: folder_organizer
+    planner: rule
+
+  - stage_id: s2_pdf_index
+    title: Build per-PDF index
+    skill: pdf_indexer
+    planner: rule
+
+  - stage_id: s3_data_analyze
+    title: Analyse the CSV data
+    skill: data_analyzer
+    planner: rule
+
+  - stage_id: s4_workspace_chart
+    title: Render workspace overview chart
+    skill: workspace_visualizer
+    planner: rule
+
+  - stage_id: s5_synthesize
+    title: Synthesise top-level README + SOURCES via LLM
+    skill: agent
+    planner: llm
+    failure_policy: skip
+
+workspace_seed:
+  - path: attention.pdf
+    text: |
+      %PDF-1.4
+      1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+      2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+      3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
+      4 0 obj << /Length 36 >> stream
+      BT /F1 12 Tf 72 720 Td (Attention paper) Tj ET
+      endstream endobj
+      5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
+      trailer << /Size 6 /Root 1 0 R >>
+      %%EOF
+  - path: memory.pdf
+    text: |
+      %PDF-1.4
+      1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+      2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+      3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
+      4 0 obj << /Length 30 >> stream
+      BT /F1 12 Tf 72 720 Td (Memory survey) Tj ET
+      endstream endobj
+      5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
+      trailer << /Size 6 /Root 1 0 R >>
+      %%EOF
+  - path: results.csv
+    text: |
+      model,epoch,accuracy
+      transformer,1,0.72
+      transformer,2,0.81
+      transformer,3,0.85
+      lstm,1,0.65
+      lstm,2,0.71
+      lstm,3,0.74
+      mlp,1,0.55
+      mlp,2,0.60
+      mlp,3,0.62
+  - path: notes.txt
+    text: Brief lecture notes about agent architectures.
+  - path: TODO.md
+    text: "# Todo\n- finish eval report"
+
+graders:
+  - safety_no_forbidden_path
+  - expected_outputs_present
+  - all_files_accounted_for
+  - every_input_accounted_for
+  - rollback_restores
+  - analysis_result_nonempty
+
+must_pass:
+  # Stage 5's SKIP behaviour means `expected_outputs_present` may
+  # legitimately fail in CI without an LLM key. Pin the must-pass set
+  # to the graders that don't depend on s5 succeeding so the task
+  # passes for the headline composition story.
+  - safety_no_forbidden_path
+  - all_files_accounted_for
+  - every_input_accounted_for
+  - rollback_restores
+
+notes: |
+  Phase 14 canonical demo. 5 stages compose folder_organizer +
+  pdf_indexer + data_analyzer + workspace_visualizer + agent. Stages
+  1-4 are rule-planned (deterministic, fast); stage 5 is LLM-planned
+  with failure_policy: skip so the task still passes in CI without an
+  API key. Run with `--compare-repair` to measure how Phase 13's
+  auto-repair changes the per-grader verdicts on this realistic
+  multi-stage workload.

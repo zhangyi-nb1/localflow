@@ -172,7 +172,16 @@ UI (v0.9.0):     Streamlit browser UI · EN/中文 toggle · goal-only Plan page
                  picker with sticky ?unsafe=1 · soft-sandboxed to ./sandbox/
                  + refine expander (v0.12.0): one-click re-plan with a
                  clarifying hint before the user approves anything
-Tests:           495 passing across 5 OS × Python matrix in CI
+Pack demo:       Workspace Pack Builder (v0.14.0) — 5-stage TaskGraph
+                 at `examples/research_pack/workspace_pack.yaml` turning
+                 a messy research workspace (PDFs + CSV + images + notes)
+                 into a deliverable knowledge pack via one
+                 `localflow taskgraph run --yes`. Composes
+                 folder_organizer + pdf_indexer + data_analyzer +
+                 workspace_visualizer + agent; stage 5 (LLM) uses
+                 failure_policy: skip so CI without an API key still
+                 produces stages 1-4 outputs.
+Tests:           503 passing across 5 OS × Python matrix in CI
 ```
 
 Three equivalent driver layers, same kernel:
@@ -183,7 +192,7 @@ localflow mcp-serve                                    # 2. MCP (Claude Code etc
 localflow ui-serve                                     # 3. Streamlit UI — http://127.0.0.1:8501
 ```
 
-UI walkthrough: [**docs/UI.md**](docs/UI.md) (EN) · [**docs/UI_zh.md**](docs/UI_zh.md) (中文用户指南). Plan refinement loop walkthrough: [**docs/REFINE.md**](docs/REFINE.md). Semantic verifier + auto-repair walkthrough: [**docs/SEMANTIC_VERIFIER.md**](docs/SEMANTIC_VERIFIER.md). Eval suite + grader API + trace schema: [**docs/EVAL.md**](docs/EVAL.md). TaskGraph schema + multi-stage CLI: [**docs/TASKGRAPH.md**](docs/TASKGRAPH.md). Full per-phase changelog and `§10.7` kernel-touch ledger: [**docs/PHASES.md**](docs/PHASES.md)
+UI walkthrough: [**docs/UI.md**](docs/UI.md) (EN) · [**docs/UI_zh.md**](docs/UI_zh.md) (中文用户指南). Plan refinement loop walkthrough: [**docs/REFINE.md**](docs/REFINE.md). Semantic verifier + auto-repair walkthrough: [**docs/SEMANTIC_VERIFIER.md**](docs/SEMANTIC_VERIFIER.md). Workspace Pack Builder demo: [**docs/PACK_BUILDER.md**](docs/PACK_BUILDER.md). Eval suite + grader API + trace schema: [**docs/EVAL.md**](docs/EVAL.md). TaskGraph schema + multi-stage CLI: [**docs/TASKGRAPH.md**](docs/TASKGRAPH.md). Full per-phase changelog and `§10.7` kernel-touch ledger: [**docs/PHASES.md**](docs/PHASES.md)
 
 ---
 
@@ -278,25 +287,39 @@ python -m build
 
 Releases (with verified wheel artifacts) under [**GitHub Releases**](https://github.com/zhangyi-nb1/localflow/releases).
 
-Version scheme: `0.<highest_phase>.<sub>`. Current `0.13.0` = Phase 6.1 + Phase 7 hardening + 8.0–8.3.1 UI / agent / hygiene + Phase 9 Trace + Eval Harness + Phase 9.1 trace coverage + Phase 10 TaskGraph + Phase 11 Plan Refinement + Data-Aware Routing + **Phase 13 Semantic Verifier + Auto-Repair Loop** (LLM-as-judge graders run after structural verify; rejection automatically triggers rollback + revise + re-execute; opt-in via `enable_semantic_verifier` memory pref; new `localflow verify-semantic` / `repair` CLI; `failure_policy: repair` on TaskGraph stages; eval `--compare-repair` mode).
+Version scheme: `0.<highest_phase>.<sub>`. Current `0.14.0` = Phase 6.1 + Phase 7 hardening + 8.0–8.3.1 UI / agent / hygiene + Phase 9 Trace + Eval Harness + Phase 9.1 trace coverage + Phase 10 TaskGraph + Phase 11 Plan Refinement + Data-Aware Routing + Phase 13 Semantic Verifier + Auto-Repair Loop + **Phase 14 Workspace Pack Builder** (canonical 5-stage demo composing every layer above: `examples/research_pack/workspace_pack.yaml` + 1 new structural grader + 1 new eval task).
 
 ---
 
 ## Roadmap
 
-- **v0.13.x** — vision-based `chart_accurate` grader; MCP
-  `verify_semantic` + `repair_run` tools; multi-stage eval task growth;
-  per-stage rollback (`localflow rollback --stage <id>`).
-- **Phase 14 (v0.14.0)** — Workspace Pack Builder strong demo: a
-  5-8 stage TaskGraph that turns a messy research workspace into a
-  deliverable knowledge pack (topic dirs / index.md per topic / data
-  charts / source ledger / final README). Builds on TaskGraph (v0.11)
-  + Plan Refinement (v0.12) + Semantic Verifier (v0.13).
+- **v0.14.x** — typed `source_ledger.json` schema; dedicated
+  `review/` dir for low-confidence files; semantic topic clustering
+  (skills that group by content not extension).
+- **Phase 15 (v0.15.0)** — Vision-based `chart_accurate` grader
+  (image → LLM judge); MCP `verify_semantic` + `repair_run` tools
+  + `taskgraph_run` MCP tool; cross-stage repair (rollback to upstream
+  stage + replay); per-stage rollback CLI
+  (`localflow rollback --stage <id>`).
 - **Future** — Skill manifest signing; per-skill capability scoping
-  in the LLM tool schema; WebCollect skill; MCP client; cross-stage
-  repair (rollback to upstream stage + replay).
+  in the LLM tool schema; WebCollect skill; MCP client.
 
 Recently shipped:
+- **v0.14.0 — Phase 14 Workspace Pack Builder.** The canonical
+  composition demo: 5-stage TaskGraph at
+  `examples/research_pack/workspace_pack.yaml` turning a messy
+  research workspace (3 PDFs + CSV + XLSX + images + notes + an
+  unknown-type stub) into a deliverable knowledge pack via one
+  command. Stages 1-4 are rule-planned (folder_organizer →
+  pdf_indexer → data_analyzer → workspace_visualizer); stage 5 is
+  LLM-planned (agent synthesises README + sources ledger) with
+  `failure_policy: skip` so CI without an API key still produces
+  stages 1-4 outputs. New `every_input_accounted_for` structural
+  grader closes the Phase-14 coverage gap. New eval task
+  `task_010_workspace_pack` runs in `--compare-repair` mode to
+  measure v0.13's auto-repair impact on this realistic workload.
+  No new harness primitive — pure composition proving v0.10-v0.13
+  substrate stacks. 8 new tests (495 → 503).
 - **v0.13.0 — Phase 13 Semantic Verifier + Auto-Repair Loop.**
   Closes the *automatic* counterpart to v0.12's manual refine: LLM-
   as-judge graders run after structural verify; on rejection, the

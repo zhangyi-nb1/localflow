@@ -1,0 +1,79 @@
+# Phase 14 — Workspace Pack Builder strong demo (v0.14.0).
+#
+# Five sequential stages composing every harness layer shipped through
+# v0.13:
+#   - v0.10 TaskGraph (this YAML)
+#   - v0.11 Plan Refinement (available per stage if user opens the UI)
+#   - v0.12 Data-Aware Routing + Excel preview (already in the scanner)
+#   - v0.13 Auto-Repair Loop (opt-in via memory pref +
+#                              `failure_policy: repair`)
+#
+# Stages 1-4 are rule-planned → fully deterministic, no LLM cost,
+# works offline. Stage 5 (synthesis) needs an LLM client; it's marked
+# `failure_policy: skip` so a missing API key gracefully degrades:
+# users still get the categorized files + indexes + analysis +
+# overview chart, just without the synthesized top-level README.
+#
+# Usage:
+#   python examples/research_pack/seed.py
+#   localflow taskgraph describe examples/research_pack/workspace_pack.yaml
+#   localflow taskgraph run examples/research_pack/workspace_pack.yaml --yes
+#   # inspect the produced pack
+#   ls examples/research_pack/workspace/
+
+user_goal: |
+  Turn this messy research workspace into a deliverable knowledge pack:
+  organize by file type, index the PDFs, analyse the experiment data,
+  render an overview chart, and synthesise a top-level README plus a
+  sources ledger.
+
+workspace_root: ./workspace
+forbidden_actions: [delete, overwrite, shell]
+forbidden_paths: []
+
+stages:
+  - stage_id: s1_organize
+    title: Categorize files by type (papers / data / images / notes / misc)
+    skill: folder_organizer
+    planner: rule
+    expected_outputs:
+      - papers/index.md
+      - data/index.md
+      - images/index.md
+      - notes/index.md
+      - misc/index.md
+
+  - stage_id: s2_pdf_index
+    title: Build a per-PDF index with extracted titles
+    skill: pdf_indexer
+    planner: rule
+    expected_outputs:
+      - pdf_index.md
+
+  - stage_id: s3_data_analyze
+    title: Analyse CSV/Excel data and render charts
+    skill: data_analyzer
+    planner: rule
+    expected_outputs:
+      - analysis_report.md
+
+  - stage_id: s4_workspace_chart
+    title: Render a workspace overview chart (post-organize layout)
+    skill: workspace_visualizer
+    planner: rule
+    expected_outputs:
+      - images/file_counts.png
+      - file_counts_summary.md
+
+  - stage_id: s5_synthesize
+    title: Synthesise top-level README + sources ledger via the LLM
+    skill: agent
+    planner: llm
+    # When no LLM client is available (CI without API key), the
+    # synthesis stage is skipped rather than failing the whole graph.
+    # The user still gets stages 1-4's outputs; only the top-level
+    # README/SOURCES.md are missing.
+    failure_policy: skip
+    expected_outputs:
+      - README.md
+      - SOURCES.md

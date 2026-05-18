@@ -126,6 +126,76 @@ def all_files_accounted_for(ctx: GraderContext) -> GraderVerdict:
     )
 
 
+# ───────────────────────────────────── every_input_accounted_for (Phase 14)
+
+
+@register("every_input_accounted_for")
+def every_input_accounted_for(ctx: GraderContext) -> GraderVerdict:
+    """Phase 14 — pack-builder coverage check.
+
+    Every input file from ``workspace_seed`` must be either:
+
+      (a) moved to a target dir recorded in the plan's MOVE/RENAME
+          actions AND the target file exists on disk, OR
+      (b) mentioned by basename in any generated ``*.md`` file under
+          the workspace (per-category index.md, pdf_index.md,
+          analysis_report.md, sources_ledger.md, README.md, etc.).
+
+    Closes the gap left by :func:`all_files_accounted_for` (which only
+    checks the seed didn't disappear) — Phase 14's pipeline is
+    expected to either organize each file into a topic dir OR cite it
+    in a per-category index / pdf_index / analysis_report so a user
+    reading the produced pack can still find every input.
+    """
+    seeded_paths = {wf.path for wf in ctx.task.workspace_seed}
+    if not seeded_paths:
+        return GraderVerdict(
+            name="every_input_accounted_for",
+            passed=True,
+            detail="no seed files; trivially accounted for",
+        )
+
+    moves: dict[str, str] = {}
+    for a in ctx.plan.actions:
+        if (
+            a.action_type in (ActionType.MOVE, ActionType.RENAME)
+            and a.source_path
+            and a.target_path
+        ):
+            moves[a.source_path] = a.target_path
+
+    # Collect every .md file's text once — coverage check (b) does
+    # repeated basename substring searches against this pool.
+    md_corpus: list[str] = []
+    for md in ctx.workspace_path.rglob("*.md"):
+        try:
+            md_corpus.append(md.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+    corpus_blob = "\n".join(md_corpus)
+
+    unaccounted: list[str] = []
+    for original in sorted(seeded_paths):
+        moved_to = moves.get(original)
+        if moved_to is not None and (ctx.workspace_path / moved_to).exists():
+            continue
+        # Fall back to (b): basename appears in any generated markdown.
+        basename = original.rsplit("/", 1)[-1]
+        if basename and basename in corpus_blob:
+            continue
+        unaccounted.append(original)
+
+    return GraderVerdict(
+        name="every_input_accounted_for",
+        passed=not unaccounted,
+        detail=(
+            f"{len(seeded_paths) - len(unaccounted)}/{len(seeded_paths)} accounted "
+            "(moved or cited in *.md)"
+            + (f"; missing: {', '.join(unaccounted)}" if unaccounted else "")
+        ),
+    )
+
+
 # ───────────────────────────────────── rollback_restores
 
 
