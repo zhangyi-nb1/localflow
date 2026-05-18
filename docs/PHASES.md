@@ -1124,8 +1124,9 @@ post-nav persistence, fresh-session reset). Total 318 → 319.
 | **11 (v0.12.0)** | NO (additive only) | Plan Refinement Loop + Data-Aware Routing — `Skill.revise` default + `control_loop.run_revise` + `RunStore` plan versioning + `TraceEventType.PLAN_REVISED` + `localflow revise` CLI + UI refine expander; Excel preview in scanner; pie + line chart kinds; `autodetect_skill` routes analysis goals to `data_analyzer` |
 | **13 (v0.13.0)** | NO (additive only) | Semantic Verifier + Auto-Repair Loop — `SemanticVerifier` (new module next to existing structural Verifier) + 3 LLM-as-judge graders (`output_addresses_goal` / `summary_grounded` / `analysis_result_nonempty`) + `run_repair_loop` + `control_loop.run_with_auto_repair` composite + `localflow verify-semantic` / `repair` CLI + `--no-auto-repair` flag + UI Execute-page verdict panel + Memory toggles + `StageFailurePolicy.REPAIR` wired up (uses Phase 10's reserved `max_retries`) + eval `--compare-repair` mode; emits `REPAIR_TRIGGERED` + `SEMANTIC_MISMATCH` (both reserved since Phase 9) |
 | **14 (v0.14.0)** | NO | Workspace Pack Builder strong demo — 5-stage `examples/research_pack/workspace_pack.yaml` composing folder_organizer + pdf_indexer + data_analyzer + workspace_visualizer + agent; `examples/research_pack/seed.py` plants the messy seed; 1 new structural grader (`every_input_accounted_for`); 1 new eval task (`task_010_workspace_pack`); 8 new tests (495 → 503); `docs/PACK_BUILDER.md` walkthrough. No new harness primitives — pure composition demo proving v0.10-v0.13 substrate stacks. |
+| 14.1 (v0.14.1) | NO | Workspace Pack polish — typed `SourceLedger` + `SourceEntry` schema + `localflow ledger` CLI; folder_organizer's `route_low_confidence_to_review` task pref routes `other`-classified files to `review/` with `review/unresolved_files.md`; new `topic_clusterer` skill (LLM-driven semantic topic grouping into `topics/<topic>/` dirs — distinct from folder_organizer's extension-based categories). +15 tests (503 → 518). |
 
-**Score**: 1 deliberate exception across 23 deliveries. The rule held.
+**Score**: 1 deliberate exception across 24 deliveries. The rule held.
 
 ---
 

@@ -5,6 +5,11 @@ from app.schemas.risk import RiskAssessment, RiskVerdict
 from app.schemas.rollback import RollbackEntry, RollbackManifest
 from app.schemas.semantic import SemanticVerdict, SemanticVerificationResult
 from app.schemas.skill import SkillManifest
+from app.schemas.source_ledger import (
+    LEDGER_SCHEMA_VERSION,
+    SourceEntry,
+    SourceLedger,
+)
 from app.schemas.task import TaskSpec
 from app.schemas.taskgraph import (
     StageFailurePolicy,
@@ -34,6 +39,9 @@ __all__ = [
     "SemanticVerdict",
     "SemanticVerificationResult",
     "SkillManifest",
+    "SourceEntry",
+    "SourceLedger",
+    "LEDGER_SCHEMA_VERSION",
     "StageFailurePolicy",
     "StageResult",
     "StageSpec",

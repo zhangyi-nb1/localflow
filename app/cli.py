@@ -325,6 +325,45 @@ def cmd_dry_run(
     )
 
 
+# --------------------------------------------------------------------- ledger (Phase 14.x)
+
+
+@app.command("ledger")
+def cmd_ledger(
+    workspace: Path = typer.Argument(..., help="Workspace root to inventory."),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Write JSON to this path (default: stdout).",
+    ),
+    no_hash: bool = typer.Option(
+        False, "--no-hash", help="Skip sha256 computation (faster on large workspaces)."
+    ),
+) -> None:
+    """v0.14.1 — emit a typed ``source_ledger.json`` for the workspace.
+
+    Walks every file under ``workspace``, classifies it via the
+    standard LocalFlow file_type map, and produces a
+    :class:`SourceLedger` payload with sha256 + size + top-level
+    category. Useful as a standalone audit step or as the basis for
+    the agent's pack-synthesis stage.
+    """
+    from app.tools.source_ledger_ops import build_from_workspace
+
+    if not workspace.exists() or not workspace.is_dir():
+        raise typer.BadParameter(f"workspace not found or not a directory: {workspace}")
+
+    ledger = build_from_workspace(workspace, compute_hash=not no_hash)
+    payload = ledger.model_dump_json(indent=2)
+    if output is None:
+        console.print_json(payload)
+    else:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(payload + "\n", encoding="utf-8")
+        console.print(f"[green]Wrote[/] {output}  ·  {len(ledger.entries)} entries")
+
+
 # --------------------------------------------------------------------- revise
 
 

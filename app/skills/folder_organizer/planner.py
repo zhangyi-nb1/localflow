@@ -26,9 +26,18 @@ CATEGORY_TARGETS: dict[str, str] = {
 }
 
 DUPLICATE_REPORT_NAME = "duplicates_report.md"
+REVIEW_DIR = "review"
+REVIEW_REPORT_NAME = f"{REVIEW_DIR}/unresolved_files.md"
+PREFERENCE_REVIEW_KEY = "route_low_confidence_to_review"
 
 
-def _target_dir(file_type: str) -> str:
+def _target_dir(file_type: str, *, route_low_confidence: bool = False) -> str:
+    """v0.14.1: when ``route_low_confidence=True``, files classified as
+    ``other`` (no recognised extension) divert to ``review/`` instead
+    of ``misc/`` so the user can triage them by hand. Default behaviour
+    unchanged for back-compat."""
+    if route_low_confidence and file_type == "other":
+        return REVIEW_DIR
     return CATEGORY_TARGETS.get(file_type, "misc")
 
 
@@ -61,10 +70,13 @@ def plan_organization(
         counter += 1
         return f"a-{counter:03d}"
 
+    # v0.14.1 — opt into the review/ dir routing via task pref.
+    route_low_confidence = bool(task.preferences.get(PREFERENCE_REVIEW_KEY, False))
+
     # 1. Bucket files by destination directory.
     by_target: dict[str, list] = defaultdict(list)
     for f in snapshot.files:
-        target_dir = _target_dir(f.file_type)
+        target_dir = _target_dir(f.file_type, route_low_confidence=route_low_confidence)
         if _already_in_target(f.path, target_dir):
             continue
         by_target[target_dir].append(f)
@@ -85,6 +97,7 @@ def plan_organization(
 
     # 3. One move per file.
     naming_style = task.preferences.get("naming_style", NamingStyle.ORIGINAL.value)
+    review_routed: list = []  # files that got bumped to review/
     for target_dir in sorted(by_target):
         for f in sorted(by_target[target_dir], key=lambda x: x.path):
             original_filename = PurePosixPath(f.path).name
@@ -93,6 +106,12 @@ def plan_organization(
             reason = f"Categorize {f.file_type} file into {target_dir}/"
             if filename != original_filename:
                 reason += f" (naming style: {naming_style})"
+            if target_dir == REVIEW_DIR:
+                reason = (
+                    f"Low-confidence classification ({f.file_type}): routing to "
+                    f"{REVIEW_DIR}/ for user triage instead of misc/"
+                )
+                review_routed.append(f)
             actions.append(
                 Action(
                     action_id=next_id(),
@@ -109,7 +128,7 @@ def plan_organization(
     # 4. Index per non-empty category (predicted membership).
     membership_predicted: dict[str, list[str]] = defaultdict(list)
     for f in snapshot.files:
-        td = _target_dir(f.file_type)
+        td = _target_dir(f.file_type, route_low_confidence=route_low_confidence)
         if _already_in_target(f.path, td):
             membership_predicted[td].append(PurePosixPath(f.path).name)
         else:
@@ -133,6 +152,27 @@ def plan_organization(
             )
         )
         expected_outputs.append(index_rel)
+
+    # 4b. v0.14.1 — review/unresolved_files.md when low-confidence
+    # routing is on and at least one file got bumped to review/.
+    if route_low_confidence and review_routed:
+        content = _render_review_md(review_routed)
+        actions.append(
+            Action(
+                action_id=next_id(),
+                action_type=ActionType.INDEX,
+                target_path=REVIEW_REPORT_NAME,
+                reason=(
+                    f"List {len(review_routed)} low-confidence file(s) routed "
+                    f"to {REVIEW_DIR}/ for user triage."
+                ),
+                risk_level=RiskLevel.LOW,
+                reversible=True,
+                requires_approval=False,
+                metadata={"content": content, "overwrite_existing": True},
+            )
+        )
+        expected_outputs.append(REVIEW_REPORT_NAME)
 
     # 5. Duplicate detection — report only, no deletion (Rule 4).
     dup_groups: dict[str, list[str]] = defaultdict(list)
@@ -180,6 +220,34 @@ def _render_index_md(target_dir: str, files: list[str]) -> str:
     lines = [f"# {target_dir}/", "", f"_{len(files)} file(s)_", ""]
     for name in files:
         lines.append(f"- `{name}`")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _render_review_md(files: list) -> str:
+    """v0.14.1 — render review/unresolved_files.md.
+
+    Each entry includes original path, size, sha256 prefix, and the
+    classifier output (always 'other' for low-confidence; recorded for
+    audit) so a user triaging the dir knows exactly why each file ended
+    up here.
+    """
+    lines = [
+        "# Unresolved files",
+        "",
+        f"_{len(files)} file(s) routed to `review/` for user triage._",
+        "",
+        (
+            "These files couldn't be confidently classified by extension. "
+            "Review and either move them to a category dir manually or delete."
+        ),
+        "",
+        "| original path | size | sha256 (prefix) | classifier output |",
+        "|---|---|---|---|",
+    ]
+    for f in sorted(files, key=lambda x: x.path):
+        sha = (f.sha256 or "(none)")[:12]
+        lines.append(f"| `{f.path}` | {f.size_bytes} B | `{sha}` | `{f.file_type}` |")
     lines.append("")
     return "\n".join(lines)
 
