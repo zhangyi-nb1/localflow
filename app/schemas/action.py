@@ -14,6 +14,12 @@ class ActionType(str, Enum):
     SUMMARIZE = "summarize"
     CONVERT = "convert"
     ANALYZE = "analyze"
+    # v0.16 — second deliberate §10.7 exception (after Phase 5's
+    # forbidden_paths). FETCH actions perform HTTPS GET to a URL in
+    # metadata.url and write the response body to target_path. The
+    # executor + policy_guard learn about this action type; rollback
+    # uses the same DELETE_CREATED_FILE op as INDEX.
+    FETCH = "fetch"
 
 
 class RiskLevel(str, Enum):
@@ -30,6 +36,7 @@ WRITE_ACTIONS: frozenset[ActionType] = frozenset(
         ActionType.RENAME,
         ActionType.INDEX,
         ActionType.CONVERT,
+        ActionType.FETCH,
     }
 )
 

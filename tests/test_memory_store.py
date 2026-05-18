@@ -41,8 +41,10 @@ def test_v2_prefs_json_auto_upgrades_to_v3(tmp_path: Path) -> None:
     # Phase 13 fields backfilled with defaults
     assert prefs.enable_semantic_verifier is False
     assert prefs.max_auto_repairs == 2
-    # In-memory version reflects the upgrade.
-    assert prefs.schema_version == 3
+    # v0.16 fields backfilled with defaults
+    assert prefs.fetch_allowed_domains == []
+    # In-memory version reflects the latest upgrade.
+    assert prefs.schema_version == 4
 
 
 def test_load_returns_defaults_when_no_prefs_file(tmp_path: Path) -> None:
@@ -51,10 +53,12 @@ def test_load_returns_defaults_when_no_prefs_file(tmp_path: Path) -> None:
     assert prefs.forbidden_paths == []
     assert prefs.naming_style == NamingStyle.ORIGINAL
     assert prefs.prefer_llm_planner is False
-    # Phase 13 — semantic-verifier opt-in defaults, schema bumped to v3.
+    # Phase 13 — semantic-verifier opt-in defaults.
     assert prefs.enable_semantic_verifier is False
     assert prefs.max_auto_repairs == 2
-    assert prefs.schema_version == 3
+    # v0.16 — fetch allowlist defaults to empty; schema bumped to v4.
+    assert prefs.fetch_allowed_domains == []
+    assert prefs.schema_version == 4
     assert prefs.is_default()
 
 

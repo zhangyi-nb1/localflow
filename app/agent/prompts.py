@@ -64,14 +64,32 @@ Call the `submit_action_plan` tool. Make sure every `action_id` is unique, every
 # --------------------------------------------------------------------- tool schema
 
 
-def build_action_plan_tool_schema() -> dict[str, Any]:
+def build_action_plan_tool_schema(allowed_action_types: list[str] | None = None) -> dict[str, Any]:
     """JSON Schema for the forced ``submit_action_plan`` tool call.
 
     Hand-written (rather than derived from Pydantic) so we can embed
     model-facing descriptions on every field and enforce
     ``additionalProperties: false`` recursively — required by Anthropic's
     ``strict`` tool mode.
+
+    v0.16: ``allowed_action_types`` (when provided) scopes the
+    ``action_type`` enum to just the values declared in the calling
+    skill's manifest. This is a defense-in-depth measure: the LLM
+    can't even *propose* an action type the skill doesn't allow.
+    Defaults to the full set when None (back-compat).
     """
+    enum_values = (
+        sorted(allowed_action_types)
+        if allowed_action_types
+        else [
+            "mkdir",
+            "copy",
+            "move",
+            "rename",
+            "index",
+            "summarize",
+        ]
+    )
     return {
         "type": "object",
         "additionalProperties": False,
@@ -109,7 +127,7 @@ def build_action_plan_tool_schema() -> dict[str, Any]:
                         },
                         "action_type": {
                             "type": "string",
-                            "enum": ["mkdir", "copy", "move", "rename", "index", "summarize"],
+                            "enum": enum_values,
                             "description": "`delete` is FORBIDDEN. Do not request it for any reason.",
                         },
                         "source_path": {

@@ -354,6 +354,73 @@ class MemoryStore:
             detail=f"max_auto_repairs: {before} → {value}",
         )
 
+    # -- mutations: fetch_allowed_domains (v0.16) ----------------------
+
+    @staticmethod
+    def _normalize_domain(host: str) -> str:
+        """Canonicalize: strip whitespace, lowercase, no scheme/path/port.
+
+        Rejects entries containing '/' or '://' since those would be URLs,
+        not hostnames. Punycode is accepted as-is — the urllib URL parser
+        already normalises IDN at parse time.
+        """
+        h = host.strip().lower()
+        if not h:
+            raise ValueError("domain is empty")
+        if "://" in h or "/" in h:
+            raise ValueError(f"expected bare hostname, got URL-ish value: {host!r}")
+        if ":" in h:
+            raise ValueError(f"hostname should not include port: {host!r}")
+        return h
+
+    def add_fetch_allowed_domain(self, host: str) -> MutationResult:
+        canonical = self._normalize_domain(host)
+        prefs = self.load()
+        if canonical in prefs.fetch_allowed_domains:
+            return MutationResult(
+                event="memory.allow_domain.noop",
+                changed=False,
+                detail=f"{canonical!r} already in fetch_allowed_domains",
+            )
+        before = list(prefs.fetch_allowed_domains)
+        prefs.fetch_allowed_domains = sorted(prefs.fetch_allowed_domains + [canonical])
+        self.save(prefs)
+        self._audit(
+            "memory.allow_domain",
+            domain=canonical,
+            before=before,
+            after=prefs.fetch_allowed_domains,
+        )
+        return MutationResult(
+            event="memory.allow_domain",
+            changed=True,
+            detail=f"added {canonical!r} to fetch_allowed_domains",
+        )
+
+    def remove_fetch_allowed_domain(self, host: str) -> MutationResult:
+        canonical = self._normalize_domain(host)
+        prefs = self.load()
+        if canonical not in prefs.fetch_allowed_domains:
+            return MutationResult(
+                event="memory.disallow_domain.noop",
+                changed=False,
+                detail=f"{canonical!r} was not in fetch_allowed_domains",
+            )
+        before = list(prefs.fetch_allowed_domains)
+        prefs.fetch_allowed_domains = [d for d in prefs.fetch_allowed_domains if d != canonical]
+        self.save(prefs)
+        self._audit(
+            "memory.disallow_domain",
+            domain=canonical,
+            before=before,
+            after=prefs.fetch_allowed_domains,
+        )
+        return MutationResult(
+            event="memory.disallow_domain",
+            changed=True,
+            detail=f"removed {canonical!r} from fetch_allowed_domains",
+        )
+
 
 def _migrate(raw: dict[str, Any]) -> dict[str, Any]:
     """Upgrade prefs.json payloads from older schema_versions in place.
@@ -362,12 +429,15 @@ def _migrate(raw: dict[str, Any]) -> dict[str, Any]:
     payload is a no-op. New fields get their schema defaults backfilled
     so :func:`MemoryPreferences.model_validate` doesn't reject the load.
 
-    Phase 13 introduces v3 by adding ``enable_semantic_verifier`` and
-    ``max_auto_repairs``.
+    Phase 13 introduces v3 (enable_semantic_verifier, max_auto_repairs).
+    v0.16 introduces v4 (fetch_allowed_domains).
     """
     version = int(raw.get("schema_version", 1) or 1)
     if version < 3:
         raw.setdefault("enable_semantic_verifier", False)
         raw.setdefault("max_auto_repairs", 2)
         raw["schema_version"] = 3
+    if version < 4:
+        raw.setdefault("fetch_allowed_domains", [])
+        raw["schema_version"] = 4
     return raw

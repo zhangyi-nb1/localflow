@@ -267,6 +267,10 @@ class Executor:
             return self._do_index(action, manifest)
         if atype == ActionType.SUMMARIZE:
             return self._do_index(action, manifest)
+        # v0.16 — second §10.7 exception. FETCH downloads metadata.url
+        # into target_path. Reuses INDEX's DELETE_CREATED_FILE rollback.
+        if atype == ActionType.FETCH:
+            return self._do_fetch(action, manifest)
         # CONVERT / ANALYZE not supported in Phase 0.
         raise NotImplementedError(f"action_type {atype.value} not implemented in Phase 0")
 
@@ -413,6 +417,61 @@ class Executor:
                 op=RollbackOpType.DELETE_CREATED_FILE,
                 target_path=rel,
                 metadata={"after_hash": hash_after} if hash_after else {},
+            ),
+        )
+
+    def _do_fetch(
+        self, action: Action, manifest: RollbackManifest
+    ) -> tuple[None, str | None, RollbackEntry]:
+        """v0.16 — execute a FETCH action.
+
+        Reads ``metadata.url`` (https only), GETs it via ``urllib``
+        with a 30 s timeout, writes the response body to ``target_path``.
+        Rollback semantics are identical to a fresh INDEX write
+        (DELETE_CREATED_FILE).
+
+        Domain allowlisting is enforced by the policy_guard BEFORE this
+        method runs — when we get here we know the URL host is on the
+        task's allowlist.
+        """
+        import urllib.request
+
+        url = action.metadata.get("url") if action.metadata else None
+        if not isinstance(url, str) or not url.startswith("https://"):
+            raise ValueError(
+                f"action {action.action_id}: FETCH requires metadata.url "
+                f"starting with 'https://', got {url!r}"
+            )
+        target_abs = resolve_inside(self.workspace_root, action.target_path or "")
+        self._record_implicit_parents(target_abs, action.action_id, manifest)
+
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "localflow-webcollect/0.16"},
+        )
+        timeout = float(action.metadata.get("timeout_seconds", 30) or 30)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                payload = resp.read()
+        except Exception as exc:
+            raise RuntimeError(
+                f"action {action.action_id}: FETCH {url!r} failed: {type(exc).__name__}: {exc}"
+            ) from exc
+
+        file_ops.write_bytes(target_abs, payload)
+        hash_after = sha256_file(target_abs) if target_abs.is_file() else None
+        rel = self._rel(target_abs)
+        manifest.generated_files.append(rel)
+        return (
+            None,
+            hash_after,
+            RollbackEntry(
+                action_id=action.action_id,
+                op=RollbackOpType.DELETE_CREATED_FILE,
+                target_path=rel,
+                metadata={"after_hash": hash_after, "fetch_url": url}
+                if hash_after
+                else {"fetch_url": url},
             ),
         )
 

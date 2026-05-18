@@ -225,6 +225,44 @@ def discover_and_register_external(
                 )
                 continue
 
+            # v0.16 — when signing is required, verify before importing.
+            # Refusing to even import an unsigned skill is the safer
+            # default: a malicious skill.py can run arbitrary code at
+            # import time.
+            from app.skills.signing import (
+                load_signing_key,
+                signing_required,
+                verify_signature,
+            )
+
+            if signing_required():
+                key = load_signing_key()
+                if key is None:
+                    findings.append(
+                        LoadFinding(
+                            source_dir=str(entry),
+                            status="skipped",
+                            error=(
+                                "LOCALFLOW_REQUIRE_SIGNED_SKILLS=1 but no signing "
+                                "key configured (set LOCALFLOW_SKILL_SIGNING_KEY or "
+                                "write ~/.localflow/memory/skill_signing_key)"
+                            ),
+                        )
+                    )
+                    continue
+                if not verify_signature(entry, key):
+                    findings.append(
+                        LoadFinding(
+                            source_dir=str(entry),
+                            status="skipped",
+                            error=(
+                                "signature missing or invalid — sign with "
+                                "`localflow skills sign <dir>` after auditing"
+                            ),
+                        )
+                    )
+                    continue
+
             module = None
             try:
                 module = _load_module(skill_py, entry.name)

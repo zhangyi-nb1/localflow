@@ -84,8 +84,18 @@ class MemoryPreferences(BaseModel):
             "verifier in report-only mode'. Hard limit 5 mirrors MAX_REVISIONS."
         ),
     )
+    fetch_allowed_domains: list[str] = Field(
+        default_factory=list,
+        description=(
+            "v0.16 — explicit hostname allowlist for the WebCollect skill's "
+            "FETCH actions. Empty list = no network fetches allowed. The "
+            "policy_guard rejects any FETCH whose URL host is not exactly "
+            "on this list (no wildcards). Add via "
+            "`localflow memory allow-domain <host>`."
+        ),
+    )
     schema_version: int = Field(
-        default=3,
+        default=4,
         description="Bump when adding/removing fields to enable migration.",
     )
 
@@ -98,4 +108,5 @@ class MemoryPreferences(BaseModel):
             and self.prefer_llm_planner is False
             and self.enable_semantic_verifier is False
             and self.max_auto_repairs == 2
+            and not self.fetch_allowed_domains
         )

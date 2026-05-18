@@ -881,6 +881,89 @@ def cmd_status(
 # --------------------------------------------------------------------- skills
 
 
+skills_app = typer.Typer(
+    help="v0.16 — skill registry + external skill signing.",
+    no_args_is_help=True,
+)
+
+
+@skills_app.command("sign")
+def cmd_skills_sign(
+    skill_dir: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        help="External skill directory (must contain skill.py).",
+    ),
+) -> None:
+    """v0.16 — compute + persist HMAC-SHA256 signature for an external skill.
+
+    Reads the signing key from ``LOCALFLOW_SKILL_SIGNING_KEY`` or
+    ``~/.localflow/memory/skill_signing_key``. Writes ``signature.txt``
+    in the skill dir. After signing, the loader will only accept this
+    exact skill.py + skill.yaml content under
+    ``LOCALFLOW_REQUIRE_SIGNED_SKILLS=1``.
+    """
+    from app.skills.signing import load_signing_key, write_signature
+
+    key = load_signing_key()
+    if key is None:
+        console.print(
+            "[red]No signing key configured.[/] Set "
+            "LOCALFLOW_SKILL_SIGNING_KEY (hex) or write "
+            "~/.localflow/memory/skill_signing_key."
+        )
+        raise typer.Exit(code=2)
+    if not (skill_dir / "skill.py").exists():
+        console.print(f"[red]No skill.py at {skill_dir}.[/]")
+        raise typer.Exit(code=2)
+    digest = write_signature(skill_dir, key)
+    console.print(f"[green]Signed[/] {skill_dir}  ·  digest [dim]{digest}[/]")
+
+
+@skills_app.command("verify")
+def cmd_skills_verify(
+    skill_dir: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        help="External skill directory to verify.",
+    ),
+) -> None:
+    """v0.16 — verify the on-disk signature against a fresh HMAC.
+
+    Exit 0 = valid, 1 = invalid, 2 = no key / no signature file.
+    """
+    from app.skills.signing import (
+        compute_signature,
+        load_signing_key,
+        read_signature,
+    )
+
+    key = load_signing_key()
+    if key is None:
+        console.print("[red]No signing key configured.[/]")
+        raise typer.Exit(code=2)
+    expected = read_signature(skill_dir)
+    if expected is None:
+        console.print(f"[yellow]No signature.txt in {skill_dir}.[/]")
+        raise typer.Exit(code=2)
+    actual = compute_signature(skill_dir, key)
+    if expected == actual:
+        console.print(f"[green]Valid[/]  ·  digest {actual}")
+        return
+    console.print(
+        f"[red]MISMATCH[/]\n  expected: {expected}\n  actual:   {actual}\n\n"
+        "Re-sign with `localflow skills sign <dir>` after auditing the changes."
+    )
+    raise typer.Exit(code=1)
+
+
+app.add_typer(skills_app, name="skills-sig")
+
+
 @app.command("skills")
 def cmd_skills(
     show_findings: bool = typer.Option(
@@ -1138,6 +1221,123 @@ def _ensure_streamlit_credentials() -> None:
 # --------------------------------------------------------------------- mcp-serve
 
 
+mcp_clients_app = typer.Typer(
+    help="v0.16 — manage external MCP servers (LocalFlow as MCP client).",
+    no_args_is_help=True,
+)
+
+
+@mcp_clients_app.command("list")
+def cmd_mcp_clients_list() -> None:
+    """Show every registered external MCP server + its last-probe state."""
+    from app.mcp.catalog import load
+
+    catalog = load()
+    if not catalog.entries:
+        console.print(
+            "[dim]No external MCP servers registered. Add one with "
+            "`localflow mcp-clients add <name> '<command>'`.[/]"
+        )
+        return
+    table = Table(title="External MCP servers")
+    table.add_column("Name", style="cyan")
+    table.add_column("Command")
+    table.add_column("Last probe")
+    table.add_column("Tools")
+    for e in catalog.entries:
+        if e.last_probed_ok is None:
+            status = "[dim]never[/]"
+        elif e.last_probed_ok:
+            status = "[green]OK[/]"
+        else:
+            status = f"[red]FAIL[/]: {(e.last_probed_error or '')[:40]}"
+        table.add_row(e.name, e.command, status, str(len(e.tools)))
+    console.print(table)
+
+
+@mcp_clients_app.command("add")
+def cmd_mcp_clients_add(
+    name: str = typer.Argument(..., help="Short label for the external server."),
+    command: str = typer.Argument(
+        ...,
+        help="Shell command that spawns the server's stdio process "
+        "(e.g. 'npx @modelcontextprotocol/server-filesystem /some/dir').",
+    ),
+) -> None:
+    """v0.16 — register an external MCP server in the catalog."""
+    from app.mcp.catalog import add_entry, load, save
+
+    catalog = load()
+    entry = add_entry(catalog, name, command)
+    save(catalog)
+    console.print(
+        f"[green]Registered[/] external MCP server `{entry.name}` → {entry.command!r}.\n"
+        f"[dim]Run `localflow mcp-clients probe {entry.name}` to verify connectivity.[/]"
+    )
+
+
+@mcp_clients_app.command("remove")
+def cmd_mcp_clients_remove(
+    name: str = typer.Argument(..., help="Name of the server to remove."),
+) -> None:
+    """v0.16 — drop an external server from the catalog."""
+    from app.mcp.catalog import load, remove_entry, save
+
+    catalog = load()
+    if not remove_entry(catalog, name):
+        console.print(f"[yellow]No server named `{name}` in catalog.[/]")
+        raise typer.Exit(code=1)
+    save(catalog)
+    console.print(f"[green]Removed[/] `{name}` from external MCP catalog.")
+
+
+@mcp_clients_app.command("probe")
+def cmd_mcp_clients_probe(
+    name: str = typer.Argument(
+        ..., help="Name of a registered server (use `localflow mcp-clients list` to see)."
+    ),
+    timeout: float = typer.Option(20.0, "--timeout", help="Probe timeout in seconds (default 20)."),
+) -> None:
+    """v0.16 — spawn the server, list its tools, persist the inventory.
+
+    Updates the catalog with the discovered tool names + their input
+    schemas. Future phases can use this catalog to surface external
+    tools to LocalFlow skills.
+    """
+    from app.mcp.catalog import load, save
+    from app.mcp.client import probe
+
+    catalog = load()
+    entry = next((e for e in catalog.entries if e.name == name), None)
+    if entry is None:
+        console.print(f"[red]No server `{name}` in catalog. Register with `mcp-clients add`.[/]")
+        raise typer.Exit(code=2)
+
+    with console.status(f"probing {entry.name} ({entry.command})..."):
+        outcome = probe(entry.name, entry.command, timeout=timeout)
+
+    entry.last_probed_ok = outcome.success
+    entry.last_probed_error = outcome.error
+    entry.tools = [
+        {"name": t.name, "description": t.description, "input_schema": t.input_schema}
+        for t in outcome.tools
+    ]
+    save(catalog)
+
+    if outcome.success:
+        console.print(
+            f"[green]Probe OK[/]  ·  {len(outcome.tools)} tool(s) advertised by `{entry.name}`."
+        )
+        for t in outcome.tools:
+            console.print(f"  • [cyan]{t.name}[/] — {t.description[:80]}")
+    else:
+        console.print(f"[red]Probe failed[/]: {outcome.error}")
+        raise typer.Exit(code=1)
+
+
+app.add_typer(mcp_clients_app, name="mcp-clients")
+
+
 @app.command("mcp-serve")
 def cmd_mcp_serve() -> None:
     """Start LocalFlow as an MCP server on stdio.
@@ -1243,6 +1443,43 @@ def cmd_memory_list() -> None:
     console.print(table)
     if prefs.is_default():
         console.print("\n[dim]All values are defaults; nothing persisted to influence runs.[/]")
+
+
+@memory_app.command("allow-domain")
+def cmd_memory_allow_domain(
+    host: str = typer.Argument(
+        ..., help="Hostname to add to fetch_allowed_domains (bare host, no scheme)."
+    ),
+) -> None:
+    """v0.16 — add a hostname to ``fetch_allowed_domains``.
+
+    The WebCollect skill's FETCH actions are blocked by policy_guard
+    unless the URL's host is exactly on this allowlist. Use this when
+    you want a TaskGraph stage to download specific URLs.
+    """
+    store = MemoryStore()
+    try:
+        result = store.add_fetch_allowed_domain(host)
+    except ValueError as exc:
+        console.print(f"[red]invalid host:[/] {exc}")
+        raise typer.Exit(code=2) from exc
+    style = "green" if result.changed else "dim"
+    console.print(f"[{style}]{result.detail}[/]")
+
+
+@memory_app.command("disallow-domain")
+def cmd_memory_disallow_domain(
+    host: str = typer.Argument(..., help="Hostname to remove from fetch_allowed_domains."),
+) -> None:
+    """v0.16 — remove a hostname from ``fetch_allowed_domains``."""
+    store = MemoryStore()
+    try:
+        result = store.remove_fetch_allowed_domain(host)
+    except ValueError as exc:
+        console.print(f"[red]invalid host:[/] {exc}")
+        raise typer.Exit(code=2) from exc
+    style = "green" if result.changed else "dim"
+    console.print(f"[{style}]{result.detail}[/]")
 
 
 @memory_app.command("forbid")

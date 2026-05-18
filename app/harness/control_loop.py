@@ -64,11 +64,21 @@ def run_risk_check(
     trace: TraceLogger | None = None,
 ) -> RiskAssessment:
     validate_plan_structure(plan)
+    # v0.16 — pull fetch_allowed_domains from memory prefs (read-only;
+    # never mutates). FETCH actions whose host isn't on the allowlist
+    # are blocked by policy_guard before they reach the executor.
+    try:
+        from app.memory import MemoryStore
+
+        fetch_allowed = tuple(MemoryStore().load().fetch_allowed_domains)
+    except Exception:
+        fetch_allowed = ()
     assessment = assess_plan(
         Path(task.workspace_root),
         plan,
         forbidden_actions=tuple(task.forbidden_actions),
         forbidden_paths=tuple(task.forbidden_paths),
+        fetch_allowed_domains=fetch_allowed,
     )
     if trace is not None:
         # Emit one POLICY_CHECK event per blocked action so eval graders

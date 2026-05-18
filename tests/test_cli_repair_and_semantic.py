@@ -157,7 +157,7 @@ def test_memory_set_enable_semantic_verifier(tmp_path: Path, isolated_home: Path
     store = MemoryStore(home=isolated_home / "memory")
     prefs = store.load()
     assert prefs.enable_semantic_verifier is True
-    assert prefs.schema_version == 3
+    assert prefs.schema_version == 4
 
 
 def test_memory_set_max_auto_repairs(tmp_path: Path, isolated_home: Path) -> None:

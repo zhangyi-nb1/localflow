@@ -26,6 +26,7 @@ from app.skills.data_reporter import DataReporterSkill
 from app.skills.folder_organizer import FolderOrganizerSkill
 from app.skills.pdf_indexer import PdfIndexerSkill
 from app.skills.topic_clusterer import TopicClustererSkill
+from app.skills.webcollect import WebCollectSkill
 from app.skills.workspace_visualizer import WorkspaceVisualizerSkill
 from app.tools import get_default_tool_registry
 
@@ -41,6 +42,7 @@ _default_registry.register(DataAnalyzerSkill(), tool_registry=_tool_registry)
 _default_registry.register(WorkspaceVisualizerSkill(), tool_registry=_tool_registry)
 _default_registry.register(AgentSkill(), tool_registry=_tool_registry)
 _default_registry.register(TopicClustererSkill(), tool_registry=_tool_registry)
+_default_registry.register(WebCollectSkill(), tool_registry=_tool_registry)
 
 # Phase 4.1: filesystem skill discovery. Built-ins register FIRST so any
 # external skill with a colliding name fails registration (logged in the
@@ -75,6 +77,7 @@ __all__ = [
     "LoadFinding",
     "PdfIndexerSkill",
     "TopicClustererSkill",
+    "WebCollectSkill",
     "Skill",
     "SkillError",
     "SkillRegistry",

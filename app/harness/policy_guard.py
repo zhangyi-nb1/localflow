@@ -114,12 +114,32 @@ def evaluate_action(
     *,
     forbidden_actions: tuple[str, ...] = (),
     forbidden_paths: tuple[str, ...] = (),
+    fetch_allowed_domains: tuple[str, ...] = (),
 ) -> PolicyDecision:
     reasons: list[str] = []
     if action.action_type.value in forbidden_actions:
         reasons.append(f"{action.action_type.value} is in forbidden_actions")
     _check_required_fields(action, reasons)
     _check_path_fields(workspace_root, action, reasons, forbidden_paths=forbidden_paths)
+
+    # v0.16 — second §10.7 exception. FETCH must declare metadata.url
+    # over HTTPS to a host on the task's allowlist. Empty allowlist =
+    # no fetches permitted (fail-closed).
+    if action.action_type == ActionType.FETCH:
+        url = action.metadata.get("url") if action.metadata else None
+        if not isinstance(url, str) or not url.startswith("https://"):
+            reasons.append("FETCH requires metadata.url starting with 'https://'")
+        else:
+            from urllib.parse import urlparse
+
+            host = (urlparse(url).hostname or "").lower()
+            if not host:
+                reasons.append(f"FETCH url has no host: {url!r}")
+            elif host not in {h.lower() for h in fetch_allowed_domains}:
+                reasons.append(
+                    f"FETCH host {host!r} not in fetch_allowed_domains "
+                    f"(add via `localflow memory allow-domain {host}`)"
+                )
 
     # Irreversible writes must be flagged high risk and require approval.
     if action.is_write() and not action.reversible and action.risk_level != RiskLevel.HIGH:
@@ -136,6 +156,7 @@ def assess_plan(
     *,
     forbidden_actions: tuple[str, ...] = (),
     forbidden_paths: tuple[str, ...] = (),
+    fetch_allowed_domains: tuple[str, ...] = (),
 ) -> RiskAssessment:
     seen_ids: set[str] = set()
     blocked: list[str] = []
@@ -154,6 +175,7 @@ def assess_plan(
             action,
             forbidden_actions=forbidden_actions,
             forbidden_paths=forbidden_paths,
+            fetch_allowed_domains=fetch_allowed_domains,
         )
         if not decision.allowed:
             blocked.append(action.action_id)

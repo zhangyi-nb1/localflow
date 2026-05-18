@@ -192,7 +192,12 @@ class LLMPlanner:
         prior_plan_actions: list[Action] | None = None,
         user_hint: str | None = None,
     ) -> ActionPlan:
-        tool_schema = build_action_plan_tool_schema()
+        # v0.16 — scope the action_type enum in the tool schema to just
+        # the actions declared allowed for THIS task. The LLM literally
+        # cannot propose a `delete` action when task.allowed_actions
+        # excludes it, even if its training data suggests otherwise.
+        allowed = list(task.allowed_actions) if task.allowed_actions else None
+        tool_schema = build_action_plan_tool_schema(allowed_action_types=allowed)
         messages: list[dict[str, Any]] = [
             {"role": "user", "content": render_user_prompt(task, snapshot)}
         ]

@@ -181,19 +181,24 @@ Pack demo:       Workspace Pack Builder (v0.14.0) — 5-stage TaskGraph
                  workspace_visualizer + agent; stage 5 (LLM) uses
                  failure_policy: skip so CI without an API key still
                  produces stages 1-4 outputs.
-Tests:           526 passing across 5 OS × Python matrix in CI
+Tests:           541 passing across 5 OS × Python matrix in CI
 ```
 
-v0.14.1 polish: typed `SourceLedger` schema + `localflow ledger`
-CLI; folder_organizer's `route_low_confidence_to_review` task pref;
-new `topic_clusterer` skill (semantic topic grouping).
+v0.14.1 polish: typed `SourceLedger` schema; folder_organizer
+`route_low_confidence_to_review` pref; `topic_clusterer` skill.
 
 v0.15.0 Phase 15 (integration / exposure): vision-based
-`chart_accurate` grader; new MCP tools `taskgraph_run`,
-`verify_semantic`, `repair_run` so external clients can drive
-v0.10/v0.13 capabilities; `localflow rollback --stage <id>` for
-per-stage rollback; `localflow taskgraph replay --from-stage <id>`
-for cross-stage repair; `StageSpec.cross_stage_repair_target` field.
+`chart_accurate` grader; MCP tools `taskgraph_run` /
+`verify_semantic` / `repair_run`; `localflow rollback --stage <id>`;
+`localflow taskgraph replay --from-stage <id>` for cross-stage repair.
+
+v0.16.0 Phase 16 (ecosystem): HMAC skill manifest signing
+(`LOCALFLOW_REQUIRE_SIGNED_SKILLS=1` + `localflow skills-sig sign/verify`);
+per-skill LLM tool schema scoping (restricts the model to its task's
+`allowed_actions`); **WebCollect skill** + new `ActionType.FETCH`
+(2nd §10.7 exception) with `fetch_allowed_domains` policy gate;
+**MCP client** (`localflow mcp-clients list/add/remove/probe`) for
+inventorying external MCP servers.
 
 Three equivalent driver layers, same kernel:
 
@@ -304,18 +309,28 @@ Version scheme: `0.<highest_phase>.<sub>`. Current `0.14.0` = Phase 6.1 + Phase 
 
 ## Roadmap
 
-- **v0.14.x** — typed `source_ledger.json` schema; dedicated
-  `review/` dir for low-confidence files; semantic topic clustering
-  (skills that group by content not extension).
-- **Phase 15 (v0.15.0)** — Vision-based `chart_accurate` grader
-  (image → LLM judge); MCP `verify_semantic` + `repair_run` tools
-  + `taskgraph_run` MCP tool; cross-stage repair (rollback to upstream
-  stage + replay); per-stage rollback CLI
-  (`localflow rollback --stage <id>`).
-- **Future** — Skill manifest signing; per-skill capability scoping
-  in the LLM tool schema; WebCollect skill; MCP client.
+The 16-phase substrate is now complete. Remaining items beyond v0.16:
+- Auto-trigger `cross_stage_repair_target` from inside the runner
+  (currently only the CLI helper consumes it).
+- Tighter MCP-client integration: expose probed external tools as
+  Phase 4.2 ToolSpecs that skills can call via their planners.
+- Capability tightening on the MCP server (per-skill scoping for the
+  exposed `taskgraph_run` / `verify_semantic` / `repair_run` tools).
 
 Recently shipped:
+- **v0.16.0 — Phase 16 Ecosystem layer.** Skill manifest signing
+  (HMAC-SHA256 + `localflow skills-sig` CLI + loader gating);
+  per-skill LLM tool schema capability scoping (defense-in-depth);
+  **WebCollect skill** with new `ActionType.FETCH` (2nd deliberate
+  §10.7 exception — executor + policy_guard learn HTTPS GET, gated
+  by a `fetch_allowed_domains` allowlist); **MCP client** for
+  inventorying external MCP servers (`localflow mcp-clients`).
+  +15 tests (526 → 541).
+- **v0.15.0 — Phase 15 Integration / exposure.** Vision grader,
+  MCP tools for v0.10/v0.13 capabilities, per-stage + cross-stage
+  rollback / replay.
+- **v0.14.1 — Workspace Pack polish.** Typed SourceLedger schema,
+  `review/` dir routing, `topic_clusterer` skill.
 - **v0.14.0 — Phase 14 Workspace Pack Builder.** The canonical
   composition demo: 5-stage TaskGraph at
   `examples/research_pack/workspace_pack.yaml` turning a messy
