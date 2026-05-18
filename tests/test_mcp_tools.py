@@ -70,6 +70,10 @@ def test_all_tools_registered() -> None:
         "memory_unset_naming_style",
         "memory_set_prefer_llm_planner",  # Phase 8.2
         "memory_unset_prefer_llm_planner",  # Phase 8.2
+        # Phase 15 — drive multi-stage + repair through MCP.
+        "taskgraph_run",
+        "verify_semantic",
+        "repair_run",
     }
     assert names == expected
 

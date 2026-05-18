@@ -45,6 +45,25 @@ def _sweep_empty_subdirs(root: Path) -> None:
             pass
 
 
+def filter_manifest_to_stage(manifest: RollbackManifest, stage_id: str) -> RollbackManifest:
+    """Phase 15 — return a manifest containing only the entries from
+    one stage of a TaskGraph run.
+
+    Phase 10 prefixes every per-stage action_id with ``<stage_id>.``
+    (e.g. ``s1_organize.a-001``). This helper filters the aggregated
+    graph-level manifest to a single stage's entries, preserving the
+    original ``run_id`` / ``task_id`` / ``file_hashes_before`` /
+    ``created_dirs`` / ``generated_files`` so the rollback machinery
+    treats the result as a normal manifest.
+
+    Falls back to an empty entries list when no action matches the
+    prefix — the caller can detect this via ``len(manifest.entries)``.
+    """
+    prefix = f"{stage_id}."
+    filtered = [e for e in manifest.entries if e.action_id.startswith(prefix)]
+    return manifest.model_copy(update={"entries": filtered})
+
+
 @dataclass
 class RollbackOutcome:
     success: bool

@@ -752,6 +752,17 @@ def cmd_rollback(
             "(hash drift). Use with care — this clobbers your manual edits."
         ),
     ),
+    stage: str | None = typer.Option(
+        None,
+        "--stage",
+        help=(
+            "v0.15 — Roll back only one stage of a TaskGraph run. "
+            "The stage_id must match a stage of the run; only entries "
+            "whose action_id starts with ``<stage_id>.`` are replayed. "
+            "Useful when one stage of a multi-stage graph misbehaved "
+            "and you want to retry just that stage."
+        ),
+    ),
 ) -> None:
     """Undo a previously-executed run using its rollback manifest.
 
@@ -759,16 +770,33 @@ def cmd_rollback(
     has edited since execute (detected via sha256 drift against the
     executor's recorded ``after_hash``). Drifted entries are reported
     as **conflicts** and skipped. Pass ``--force`` to override.
+
+    Phase 15: ``--stage <id>`` filters the aggregated TaskGraph
+    manifest to just one stage's entries before replaying. The other
+    stages stay applied — use this to surgically retry a single stage
+    of a multi-stage graph.
     """
+    from app.harness.rollback import filter_manifest_to_stage
+
     store = RunStore(task_id=run_id)
     if not store.rollback_path.exists():
         raise typer.BadParameter(f"no rollback manifest for run {run_id}")
     task = store.load_task()
     manifest = store.load_rollback()
 
+    if stage is not None:
+        manifest = filter_manifest_to_stage(manifest, stage)
+        if not manifest.entries:
+            console.print(
+                f"[yellow]No rollback entries match stage `{stage}` "
+                f"(checked {run_id}'s manifest).[/]"
+            )
+            raise typer.Exit(code=1)
+
     if not yes:
+        scope = f"stage `{stage}` in " if stage else ""
         confirm = typer.confirm(
-            f"Roll back {len(manifest.entries)} change(s) in {task.workspace_root}?"
+            f"Roll back {len(manifest.entries)} change(s) {scope}{task.workspace_root}?"
         )
         if not confirm:
             console.print("[yellow]Rollback cancelled.[/]")
@@ -1859,6 +1887,73 @@ def cmd_taskgraph_run(
     )
     if not result.passed:
         raise typer.Exit(code=1)
+
+
+@taskgraph_app.command("replay")
+def cmd_taskgraph_replay(
+    graph: Path = typer.Argument(..., help="Path to the SAME TaskGraph YAML used for the run."),
+    run_id: str = typer.Option(..., "--run-id", help="Existing run identifier."),
+    from_stage: str = typer.Option(
+        ...,
+        "--from-stage",
+        help="stage_id to replay from (inclusive). Every downstream stage also replays.",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation."),
+) -> None:
+    """v0.15 — cross-stage repair: roll back from ``--from-stage`` and
+    every downstream stage, then replay just that range.
+
+    Use this when one stage's failure traces back to an earlier
+    stage's wrong output. Upstream stages are left alone; downstream
+    ones get a fresh execute after rolling back the affected range.
+
+    Conflicts halt the replay — pass through to the standard
+    ``localflow rollback --force`` first if you need to override
+    user-side drift.
+    """
+    import yaml
+
+    from app.harness.taskgraph_runner import replay_from_stage
+    from app.schemas import TaskGraph
+
+    store = RunStore(task_id=run_id)
+    if not store.rollback_path.exists():
+        raise typer.BadParameter(f"no rollback manifest for run {run_id}")
+    try:
+        raw = yaml.safe_load(graph.read_text(encoding="utf-8"))
+        tg = TaskGraph.model_validate(raw)
+    except Exception as exc:
+        console.print(f"[red]invalid graph YAML:[/] {exc}")
+        raise typer.Exit(code=2) from exc
+    if from_stage not in [s.stage_id for s in tg.stages]:
+        console.print(f"[red]stage `{from_stage}` not in graph[/]")
+        raise typer.Exit(code=2)
+
+    if not yes:
+        affected = [
+            s.stage_id
+            for s in tg.stages[
+                [i for i, s in enumerate(tg.stages) if s.stage_id == from_stage][0] :
+            ]
+        ]
+        confirm = typer.confirm(
+            f"Roll back + replay {len(affected)} stage(s) from `{from_stage}` onwards: {affected}?"
+        )
+        if not confirm:
+            console.print("[yellow]Replay cancelled.[/]")
+            raise typer.Exit(code=1)
+
+    try:
+        result = replay_from_stage(graph=tg, run_store=store, from_stage=from_stage)
+    except Exception as exc:
+        console.print(f"[red]replay failed:[/] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    badge = "[green]REPLAYED[/]" if result.passed else "[red]REPLAY PARTIAL[/]"
+    console.print(
+        f"{badge}  affected stages re-ran  ·  run_id [bold]{run_id}[/]  ·  "
+        f"see [bold]localflow status --task-id {run_id}[/] for the merged result"
+    )
 
 
 if __name__ == "__main__":

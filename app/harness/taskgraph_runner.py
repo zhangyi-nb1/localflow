@@ -325,6 +325,83 @@ def _run_one_stage(
         )
 
 
+def replay_from_stage(
+    *,
+    graph: TaskGraph,
+    run_store: RunStore,
+    from_stage: str,
+    trace: TraceLogger | None = None,
+) -> TaskGraphResult:
+    """Phase 15 — cross-stage repair: roll back every stage from
+    ``from_stage`` onwards (inclusive) and replay them.
+
+    Use case: stage 3's failure traces back to stage 1's wrong output.
+    The user (or a future auto-loop) decides "we need to redo from
+    stage 1 with a hint". This function:
+
+      1. Loads the existing aggregated manifest.
+      2. Filters entries to ones produced by ``from_stage`` and every
+         stage downstream of it. Rollbacks them in reverse order.
+      3. Re-runs ``run_taskgraph`` with the same graph but only the
+         affected stages — UPSTREAM stages are left alone.
+
+    Returns a fresh :class:`TaskGraphResult` reflecting just the
+    replayed stage range. The aggregated rollback_manifest.json on
+    disk is rewritten to combine the surviving upstream entries +
+    the replayed entries (so a subsequent full `localflow rollback`
+    still undoes everything from a clean state).
+    """
+    from app.harness.rollback import Rollback, filter_manifest_to_stage
+
+    stage_ids = [s.stage_id for s in graph.stages]
+    if from_stage not in stage_ids:
+        raise ValueError(f"replay_from_stage: {from_stage!r} not in graph stages: {stage_ids}")
+    pivot = stage_ids.index(from_stage)
+    affected = stage_ids[pivot:]
+
+    # Existing manifest. Filter into upstream (kept) + affected (rolled back).
+    existing = run_store.load_rollback() if run_store.exists(run_store.ROLLBACK_JSON) else None
+    if existing is None:
+        raise RuntimeError("replay_from_stage: no existing rollback manifest to filter")
+
+    affected_entries = []
+    for sid in affected:
+        affected_entries.extend(filter_manifest_to_stage(existing, sid).entries)
+    upstream_entries = [
+        e
+        for e in existing.entries
+        if not any(e.action_id.startswith(f"{sid}.") for sid in affected)
+    ]
+
+    # Roll back affected entries.
+    affected_manifest = existing.model_copy(update={"entries": affected_entries})
+    rollback = Rollback(
+        workspace_root=Path(graph.workspace_root),
+        run_store=run_store,
+        trace=trace,
+    )
+    rb_outcome = rollback.run(affected_manifest, force=False)
+    if rb_outcome.conflicts:
+        raise RuntimeError(
+            f"replay_from_stage: rollback halted on drift in affected stages: "
+            f"{[c['action_id'] for c in rb_outcome.conflicts]}"
+        )
+
+    # Replay just the affected slice as a fresh sub-graph. Each replayed
+    # stage's action_ids get re-prefixed as usual, so the new manifest's
+    # entries don't collide with kept upstream entries (different stage
+    # prefixes already disambiguate).
+    sub_graph = graph.model_copy(update={"stages": graph.stages[pivot:]})
+    sub_result = run_taskgraph(sub_graph, run_store=run_store, trace=trace, approved=True)
+
+    # Re-stitch the manifest: upstream entries + the new affected entries.
+    new_aggregated = run_store.load_rollback()
+    merged_entries = upstream_entries + list(new_aggregated.entries)
+    merged = new_aggregated.model_copy(update={"entries": merged_entries})
+    run_store.save_rollback(merged)
+    return sub_result
+
+
 def _maybe_run_stage_repair(
     *,
     sub_task: TaskSpec,

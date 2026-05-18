@@ -108,8 +108,20 @@ class StageSpec(BaseModel):
         default=1,
         ge=1,
         description=(
-            "Phase 10 always uses 1. Phase 12 (Repair Loop) will wire "
-            "retry-with-repair semantics here without a schema bump."
+            "Phase 10 always uses 1. Phase 13 (Repair Loop) wires "
+            "retry-with-repair semantics here for failure_policy=REPAIR."
+        ),
+    )
+    cross_stage_repair_target: str | None = Field(
+        default=None,
+        description=(
+            "Phase 15 — when this stage exhausts in-stage repair and a "
+            "target stage_id is set here, the runner rolls back to that "
+            "upstream stage (inclusive) and replays the graph from there. "
+            "Useful when a stage's failure traces back to an earlier "
+            "stage's wrong output (e.g. data analysis fails because "
+            "organize moved the CSV somewhere unexpected). Must reference "
+            "a stage strictly upstream of this one in the graph's stage list."
         ),
     )
     notes: str | None = None

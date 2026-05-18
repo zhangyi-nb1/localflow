@@ -181,15 +181,19 @@ Pack demo:       Workspace Pack Builder (v0.14.0) — 5-stage TaskGraph
                  workspace_visualizer + agent; stage 5 (LLM) uses
                  failure_policy: skip so CI without an API key still
                  produces stages 1-4 outputs.
-Tests:           518 passing across 5 OS × Python matrix in CI
+Tests:           526 passing across 5 OS × Python matrix in CI
 ```
 
-v0.14.1 polish adds: typed `SourceLedger` schema + `localflow ledger`
-CLI; folder_organizer's `route_low_confidence_to_review` task pref
-(opt-in routing of `other`-typed files to `review/` with an
-unresolved_files.md triage list); new `topic_clusterer` skill
-(LLM-driven semantic topic grouping under `topics/<topic>/`, distinct
-from folder_organizer's extension-based categories).
+v0.14.1 polish: typed `SourceLedger` schema + `localflow ledger`
+CLI; folder_organizer's `route_low_confidence_to_review` task pref;
+new `topic_clusterer` skill (semantic topic grouping).
+
+v0.15.0 Phase 15 (integration / exposure): vision-based
+`chart_accurate` grader; new MCP tools `taskgraph_run`,
+`verify_semantic`, `repair_run` so external clients can drive
+v0.10/v0.13 capabilities; `localflow rollback --stage <id>` for
+per-stage rollback; `localflow taskgraph replay --from-stage <id>`
+for cross-stage repair; `StageSpec.cross_stage_repair_target` field.
 
 Three equivalent driver layers, same kernel:
 

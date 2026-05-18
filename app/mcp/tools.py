@@ -492,6 +492,177 @@ def handle_memory_unset_naming_style(args: dict[str, Any]) -> dict[str, Any]:
     return {"changed": result.changed, "event": result.event, "detail": result.detail}
 
 
+def handle_taskgraph_run(args: dict[str, Any]) -> dict[str, Any]:
+    """Phase 15 — drive a multi-stage TaskGraph end-to-end via MCP.
+
+    Accepts the same YAML payload as ``localflow taskgraph run``. The
+    MCP caller is responsible for understanding that every stage's
+    actions inherit the graph-level approval — the harness still
+    enforces policy_guard per action, but the user-approval ceremony
+    is collapsed into one ``approved=True`` from the MCP client.
+    """
+    import yaml
+
+    from app.harness.taskgraph_runner import run_taskgraph
+    from app.schemas import TaskGraph
+
+    raw = _require(args, "graph_yaml", str)
+    try:
+        payload = yaml.safe_load(raw)
+        graph = TaskGraph.model_validate(payload)
+    except Exception as exc:
+        return {"ok": False, "error": f"invalid graph YAML: {exc}"}
+
+    store = RunStore.create()
+    try:
+        result = run_taskgraph(graph, run_store=store, approved=True)
+    except Exception as exc:  # pragma: no cover — defensive
+        return {"ok": False, "task_id": store.task_id, "error": f"{type(exc).__name__}: {exc}"}
+
+    return {
+        "ok": result.passed,
+        "task_id": store.task_id,
+        "stage_count": len(result.stages),
+        "passed_stages": sum(1 for s in result.stages if s.status.value == "passed"),
+        "result": to_jsonable(result),
+    }
+
+
+def handle_verify_semantic(args: dict[str, Any]) -> dict[str, Any]:
+    """Phase 15 — run the v0.13 semantic verifier against an existing run.
+
+    Read-only with respect to the workspace: it computes verdicts and
+    persists ``semantic_verify.json`` under the run dir. Does NOT
+    trigger auto-repair — that's ``repair_run``'s job.
+    """
+    from app.harness.semantic_verifier import SemanticVerifier
+    from app.schemas import ExecutionRecord, RollbackManifest
+
+    task_id = _require(args, "task_id", str)
+    store = RunStore(task_id=task_id)
+    if not store.exists(store.PLAN_JSON):
+        return {"ok": False, "error": f"no plan for task {task_id}"}
+    task = store.load_task()
+    plan = store.load_plan()
+    snapshot = store.load_workspace()
+    structural = store.load_verification() if store.exists(store.VERIFY_JSON) else None
+    if structural is None:
+        return {"ok": False, "error": "task hasn't been executed yet"}
+    manifest = (
+        store.load_rollback()
+        if store.exists(store.ROLLBACK_JSON)
+        else RollbackManifest(
+            task_id=task.task_id, run_id=task.task_id, entries=[], file_hashes_before={}
+        )
+    )
+    raw = store.read_json(store.actions_path) if store.exists(store.ACTIONS_JSON) else []
+    records = [ExecutionRecord.model_validate(r) for r in raw] if isinstance(raw, list) else []
+    verifier = SemanticVerifier(Path(task.workspace_root))
+    result = verifier.verify(
+        task=task,
+        plan=plan,
+        execution_records=records,
+        manifest=manifest,
+        snapshot_before=snapshot,
+        snapshot_after=None,
+        structural=structural,
+        run_id=task.task_id,
+    )
+    store.write_model(store.semantic_verify_path, result)
+    return {"ok": result.passed, "task_id": task_id, "verdicts": to_jsonable(result)}
+
+
+def handle_repair_run(args: dict[str, Any]) -> dict[str, Any]:
+    """Phase 15 — run ONE auto-repair cycle on an existing task.
+
+    Wraps Phase 13's ``run_repair_loop``: runs the semantic verifier,
+    and on rejection rolls back + revises + re-executes, bounded by
+    ``max_attempts`` (default 2). Returns the final repair outcome.
+    """
+    from app.harness.executor import ExecutionOutcome
+    from app.harness.repair_loop import run_repair_loop
+    from app.harness.semantic_verifier import SemanticVerifier
+    from app.schemas import ExecutionRecord
+
+    task_id = _require(args, "task_id", str)
+    max_attempts = int(args.get("max_attempts", 2))
+
+    store = RunStore(task_id=task_id)
+    if not store.exists(store.PLAN_JSON):
+        return {"ok": False, "error": f"no plan for task {task_id}"}
+    task = store.load_task()
+    plan = store.load_plan()
+    snapshot = store.load_workspace()
+    if not store.exists(store.VERIFY_JSON) or not store.exists(store.ROLLBACK_JSON):
+        return {
+            "ok": False,
+            "error": "task hasn't been executed yet (no verify_report / rollback_manifest)",
+        }
+    structural = store.load_verification()
+    manifest = store.load_rollback()
+    raw = store.read_json(store.actions_path) if store.exists(store.ACTIONS_JSON) else []
+    records = [ExecutionRecord.model_validate(r) for r in raw] if isinstance(raw, list) else []
+    outcome = ExecutionOutcome(
+        run_id=task.task_id,
+        records=records,
+        manifest=manifest,
+        success=structural.passed,
+    )
+
+    sem_verifier = SemanticVerifier(Path(task.workspace_root))
+    semantic = sem_verifier.verify(
+        task=task,
+        plan=plan,
+        execution_records=records,
+        manifest=manifest,
+        snapshot_before=snapshot,
+        snapshot_after=None,
+        structural=structural,
+        run_id=task.task_id,
+    )
+    store.write_model(store.semantic_verify_path, semantic)
+    if semantic.passed:
+        return {
+            "ok": True,
+            "task_id": task_id,
+            "repaired": True,
+            "attempts": 0,
+            "halt_reason": "passed",
+            "detail": "semantic verifier already passing — nothing to repair",
+        }
+
+    skill = get_default_registry().require(task.skill)
+    _, state, repair_outcome = run_repair_loop(
+        task,
+        snapshot=snapshot,
+        current_plan=plan,
+        current_outcome=outcome,
+        current_structural=structural,
+        current_semantic=semantic,
+        skill=skill,
+        run_store=store,
+        max_attempts=max_attempts,
+    )
+    return {
+        "ok": repair_outcome.repaired,
+        "task_id": task_id,
+        "repaired": repair_outcome.repaired,
+        "attempts": repair_outcome.attempts,
+        "halt_reason": repair_outcome.halt_reason,
+        "final_plan_version": repair_outcome.final_plan_version,
+        "history": [
+            {
+                "attempt": a.attempt,
+                "grader": a.grader,
+                "plan_version": a.plan_version,
+                "structural_passed": a.structural_passed,
+                "semantic_passed": a.semantic_passed,
+            }
+            for a in repair_outcome.history
+        ],
+    }
+
+
 def handle_memory_set_prefer_llm_planner(args: dict[str, Any]) -> dict[str, Any]:
     value = _require(args, "value", bool)
     result = MemoryStore().set_prefer_llm_planner(value)
@@ -777,6 +948,54 @@ TOOLS: list[ToolDef] = [
         description="Reset prefer_llm_planner to default (False).",
         input_schema={"type": "object", "properties": {}},
         handler=handle_memory_unset_prefer_llm_planner,
+    ),
+    # --- Phase 15: drive multi-stage + repair capabilities via MCP -------
+    ToolDef(
+        name="taskgraph_run",
+        description=(
+            "v0.15 — Run a multi-stage TaskGraph end-to-end. Accepts the "
+            "same YAML payload as `localflow taskgraph run`. The MCP "
+            "caller's invocation implicitly approves all stages (the "
+            "harness still enforces policy_guard per action)."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {"graph_yaml": {"type": "string"}},
+            "required": ["graph_yaml"],
+        },
+        handler=handle_taskgraph_run,
+    ),
+    ToolDef(
+        name="verify_semantic",
+        description=(
+            "v0.15 — Run v0.13's semantic verifier against an existing "
+            "executed task. Report-only: no rollback, no re-execute. "
+            "Persists ``semantic_verify.json`` under the run dir."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {"task_id": {"type": "string"}},
+            "required": ["task_id"],
+        },
+        handler=handle_verify_semantic,
+    ),
+    ToolDef(
+        name="repair_run",
+        description=(
+            "v0.15 — Run v0.13's auto-repair loop on an existing executed "
+            "task. Runs semantic verifier; on rejection rolls back + "
+            "revises + re-executes up to max_attempts (default 2). "
+            "Returns the final repair outcome."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "max_attempts": {"type": "integer", "minimum": 0, "maximum": 5},
+            },
+            "required": ["task_id"],
+        },
+        handler=handle_repair_run,
     ),
 ]
 
