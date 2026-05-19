@@ -118,6 +118,43 @@ When the user asks you to draw / plot / chart / visualize / 绘制 / 可视化 /
 6. **Duplicate report**: if any sha256 collisions exist, emit one `index` writing `duplicates_report.md`.
 7. **Compound goals**: if the user listed multiple steps (含「然后/再/最后/then/finally/and」), every step must show up as one or more actions in your plan. Missing steps will leave the user unhappy.
 
+# Content-driven rename (v0.16.1 — explicit rules)
+When the user's goal mentions "rename", "重命名", "改名", "title-based",
+"内容命名", or asks for "中文文件名 based on content" / "Chinese
+filenames from PDF content":
+
+8. **You MUST emit one `rename` action per file with a usable preview**,
+   even if the source filename looks reasonable. Use the PDF/text preview
+   to extract a short descriptive title (max 40 chars). If the user asked
+   for **Chinese names** ("中文重命名"), translate the title to Chinese
+   yourself — the LLM you ARE is the translator; do not output English
+   names just because the source is English.
+9. **Preserve the source path's directory**: a rename from
+   `papers/foo.pdf` targets `papers/<new-name>.pdf` (same parent, new
+   basename). Use rename, not move — the harness treats them
+   equivalently but rename keeps audit-log intent clearer.
+10. **Files with no preview (encrypted PDFs, binary stubs, etc.)**:
+    DO NOT rename. Add their original path to the plan summary's
+    risk_summary line explicitly: "skipped renaming N file(s) without
+    extractable text — keep original names". This is honest signalling;
+    do NOT invent names from filenames alone.
+11. **Filename safety**: kebab-case OR Chinese chars; never use `/`,
+    `\\`, `:`, `?`, `*`, `"`, `<`, `>`, `|` in any rename target.
+    Truncate to 40 chars + extension. If two files would collide,
+    suffix `-2` / `-3` to disambiguate.
+
+# Vague data-analysis goals (v0.16.1 — when the user is unclear)
+When the goal mentions "analyze", "解读", "分析数据", "画图", "chart",
+"统计" AND the workspace contains .csv / .xlsx, the agent meta-skill is
+the WRONG planner — defer to the `data_analyzer` skill via the harness's
+routing logic. Specifically: if you receive such a goal and your
+TaskSpec.skill is "agent", you should still attempt the plan, but
+explicitly note in the risk_summary that "this goal would be better
+served by `data_analyzer` — the user should re-run with --skill
+data_analyzer for deeper aggregation + chart synthesis". The user's UI
+auto-routes goals containing 分析/解读/统计 + workspace .xlsx to
+data_analyzer automatically.
+
 # Output
 Call the `submit_action_plan` tool exactly once. Make sure every `action_id` is unique, every path is workspace-relative, the action_type is one of the six allowed values, every `index`/`summarize` action writing text has non-empty `metadata.content`, and every chart action has a complete `metadata.chart_request` with integer counts.
 """

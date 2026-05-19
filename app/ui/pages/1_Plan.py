@@ -42,6 +42,13 @@ def main() -> None:
     render_header("app.page_title.plan", "plan.subtitle")
     render_unsafe_banner()
     render_sandbox_sidebar()
+    # v0.16.1 — robust page navigation. A button click sets this flag
+    # + triggers st.rerun; the next render reads it at the top and
+    # actually performs the switch_page. This works even when the
+    # rerun lands in a code path (e.g. _maybe_show_last_plan) that
+    # doesn't re-render the originating button.
+    if st.session_state.pop("_nav_to_execute", False):
+        st.switch_page("pages/2_Execute.py")
     workspace = require_workspace()
 
     registry = get_default_registry()
@@ -67,22 +74,12 @@ def main() -> None:
     skill_choice = autodetect_skill(goal, detect_snapshot, registry)
     planner_choice = autodetect_planner(goal, skill_choice.name, registry, prefer_llm=prefer_llm)
 
-    if goal.strip():
-        st.markdown(
-            t(
-                "plan.autodetect.label",
-                skill=skill_choice.name,
-                planner=planner_choice.name,
-            )
-        )
-        st.caption(
-            t(
-                "plan.autodetect.reason",
-                skill_reason=skill_choice.reason,
-                planner_reason=planner_choice.reason,
-            )
-        )
-    else:
+    # v0.16.1 — the autodetect labels were misleading users (every
+    # non-empty goal → "llm" mode, regardless of whether the goal
+    # actually needed LLM planning). The routing logic still runs
+    # underneath; we just don't surface it in the UI. The empty-goal
+    # hint stays because it's actionable ("describe what you want").
+    if not goal.strip():
         st.markdown(t("plan.goal.empty_hint"))
 
     skill_name = skill_choice.name
@@ -176,7 +173,8 @@ def main() -> None:
             type="primary",
             key="goto_execute_btn",
         ):
-            st.switch_page("pages/2_Execute.py")
+            st.session_state["_nav_to_execute"] = True
+            st.rerun()
         st.caption(t("plan.caption.goto_execute"))
 
 
@@ -223,6 +221,17 @@ def _maybe_show_last_plan() -> None:
     skill_obj = get_default_registry().get(task.skill)
     if skill_obj is not None:
         _render_refine_section(task, snapshot, plan, skill_obj, store)
+    # v0.16.1 — always offer the Continue-to-Execute jump on revisits.
+    # The original code only rendered it inside the "fresh plan" block,
+    # so users who navigated away + back couldn't jump to Execute.
+    col_btn, _ = st.columns([1, 3])
+    if col_btn.button(
+        t("plan.button.goto_execute"),
+        type="primary",
+        key=f"goto_execute_btn_revisit_{task_id}",
+    ):
+        st.session_state["_nav_to_execute"] = True
+        st.rerun()
 
 
 def _render_refine_section(

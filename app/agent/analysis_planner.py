@@ -144,6 +144,25 @@ def plan_analysis_with_llm(
     # Run the engine against the LLM-chosen source file.
     result = _execute_spec_against_workspace(spec, workspace_root)
 
+    # v0.16.1 — single self-eval retry on empty / error results. If the
+    # first spec produced no useful rows, ask the LLM to try a simpler
+    # alternative (groupby a low-cardinality categorical on count + no
+    # filters). One retry only — beyond that we accept the empty result
+    # and let the user trigger Phase 13's auto-repair or refine manually.
+    if (
+        result.outcome.value in ("empty_result", "invalid_spec", "execution_error")
+        and response is not None
+    ):
+        result = _retry_with_empty_result_hint(
+            client=client,
+            task=task,
+            snapshot=snapshot,
+            workspace_root=workspace_root,
+            first_spec=spec,
+            first_result=result,
+            on_delta=on_delta,
+        )
+
     plan_id = f"plan-{uuid.uuid4().hex[:8]}"
     return build_plan_from_results(
         plan_id=plan_id,
@@ -152,6 +171,62 @@ def plan_analysis_with_llm(
         results=[result],
         input_file_count=1,
     )
+
+
+def _retry_with_empty_result_hint(
+    *,
+    client: LLMClient,
+    task: TaskSpec,
+    snapshot: WorkspaceSnapshot,
+    workspace_root: Path,
+    first_spec: AnalysisSpec,
+    first_result: Any,
+    on_delta,
+):
+    """v0.16.1 — one-shot retry when the first spec produced an empty /
+    invalid / error outcome. Synthesises a hint user-message telling
+    the LLM what went wrong + asking for a simpler default."""
+    hint = (
+        "Your first AnalysisSpec produced an empty / errored result on this "
+        "dataset (outcome=" + first_result.outcome.value + "). Common causes: "
+        "the column you picked is mostly null in the actual data, the filter "
+        "rejected every row, or the aggregation operates on non-numeric "
+        "data. Re-emit a SIMPLER spec: pick a different categorical column "
+        "with low cardinality (≤ 10 distinct values) and aggregate row "
+        "counts (no filter, no sort). If the previous spec's source_file "
+        "looked viable, keep it; if not, pick a different file from the "
+        "workspace summary."
+    )
+    tool_schema = build_analysis_spec_tool_schema()
+    messages = [
+        {"role": "user", "content": render_user_prompt(task, snapshot)},
+        {"role": "user", "content": hint},
+    ]
+    try:
+        response = client.generate_structured(
+            system=SYSTEM_PROMPT,
+            messages=messages,
+            tool_name=TOOL_NAME,
+            tool_description=TOOL_DESCRIPTION,
+            tool_schema=tool_schema,
+            on_delta=on_delta,
+        )
+    except LLMClientError:
+        # Retry call itself failed — return the original (empty) result;
+        # the user can refine manually.
+        return first_result
+
+    retry_spec, retry_errors = _coerce_payload_to_spec(response.payload)
+    if retry_spec is None or retry_errors:
+        return first_result
+    validation_errors = _semantic_validate(retry_spec, snapshot, workspace_root)
+    if validation_errors:
+        return first_result
+    retry_result = _execute_spec_against_workspace(retry_spec, workspace_root)
+    if retry_result.outcome.value == "ok":
+        return retry_result
+    # Retry also failed — return whichever has more useful info (prefer ok).
+    return first_result
 
 
 # --------------------------------------------------------------------- payload coercion

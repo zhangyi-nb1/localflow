@@ -291,6 +291,17 @@ class LLMPlanner:
             self._emit_repair(task, attempt, errors)
             messages = self._append_repair_turn(messages, response, errors)
 
+        # v0.16.1 — exhaustion path. Before raising, try to salvage a
+        # partial ActionPlan from the latest attempt: keep actions that
+        # individually pass policy_guard + structural checks, drop the
+        # ones that don't, and pack a diagnostic into the summary so
+        # the user can decide whether to execute the degraded version.
+        # The user's UI / CLI surfaces this via the regular dry-run
+        # ceremony — they're never executing something they didn't see.
+        partial = self._synthesize_partial_plan(task)
+        if partial is not None:
+            return partial
+
         joined = "\n\n".join(
             f"-- attempt {i} ({log.outcome}) --\n" + "\n".join(log.errors)
             for i, log in enumerate(self.last_attempts, start=1)
@@ -342,6 +353,134 @@ class LLMPlanner:
             plan = plan.model_copy(update={"plan_id": f"plan-{uuid.uuid4().hex[:8]}"})
 
         return plan
+
+    def _synthesize_partial_plan(self, task: TaskSpec) -> ActionPlan | None:
+        """v0.16.1 — try to recover a degraded but usable ActionPlan
+        from the last LLM attempt instead of raising PlannerFailure.
+
+        Algorithm:
+          1. Pull the last attempt's raw payload.
+          2. Try to coerce it into ActionPlan via Pydantic. If even
+             Pydantic refuses the whole thing, give up and return None.
+          3. Walk actions one-by-one through policy_guard. Keep the
+             ones that pass; drop the rest with the reason logged.
+          4. If we keep at least 1 action, return a degraded plan with
+             a diagnostic in summary + risk_summary. Otherwise return
+             None and let the caller raise.
+
+        The returned plan keeps the user in control — the harness
+        still runs dry-run + approval before any execute. The user
+        sees the diagnostic and decides.
+        """
+        if not self.last_attempts:
+            return None
+        last = self.last_attempts[-1]
+        if not isinstance(last.payload, dict):
+            return None
+
+        try:
+            candidate = ActionPlan.model_validate(last.payload)
+        except ValidationError:
+            # Couldn't even Pydantic-parse the payload. Try to keep
+            # whatever individual actions did parse + scaffold a fresh
+            # plan around them.
+            actions = _salvage_actions(last.payload)
+            if not actions:
+                return None
+            candidate = ActionPlan(
+                plan_id=f"plan-{uuid.uuid4().hex[:8]}",
+                task_id=task.task_id,
+                summary="(partial) LLM payload failed schema; salvaged individual actions.",
+                actions=actions,
+                expected_outputs=[],
+                risk_summary="degraded",
+            )
+
+        kept: list[Action] = []
+        dropped: list[tuple[str, str]] = []  # (action_id, reason)
+        for action in candidate.actions:
+            try:
+                from app.harness.action_validator import validate_plan_structure
+                from app.harness.policy_guard import evaluate_action
+
+                # Spot-check: run the action through policy_guard alone.
+                # Skip dup-id checks here — those are validate_plan_structure's
+                # job, and a partial plan can't have dup IDs by construction.
+                pd_path = _path_for_guard(task.workspace_root)
+                decision = evaluate_action(
+                    pd_path,
+                    action,
+                    forbidden_actions=tuple(task.forbidden_actions),
+                    forbidden_paths=tuple(task.forbidden_paths),
+                )
+                if not decision.allowed:
+                    dropped.append((action.action_id, "; ".join(decision.reasons)))
+                    continue
+                # Also smoke-test plan-structure on a single-action plan.
+                trial = candidate.model_copy(update={"actions": [action]})
+                validate_plan_structure(trial)
+            except Exception as exc:
+                dropped.append((action.action_id, f"{type(exc).__name__}: {exc}"))
+                continue
+            kept.append(action)
+
+        if not kept:
+            return None
+
+        diagnostic = self._diagnose()
+        salvage_note = (
+            f"⚠️ PARTIAL PLAN (v0.16.1 fallback): kept {len(kept)} of "
+            f"{len(candidate.actions)} action(s) after {self.max_attempts} "
+            f"failed full-plan attempts. {diagnostic}"
+        )
+        if dropped:
+            sample = "; ".join(f"{aid}: {why[:60]}" for aid, why in dropped[:3])
+            salvage_note += f" Dropped: {sample}"
+
+        return ActionPlan(
+            plan_id=candidate.plan_id or f"plan-{uuid.uuid4().hex[:8]}",
+            task_id=task.task_id,
+            summary=salvage_note,
+            actions=kept,
+            expected_outputs=[],
+            risk_summary=(
+                "degraded — review the plan carefully before executing. "
+                f"The LLM couldn't satisfy your full goal in {self.max_attempts} attempts; "
+                "this is the largest subset of its last proposal that passed policy_guard. "
+                'Consider re-running with `localflow revise --hint "..."` to address '
+                "the dropped actions."
+            ),
+        )
+
+    def _diagnose(self) -> str:
+        """Build a short human-readable explanation of why the LLM
+        couldn't produce a fully-valid plan. Counts how many attempts
+        ended in each outcome and surfaces the dominant failure mode."""
+        if not self.last_attempts:
+            return "no diagnostic available."
+        counts: dict[str, int] = {}
+        for log in self.last_attempts:
+            counts[log.outcome] = counts.get(log.outcome, 0) + 1
+        if not counts:
+            return "no diagnostic available."
+        # Sort by count descending, take the top reason
+        sorted_outcomes = sorted(counts.items(), key=lambda kv: -kv[1])
+        top, top_n = sorted_outcomes[0]
+        if top == "schema_invalid":
+            return (
+                f"{top_n}/{len(self.last_attempts)} attempts produced a plan that violated the "
+                "submit_action_plan tool schema (often: missing fields, wrong types, "
+                "or an action_type not in the allowed set). Consider rephrasing the "
+                "goal in more concrete terms, or use a more specialized skill."
+            )
+        if top == "policy_blocked":
+            return (
+                f"{top_n}/{len(self.last_attempts)} attempts proposed actions that policy_guard "
+                "rejected (often: forbidden_paths intersection, delete action, "
+                "or paths escaping the workspace). Consider widening allowed_actions "
+                "or relaxing forbidden_paths for this task."
+            )
+        return f"top failure mode: {top} ({top_n}/{len(self.last_attempts)} attempts)."
 
     def _append_repair_turn(
         self,
@@ -466,6 +605,25 @@ def _path_for_guard(workspace_root: str):
     from pathlib import Path
 
     return Path(workspace_root)
+
+
+def _salvage_actions(payload: dict[str, Any]) -> list[Action]:
+    """v0.16.1 — best-effort: walk an unvalidated LLM payload's
+    ``actions`` list and keep entries that Pydantic can individually
+    accept. Used by the partial-plan fallback when the whole plan
+    failed schema validation but some actions inside it didn't."""
+    raw_actions = payload.get("actions") if isinstance(payload, dict) else None
+    if not isinstance(raw_actions, list):
+        return []
+    out: list[Action] = []
+    for entry in raw_actions:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            out.append(Action.model_validate(entry))
+        except ValidationError:
+            continue
+    return out
 
 
 def _build_refinement_message(prior_plan_actions: list[Action], user_hint: str) -> str:

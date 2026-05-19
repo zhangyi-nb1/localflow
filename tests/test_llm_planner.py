@@ -135,18 +135,41 @@ def test_llm_planner_rejects_wrong_task_id(task, snapshot) -> None:
 # --------------------------------------------------------------------- failure
 
 
-def test_llm_planner_gives_up_after_max_attempts(task, snapshot) -> None:
+def test_llm_planner_partial_plan_fallback_after_max_attempts(task, snapshot) -> None:
+    """v0.16.1 — instead of raising on exhaustion, the planner now
+    tries to salvage individually-valid actions from the last attempt
+    into a degraded ActionPlan. The user sees the plan in dry-run +
+    decides whether to execute the partial result."""
     bad = _good_payload(task.task_id)
-    del bad["summary"]  # required top-level field; Pydantic rejects
+    del bad["summary"]  # plan-level required field missing; Pydantic rejects whole plan
     # Three identical bad payloads — the model never learns.
     client = FakeLLMClient(payloads=[bad, bad, bad])
 
+    plan = plan_with_llm(task, snapshot, client=client, max_attempts=3)
+    # Three failed full-plan attempts → salvage path produces a degraded plan
+    # with the validated actions kept + a diagnostic in summary.
+    assert "PARTIAL" in plan.summary.upper() or "partial" in plan.summary
+    assert plan.actions, "partial-plan fallback should keep at least one action"
+    assert len(client.calls) == 3
+
+
+def test_llm_planner_raises_when_no_salvage_possible(task, snapshot) -> None:
+    """v0.16.1 — when the last attempt has zero parseable actions, the
+    planner falls through to the original PlannerFailure path."""
+    # Payload with malformed actions field (not a list) — Pydantic-parse
+    # fails AND _salvage_actions finds nothing.
+    bad = {
+        "plan_id": "x",
+        "task_id": task.task_id,
+        "summary": "x",
+        "actions": "not-a-list",
+        "expected_outputs": [],
+        "risk_summary": "x",
+    }
+    client = FakeLLMClient(payloads=[bad, bad, bad])
     with pytest.raises(PlannerFailure) as excinfo:
         plan_with_llm(task, snapshot, client=client, max_attempts=3)
-
     assert len(excinfo.value.attempts) == 3
-    assert all(a.outcome == "schema_invalid" for a in excinfo.value.attempts)
-    assert len(client.calls) == 3
 
 
 # --------------------------------------------------------------------- integration

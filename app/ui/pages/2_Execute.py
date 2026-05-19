@@ -29,6 +29,9 @@ def main() -> None:
     render_header("app.page_title.execute", "execute.subtitle")
     render_unsafe_banner()
     render_sandbox_sidebar()
+    # v0.16.1 — same robust-nav pattern as Plan page.
+    if st.session_state.pop("_nav_to_rollback", False):
+        st.switch_page("pages/3_Rollback.py")
 
     task_id = _pick_task()
     if task_id is None:
@@ -184,7 +187,8 @@ def main() -> None:
                 type="primary",
                 key="goto_rollback_btn",
             ):
-                st.switch_page("pages/3_Rollback.py")
+                st.session_state["_nav_to_rollback"] = True
+                st.rerun()
             st.caption(t("execute.caption.goto_rollback"))
         else:
             st.error(

@@ -200,6 +200,16 @@ per-skill LLM tool schema scoping (restricts the model to its task's
 **MCP client** (`localflow mcp-clients list/add/remove/probe`) for
 inventorying external MCP servers.
 
+v0.16.1 polish (from user testing): UI nav buttons now actually
+navigate (session-state flag + top-of-render `switch_page`);
+autodetect display removed from Plan page (was misleading);
+agent system prompt has explicit rules for content-driven rename +
+vague data goals; **partial-plan fallback** — when the LLM can't
+produce a fully-valid plan after `MAX_REVISIONS` attempts, the
+planner salvages individually-valid actions + a diagnostic summary
+instead of raising; **data_analyzer LLM** has a stronger
+vague-goal checklist + self-eval retry on empty results.
+
 Three equivalent driver layers, same kernel:
 
 ```powershell
