@@ -1,0 +1,30 @@
+# pdf_indexer · {{ T.final_report_h1_prefix }} `{{ task_id }}`
+
+- {{ T.workspace_label }}: `{{ workspace_root }}`
+- {{ T.goal_label }}: {{ user_goal }}
+
+## {{ T.outcome_h2 }}
+- {{ T.actions_inline }}: {{ total_actions }}  ·  {{ T.succeeded_inline }}: {{ succeeded }}  ·  {{ T.failed_inline }}: {{ failed }}
+- {{ T.verifier_inline }}: **{{ T.passed_badge if verifier_passed else T.failed_badge }}** — {{ verifier_summary }}
+
+{% if first_action %}
+## {{ T.index_sources_h2 }}
+
+{{ T.index_sources_summary_template.format(count=sources|length) }}
+
+{% for src in sources %}
+- `{{ src.path }}` — title: "{{ src.title }}" ({{ T.preview_marker if src.has_preview else T.filename_only_marker }})
+{% endfor %}
+
+## {{ T.output_h2 }}
+
+- `{{ first_action_target }}` {{ T.written_rollback_suffix }}
+
+{% endif %}
+## {{ T.how_to_undo_h2 }}
+
+{{ T.how_to_undo_intro }}
+
+```bash
+localflow rollback --run-id {{ run_id }}
+```

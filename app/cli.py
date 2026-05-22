@@ -15,7 +15,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import typer
 from rich.console import Console, Group
@@ -777,11 +777,23 @@ def cmd_rollback(
     of a multi-stage graph.
     """
     from app.harness.rollback import filter_manifest_to_stage
+    from app.schemas import TaskGraph
 
     store = RunStore(task_id=run_id)
     if not store.rollback_path.exists():
         raise typer.BadParameter(f"no rollback manifest for run {run_id}")
-    task = store.load_task()
+    # Phase 21.1: pack / TaskGraph runs only write taskgraph.json (no
+    # root task.json). Fall back to reading workspace_root from the
+    # graph so rollback works for both run shapes.
+    if store.task_path.exists():
+        workspace_root = store.load_task().workspace_root
+    elif store.taskgraph_path.exists():
+        workspace_root = store.read_model(store.taskgraph_path, TaskGraph).workspace_root
+    else:
+        raise typer.BadParameter(
+            f"run {run_id} has neither task.json nor taskgraph.json — "
+            "cannot determine workspace root"
+        )
     manifest = store.load_rollback()
 
     if stage is not None:
@@ -796,14 +808,14 @@ def cmd_rollback(
     if not yes:
         scope = f"stage `{stage}` in " if stage else ""
         confirm = typer.confirm(
-            f"Roll back {len(manifest.entries)} change(s) {scope}{task.workspace_root}?"
+            f"Roll back {len(manifest.entries)} change(s) {scope}{workspace_root}?"
         )
         if not confirm:
             console.print("[yellow]Rollback cancelled.[/]")
             raise typer.Exit(code=1)
 
     trace = TraceLogger(store.trace_path)
-    rollback = Rollback(workspace_root=Path(task.workspace_root), run_store=store, trace=trace)
+    rollback = Rollback(workspace_root=Path(workspace_root), run_store=store, trace=trace)
     outcome = rollback.run(manifest, force=force)
     badge = "[green]OK[/]" if outcome.success else "[red]PARTIAL[/]"
     console.print(
@@ -1165,6 +1177,30 @@ def cmd_ui_serve(
     # sees a connection-refused page. Pre-creating an empty
     # credentials file makes Streamlit skip the prompt.
     _ensure_streamlit_credentials()
+
+    # v0.19.0 hygiene: warn when the port is already bound. Stale
+    # Streamlit processes from a previous Ctrl+C that didn't fully
+    # detach will serve OLD module bytecode + cause "ImportError:
+    # cannot import name X" on pages added since the stale start —
+    # confusing to debug. Detect cheaply via a connect probe.
+    import socket as _socket
+
+    probe = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    probe.settimeout(0.3)
+    try:
+        probe.connect((host if host != "0.0.0.0" else "127.0.0.1", port))
+        probe.close()
+        console.print(
+            f"[yellow]Warning:[/] port [bold]{port}[/] is already in use. "
+            "You probably have an orphan Streamlit from a previous "
+            "Ctrl+C — it still serves the OLD code, so new pages will "
+            "fail to import.\n"
+            f"  Kill it: [cyan]netstat -ano | findstr :{port}[/] → "
+            f"[cyan]taskkill /F /PID <pid>[/]\n"
+            "  Or pass [cyan]--port 8502[/] to bind a fresh port."
+        )
+    except OSError:
+        pass  # port free — happy path
 
     console.print(
         f"[cyan]Starting LocalFlow UI[/] on [bold]http://{host}:{port}[/]  "
@@ -2037,6 +2073,15 @@ def cmd_taskgraph_run(
             "placeholder path. Defaults to the graph's declared workspace_root."
         ),
     ),
+    locale: Optional[str] = typer.Option(
+        None,
+        "--locale",
+        help=(
+            "Override the graph's language for user-facing generated content. "
+            "One of: zh-CN, en-US. Defaults to the graph's declared locale "
+            "(zh-CN if unset)."
+        ),
+    ),
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Approve the graph spec without prompting."
     ),
@@ -2065,12 +2110,21 @@ def cmd_taskgraph_run(
     if workspace is not None:
         tg = tg.model_copy(update={"workspace_root": str(workspace.resolve())})
 
+    if locale is not None:
+        if locale not in {"zh-CN", "en-US"}:
+            console.print(
+                f"[red]invalid --locale {locale!r}; expected zh-CN or en-US[/]"
+            )
+            raise typer.Exit(code=2)
+        tg = tg.model_copy(update={"locale": locale})
+
     # Render the spec for the user to confirm.
     console.print(
         Panel.fit(
             f"[bold]TaskGraph: {graph.name}[/]\n"
             f"Goal: {tg.user_goal}\n"
             f"Workspace: {tg.workspace_root}\n"
+            f"Locale: {tg.locale}\n"
             f"Stages: {len(tg.stages)}\n"
             + "\n".join(
                 f"  {i + 1}. [{s.failure_policy.value}] {s.stage_id} — {s.skill} ({s.planner})"
@@ -2190,6 +2244,742 @@ def cmd_taskgraph_replay(
     console.print(
         f"{badge}  affected stages re-ran  ·  run_id [bold]{run_id}[/]  ·  "
         f"see [bold]localflow status --task-id {run_id}[/] for the merged result"
+    )
+
+
+# --------------------------------------------------------------------- pack (Phase 17)
+
+pack_app = typer.Typer(
+    help=(
+        "Phase 17 (v0.17.0) — Recipe / Pack System. Recipes are product-level "
+        "deliverable packs (Research Pack, Data Report Pack, Project Handoff "
+        "Pack) that compile down to a TaskGraph. Users pick a pack instead "
+        "of having to know individual skill names."
+    ),
+    no_args_is_help=True,
+)
+app.add_typer(pack_app, name="pack")
+
+
+@pack_app.command("list")
+def cmd_pack_list() -> None:
+    """Show every loaded recipe with its title + stage count.
+
+    Reports load errors as a separate warning section so a broken YAML
+    doesn't silently disappear from the catalog.
+    """
+    from app.recipes import get_default_registry
+
+    reg = get_default_registry()
+    recipes = reg.all()
+    if not recipes:
+        console.print(
+            "[yellow]No recipes loaded.[/] Check that the ``recipes/`` "
+            f"directory exists at {reg.recipes_dir}, or set "
+            "LOCALFLOW_RECIPES_DIR."
+        )
+    else:
+        table = Table(title="Recipe catalog")
+        table.add_column("name", style="cyan", no_wrap=True)
+        table.add_column("title", no_wrap=True)
+        # Phase 21.1: description column lets users see what each pack
+        # does without running `pack describe`. Bounded width + wrap so
+        # Rich doesn't shrink the other columns to fit.
+        table.add_column("description", style="dim", max_width=50, overflow="fold")
+        table.add_column("stages", justify="right")
+        table.add_column("outputs", justify="right")
+        table.add_column("tags", style="dim", no_wrap=True)
+        for r in recipes:
+            desc_lines = (r.description or "").strip().splitlines()
+            desc = desc_lines[0] if desc_lines else ""
+            if len(desc) > 100:
+                desc = desc[:97] + "..."
+            table.add_row(
+                r.name,
+                r.title,
+                desc or "—",
+                str(len(r.stages)),
+                str(len(r.expected_outputs)),
+                ", ".join(r.tags) or "—",
+            )
+        console.print(table)
+
+    if reg.load_errors:
+        console.print()
+        warn = Table(title="Recipe load errors", border_style="yellow")
+        warn.add_column("file", style="yellow")
+        warn.add_column("error")
+        for path, err in reg.load_errors:
+            warn.add_row(path.name, err)
+        console.print(warn)
+
+
+@pack_app.command("describe")
+def cmd_pack_describe(
+    name: str = typer.Argument(..., help="Recipe name (e.g. 'research_pack')."),
+) -> None:
+    """Print a recipe's full spec: stages, expected outputs, verifiers, repair policy."""
+    from app.recipes import RecipeNotFound, get_default_registry
+
+    reg = get_default_registry()
+    try:
+        recipe = reg.get(name)
+    except RecipeNotFound:
+        console.print(
+            f"[red]No recipe named {name!r}.[/] Available: "
+            f"{', '.join(reg.list_names()) or '(none)'}"
+        )
+        raise typer.Exit(code=2) from None
+
+    console.print(
+        Panel.fit(
+            f"[bold cyan]{recipe.title}[/] ([dim]{recipe.name}[/])\n\n"
+            f"{recipe.description.strip()}\n\n"
+            f"[dim]Tags:[/] {', '.join(recipe.tags) or '(none)'}",
+            title="Pack",
+            border_style="cyan",
+        )
+    )
+
+    stage_table = Table(title="Stages")
+    stage_table.add_column("#", style="dim", justify="right")
+    stage_table.add_column("stage_id", style="cyan")
+    stage_table.add_column("title")
+    stage_table.add_column("skill")
+    stage_table.add_column("planner")
+    stage_table.add_column("policy", style="yellow")
+    for i, s in enumerate(recipe.stages, 1):
+        stage_table.add_row(
+            str(i), s.stage_id, s.title, s.skill, s.planner, s.failure_policy.value
+        )
+    console.print(stage_table)
+
+    console.print(
+        "\n[bold]Expected deliverables:[/]\n"
+        + "\n".join(f"  - {p}" for p in recipe.expected_outputs)
+    )
+
+    if recipe.verifiers:
+        console.print(
+            f"\n[bold]Recipe-level verifiers (Phase 19):[/] {', '.join(recipe.verifiers)}"
+        )
+
+    rp = recipe.repair_policy
+    console.print(
+        f"\n[bold]Repair policy:[/] enabled={rp.enabled}, max_rounds={rp.max_rounds}"
+    )
+
+    # Phase 21.1: surface repair_target_map so users can see which
+    # stage each verifier will replay when repair fires. Without this,
+    # the user has no way to predict the auto-repair behaviour short of
+    # reading the YAML.
+    if recipe.repair_target_map:
+        rt_table = Table(title="Repair target map", border_style="dim")
+        rt_table.add_column("verifier", style="cyan")
+        rt_table.add_column("→")
+        rt_table.add_column("replays stage", style="yellow")
+        for verifier_name, stage_id in recipe.repair_target_map.items():
+            rt_table.add_row(verifier_name, "→", stage_id)
+        console.print(rt_table)
+    elif recipe.verifiers and rp.enabled:
+        console.print(
+            "\n[dim]No explicit repair_target_map — each failing verifier "
+            "defaults to replaying the last LLM stage.[/]"
+        )
+
+    exp = recipe.input_expectation
+    if exp.file_kinds or exp.keywords or exp.require_any:
+        bits = []
+        if exp.file_kinds:
+            bits.append(f"file_kinds={exp.file_kinds}")
+        if exp.require_any:
+            bits.append(f"require_any={exp.require_any}")
+        if exp.min_files:
+            bits.append(f"min_files={exp.min_files}")
+        if exp.keywords:
+            bits.append(f"keywords={exp.keywords}")
+        console.print("\n[bold]Input expectation:[/] " + ", ".join(bits))
+
+
+@pack_app.command("suggest")
+def cmd_pack_suggest(
+    workspace: Path = typer.Argument(..., help="Workspace directory to scan."),
+    goal: str = typer.Option(
+        "",
+        "--goal",
+        "-g",
+        help="Free-text user goal (e.g. 'build a research pack'). Optional.",
+    ),
+) -> None:
+    """Rank every loaded recipe against a workspace + (optional) user goal.
+
+    Useful before running a pack to see whether the router's first
+    pick matches your intent. No execution, no writes.
+    """
+    from app.recipes import RecipeRouter, get_default_registry
+    from app.tools.file_scan import scan_workspace
+
+    if not workspace.exists() or not workspace.is_dir():
+        console.print(f"[red]Workspace not found:[/] {workspace}")
+        raise typer.Exit(code=2)
+
+    snapshot = scan_workspace(workspace, task_id="suggest", compute_hash=False)
+    reg = get_default_registry()
+    router = RecipeRouter(reg)
+    ranked = router.score_all(user_goal=goal, snapshot=snapshot)
+
+    if not ranked:
+        console.print("[yellow]No recipes loaded.[/]")
+        raise typer.Exit(code=1)
+
+    table = Table(title=f"Recipe fit for {workspace}")
+    table.add_column("rank", justify="right", style="dim")
+    table.add_column("recipe", style="cyan")
+    table.add_column("score", justify="right")
+    table.add_column("why")
+    for i, s in enumerate(ranked, 1):
+        table.add_row(
+            str(i),
+            s.recipe.name,
+            f"{s.score:+d}",
+            "; ".join(s.why) or "(no signals)",
+        )
+    console.print(table)
+
+    best = router.best_match(user_goal=goal, snapshot=snapshot)
+    if best is None:
+        console.print(
+            "\n[yellow]No recipe scored above zero. "
+            "Pick one manually: `localflow pack list`.[/]"
+        )
+    else:
+        console.print(
+            f"\n[bold green]Suggested:[/] [cyan]{best.recipe.name}[/]  ·  "
+            f"`localflow pack run {best.recipe.name} --workspace {workspace}`"
+        )
+
+
+@pack_app.command("run")
+def cmd_pack_run(
+    name: str = typer.Argument(..., help="Recipe name (use `localflow pack list`)."),
+    workspace: Path = typer.Option(
+        ...,
+        "--workspace",
+        "-w",
+        help="Workspace directory the pack will operate on.",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the approval prompt."),
+    enable_repair: bool = typer.Option(
+        False,
+        "--enable-repair",
+        help=(
+            "Promote ABORT stages to REPAIR with the recipe's max_rounds. "
+            "Equivalent to authoring repair_policy.enabled=true. The semantic "
+            "verifier must also be enabled via "
+            "`localflow memory set enable_semantic_verifier true`."
+        ),
+    ),
+    locale: str = typer.Option(
+        "zh-CN",
+        "--locale",
+        help=(
+            "Language for user-facing generated content (README / SOURCES, "
+            "verifier rationales, repair hints). One of: zh-CN, en-US. "
+            "Defaults to zh-CN."
+        ),
+    ),
+) -> None:
+    """Compile a recipe to a TaskGraph and run it end-to-end.
+
+    Internally this is exactly ``localflow taskgraph run`` against a
+    generated graph: same approval ceremony, same runner, same single
+    aggregated rollback. The difference is *which* graph the user is
+    approving — pack is the product-level pitch.
+    """
+    from app.harness.taskgraph_runner import run_taskgraph
+    from app.recipes import RecipeNotFound, get_default_registry
+
+    if not workspace.exists() or not workspace.is_dir():
+        console.print(f"[red]Workspace not found:[/] {workspace}")
+        raise typer.Exit(code=2)
+
+    reg = get_default_registry()
+    try:
+        recipe = reg.get(name)
+    except RecipeNotFound:
+        console.print(
+            f"[red]No recipe named {name!r}.[/] Available: "
+            f"{', '.join(reg.list_names()) or '(none)'}"
+        )
+        raise typer.Exit(code=2) from None
+
+    if enable_repair:
+        recipe = recipe.model_copy(
+            update={
+                "repair_policy": recipe.repair_policy.model_copy(
+                    update={"enabled": True}
+                )
+            }
+        )
+
+    if locale not in ("zh-CN", "en-US"):
+        console.print(
+            f"[red]Unknown locale {locale!r};[/] expected zh-CN or en-US."
+        )
+        raise typer.Exit(code=2)
+    tg = recipe.compile_to_taskgraph(
+        workspace_root=str(workspace.resolve()), locale=locale
+    )
+
+    console.print(
+        Panel.fit(
+            f"[bold]Pack: {recipe.title}[/] ([dim]{recipe.name}[/])\n"
+            f"Workspace: {workspace}\n"
+            f"Stages: {len(tg.stages)}\n"
+            f"Repair: {recipe.repair_policy.enabled} "
+            f"(max_rounds={recipe.repair_policy.max_rounds})\n\n"
+            + "\n".join(
+                f"  {i + 1}. [{s.failure_policy.value}] {s.stage_id} — {s.skill} ({s.planner})"
+                for i, s in enumerate(tg.stages)
+            ),
+            title="Approval required",
+            border_style="cyan",
+        )
+    )
+    if not yes:
+        confirm = typer.confirm("Run this pack?")
+        if not confirm:
+            console.print("[yellow]Pack run cancelled.[/]")
+            raise typer.Exit(code=1)
+
+    store = RunStore.create()
+    trace = TraceLogger(store.trace_path)
+    result = run_taskgraph(tg, store, trace=trace, approved=True)
+
+    table = Table(title=f"Pack `{recipe.name}` run: {store.task_id}")
+    table.add_column("stage_id", style="cyan")
+    table.add_column("status")
+    table.add_column("actions", justify="right")
+    table.add_column("verifier")
+    table.add_column("duration", justify="right")
+    for s in result.stages:
+        badge = {
+            "passed": "[green]PASSED[/]",
+            "failed": "[red]FAILED[/]",
+            "skipped": "[dim]SKIPPED[/]",
+            "aborted": "[yellow]ABORTED[/]",
+        }.get(s.status.value, s.status.value)
+        verifier = (
+            "—"
+            if s.verifier_passed is None
+            else ("[green]ok[/]" if s.verifier_passed else "[red]fail[/]")
+        )
+        table.add_row(
+            s.stage_id, badge, str(s.action_count), verifier, f"{s.duration_ms} ms"
+        )
+    console.print(table)
+
+    # Phase 19 — run recipe-level verifiers if the recipe declares any.
+    verification = _run_recipe_verifiers(
+        recipe=recipe, store=store, workspace=workspace, result=result, locale=locale
+    )
+    if verification is not None:
+        _render_recipe_verification(verification)
+
+    # Phase 21 — auto-repair loop. Triggers when:
+    #   (a) every stage PASSED (otherwise the run isn't ready to repair —
+    #       a structural failure goes through Phase 13's stage-level loop),
+    #   (b) at least one recipe verifier FAILED (not skipped, not passed),
+    #   (c) the recipe's repair_policy.enabled is true (CLI flag mirrors
+    #       this into the recipe model_copy above).
+    repair_result = None
+    if (
+        verification is not None
+        and not verification.passed
+        and result.passed
+        and recipe.repair_policy.enabled
+    ):
+        repair_result = _run_recipe_repair(
+            recipe=recipe, graph=tg, store=store, verification=verification
+        )
+        if repair_result is not None:
+            _render_recipe_repair(repair_result)
+            if repair_result.final_verification is not None:
+                verification = repair_result.final_verification
+
+    badge = "[green]PASSED[/]" if result.passed else "[red]FAILED[/]"
+    console.print(
+        f"{badge}  pack `{recipe.name}` total {result.duration_ms} ms  ·  "
+        f"run_id [bold]{result.task_id}[/]  ·  "
+        f"to undo: [bold]localflow rollback --run-id {result.task_id}[/]"
+    )
+    exit_code = 0 if result.passed else 1
+    # Verifier failures are a softer signal: stages PASSED but a
+    # deliverable verifier rejected — surface as exit 3 so CI distinguishes
+    # "pipeline crashed" (1) from "delivered but failed quality checks" (3).
+    if verification is not None and not verification.passed and result.passed:
+        exit_code = 3
+    if exit_code:
+        raise typer.Exit(code=exit_code)
+
+
+def _run_recipe_repair(*, recipe, graph, store, verification):
+    """Phase 21 — drive the recipe auto-repair loop + persist its result."""
+    from app.harness.recipe_repair import run_recipe_repair
+
+    trace = TraceLogger(store.trace_path)
+    try:
+        repair_result = run_recipe_repair(
+            recipe=recipe,
+            graph=graph,
+            run_store=store,
+            initial_verification=verification,
+            trace=trace,
+        )
+    except Exception as exc:  # noqa: BLE001 — never crash the pack run.
+        console.print(f"[red]Auto-repair loop raised:[/] {type(exc).__name__}: {exc}")
+        return None
+
+    repair_path = store.path("recipe_repair.json")
+    store.write_model(repair_path, repair_result)
+    # Re-persist the FINAL verification too so future tools read the
+    # post-repair verdict, not the original pack-run one.
+    if repair_result.final_verification is not None:
+        store.write_model(
+            store.path("recipe_verification.json"),
+            repair_result.final_verification,
+        )
+    return repair_result
+
+
+def _render_recipe_repair(repair_result) -> None:
+    """Phase 21 — render the repair loop's attempts + verdict."""
+    if repair_result.rounds_used == 0:
+        return  # nothing to show — verification already passed
+    badge = (
+        "[green]REPAIRED[/]"
+        if repair_result.repaired
+        else f"[yellow]NOT REPAIRED[/] ({repair_result.halt_reason})"
+    )
+    console.print(
+        f"\n[bold]Auto-repair: {badge}[/]  "
+        f"({repair_result.rounds_used}/{repair_result.attempts[0].attempt + 0} round(s) used)"
+        if repair_result.attempts
+        else f"\n[bold]Auto-repair: {badge}[/]"
+    )
+
+    table = Table(title="Repair attempts")
+    table.add_column("#", style="dim", justify="right")
+    table.add_column("triggered by", style="cyan")
+    table.add_column("target stage")
+    table.add_column("result")
+    table.add_column("ms", justify="right")
+    for a in repair_result.attempts:
+        if a.error:
+            status = f"[red]error: {a.error}[/]"
+        elif a.post_attempt_passed:
+            status = "[green]pack now passes all verifiers[/]"
+        else:
+            still = ", ".join(a.failed_after_attempt) or "(none)"
+            status = f"[yellow]still failing:[/] {still}"
+        table.add_row(
+            str(a.attempt),
+            a.triggered_by_verifier,
+            a.target_stage,
+            status,
+            str(a.duration_ms),
+        )
+    console.print(table)
+
+    # Echo the hint that was used (small but useful — tells the user
+    # what the planner LLM saw).
+    for a in repair_result.attempts:
+        console.print(
+            f"  [dim]Hint for round {a.attempt} → `{a.target_stage}`:[/] "
+            f"{a.suggested_hint}"
+        )
+
+
+def _run_recipe_verifiers(
+    *,
+    recipe,
+    store,
+    workspace,
+    result,
+    locale: str | None = None,
+):
+    """Phase 19 — run every verifier declared in ``recipe.verifiers``.
+
+    Builds a :class:`RecipeVerifierContext` from the run artifacts (so
+    verifiers see the same workspace, recipe, and aggregated moves the
+    user sees), runs each verifier through the registry, writes the
+    bundle to ``<run_dir>/recipe_verification.json``, and returns the
+    :class:`RecipeVerification` envelope.
+
+    Returns ``None`` when ``recipe.verifiers`` is empty (no overhead
+    for recipes that opt out).
+    """
+    if not recipe.verifiers:
+        return None
+
+    from app.eval.recipe_verifiers import (
+        RecipeVerification,
+        RecipeVerifierContext,
+        run_all,
+    )
+    from app.schemas import RollbackManifest
+    from app.schemas.rollback import RollbackOpType
+
+    # Aggregate moves from the rollback manifest the runner produced.
+    # MOVE_BACK entries record the INVERSE op, so:
+    #   entry.target_path = original (pre-execute) location
+    #   entry.source_path = final (post-execute) location
+    # We want original -> final, so swap.
+    moves: dict[str, str] = {}
+    if store.rollback_path.exists():
+        try:
+            manifest = store.read_model(store.rollback_path, RollbackManifest)
+            for entry in manifest.entries:
+                if (
+                    entry.op is RollbackOpType.MOVE_BACK
+                    and entry.source_path
+                    and entry.target_path
+                ):
+                    moves[entry.target_path] = entry.source_path
+        except Exception:  # noqa: BLE001 — verifier should never crash on a manifest issue
+            moves = {}
+
+    # Inputs: read the first stage's workspace snapshot (captured by the
+    # runner before any move happened). If unavailable, fall back to
+    # scanning the workspace directory.
+    inputs: list[str] = []
+    if store.stages_root.exists():
+        stage_dirs = sorted(
+            d for d in store.stages_root.iterdir() if d.is_dir()
+        )
+        if stage_dirs:
+            snap_path = stage_dirs[0] / "workspace_snapshot.json"
+            if snap_path.exists():
+                try:
+                    from app.schemas import WorkspaceSnapshot
+
+                    snap = store.read_model(snap_path, WorkspaceSnapshot)
+                    inputs = [f.path for f in snap.files]
+                except Exception:  # noqa: BLE001
+                    inputs = []
+
+    ctx_kwargs: dict[str, Any] = {
+        "recipe": recipe,
+        "workspace_path": Path(workspace).resolve(),
+        "snapshot_inputs": inputs,
+        "moves": moves,
+        "task_graph_result": result,
+        "run_id": result.task_id,
+    }
+    if locale is not None:
+        ctx_kwargs["locale"] = locale
+    ctx = RecipeVerifierContext(**ctx_kwargs)
+
+    verdicts = run_all(list(recipe.verifiers), ctx)
+    verification = RecipeVerification.from_verdicts(
+        run_id=result.task_id,
+        recipe_name=recipe.name,
+        verdicts=verdicts,
+    )
+    # Persist for the rollback / status / UI flows.
+    bundle_path = store.path("recipe_verification.json")
+    store.write_model(bundle_path, verification)
+    return verification
+
+
+def _render_recipe_verification(verification) -> None:
+    """Phase 19 — render the verifier verdict table."""
+    badge = (
+        "[green]PASSED[/]"
+        if verification.passed
+        else f"[red]FAILED[/] ({verification.failed_count})"
+    )
+    table = Table(title=f"Deliverable verifiers: {badge}")
+    table.add_column("verifier", style="cyan")
+    table.add_column("status")
+    table.add_column("detail")
+    for v in verification.verdicts:
+        if v.skipped:
+            status = "[dim]skipped[/]"
+        elif v.passed:
+            status = "[green]pass[/]"
+        else:
+            status = "[red]fail[/]"
+        table.add_row(v.name, status, v.detail)
+    console.print(table)
+    if verification.skipped_count:
+        console.print(
+            f"[dim]{verification.skipped_count} verifier(s) skipped "
+            "(no LLM key, no relevant artefacts, etc.)[/]"
+        )
+    failed = [v for v in verification.verdicts if not v.passed and not v.skipped]
+    if failed:
+        console.print()
+        for v in failed:
+            if v.suggested_hint:
+                console.print(
+                    f"  [yellow]Hint for `{v.name}`:[/] {v.suggested_hint}"
+                )
+
+
+# --------------------------------------------------------------------- goal (Phase 18)
+
+
+@app.command("goal")
+def cmd_goal(
+    user_goal: str = typer.Argument(..., help="What you want, in natural language."),
+    workspace: Path = typer.Option(
+        ...,
+        "--workspace",
+        "-w",
+        help="Workspace directory the pack will operate on.",
+    ),
+    no_llm: bool = typer.Option(
+        False,
+        "--no-llm",
+        help=(
+            "Force the router-only path even when an LLM key is configured. "
+            "Useful for CI / dry runs."
+        ),
+    ),
+    run: bool = typer.Option(
+        False,
+        "--run",
+        help=(
+            "When the interpreter picks a confident recipe, kick off "
+            "`pack run` against it immediately (still prompts for approval "
+            "unless --yes is also passed)."
+        ),
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip approval when --run is used."),
+    locale: str = typer.Option(
+        "zh-CN",
+        "--locale",
+        help=(
+            "Language for the interpreter's rationale + clarifying questions "
+            "AND for the downstream pack run (when --run is set). One of: "
+            "zh-CN, en-US. Defaults to zh-CN."
+        ),
+    ),
+) -> None:
+    """Phase 18 — natural-language entry point.
+
+    Calls the :class:`GoalInterpreter` against the workspace + goal.
+    On a confident pick, prints the suggested pack (and runs it when
+    ``--run`` is set). On an ambiguous goal, the LLM may emit
+    clarifying questions which you answer at the prompt; the
+    interpreter is re-invoked with your answer.
+    """
+    from app.agent.goal_interpreter import GoalInterpreter
+    from app.tools.file_scan import scan_workspace
+
+    if not workspace.exists() or not workspace.is_dir():
+        console.print(f"[red]Workspace not found:[/] {workspace}")
+        raise typer.Exit(code=2)
+
+    if locale not in ("zh-CN", "en-US"):
+        console.print(
+            f"[red]Unknown locale {locale!r};[/] expected zh-CN or en-US."
+        )
+        raise typer.Exit(code=2)
+
+    with console.status("Scanning workspace…"):
+        snapshot = scan_workspace(workspace, task_id="goal", compute_hash=False)
+
+    client = None
+    if not no_llm:
+        try:
+            from app.agent.planner import _default_client
+
+            client = _default_client()
+        except Exception:  # noqa: BLE001 — graceful: degrade to router only.
+            client = None
+
+    interpreter = GoalInterpreter(client=client, locale=locale)
+    answers: list[str] = []
+    max_rounds = 2
+    interpretation = None
+    for round_idx in range(max_rounds):
+        interpretation = interpreter.interpret(
+            user_goal=user_goal,
+            snapshot=snapshot,
+            prior_answers=answers,
+        )
+        if interpretation.decision == "pick":
+            break
+        # decision == "clarify" — print questions, capture an answer.
+        console.print(
+            Panel.fit(
+                "[bold]Decision:[/] [yellow]clarify[/]\n\n"
+                "[bold]I need a bit more context:[/]\n"
+                + "\n".join(
+                    f"  {i + 1}. {q}"
+                    for i, q in enumerate(interpretation.clarifying_questions)
+                )
+                + f"\n\n[dim]Rationale: {interpretation.rationale}[/]",
+                title=f"Clarifying — round {round_idx + 1}/{max_rounds}",
+                border_style="yellow",
+            )
+        )
+        if round_idx == max_rounds - 1:
+            console.print(
+                "[yellow]Max clarification rounds reached. "
+                "Re-run with a clearer goal or use `localflow pack list` "
+                "to pick directly.[/]"
+            )
+            raise typer.Exit(code=1)
+        try:
+            answer = typer.prompt("Your answer", default="", show_default=False).strip()
+        except (KeyboardInterrupt, EOFError):
+            console.print("[yellow]Aborted.[/]")
+            raise typer.Exit(code=1) from None
+        if not answer:
+            console.print("[yellow]No answer — aborting.[/]")
+            raise typer.Exit(code=1)
+        answers.append(answer)
+
+    assert interpretation is not None
+    assert interpretation.decision == "pick" and interpretation.recipe_name is not None
+
+    # Render the verdict. Phase 21.1: lead with an explicit Decision: /
+    # Recipe: pair so scripts + humans can grep the output without
+    # parsing the prose rationale.
+    score_lines = "\n".join(
+        f"  {s['recipe']:25} score {s['score']:+d}  ·  "
+        + ("; ".join(s["why"]) or "(no signals)")
+        for s in interpretation.router_scores
+    )
+    console.print(
+        Panel.fit(
+            f"[bold]Decision:[/] [green]pick[/]\n"
+            f"[bold]Recipe:[/] [cyan]{interpretation.recipe_name}[/]\n"
+            f"[bold]Source:[/] {interpretation.source}\n"
+            f"[bold]Rationale:[/] {interpretation.rationale}\n\n"
+            f"[bold]Router ranking:[/]\n{score_lines}",
+            title="Goal interpretation",
+            border_style="green",
+        )
+    )
+
+    if not run:
+        console.print(
+            f"\nRun it: [bold]localflow pack run {interpretation.recipe_name} "
+            f"--workspace {workspace}[/]"
+        )
+        return
+
+    # Chain into pack run.
+    cmd_pack_run(
+        name=interpretation.recipe_name,
+        workspace=workspace,
+        yes=yes,
+        enable_repair=False,
+        locale=locale,
     )
 
 

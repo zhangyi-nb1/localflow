@@ -1,0 +1,82 @@
+# Phase 17 (v0.17.0) — Data Report Pack recipe.
+#
+# Productisation guide §8.2: workspace contains tabular data; user
+# wants a runnable, verifiable report. Builds an analysis report with
+# charts, a workspace overview chart, and an LLM-synthesised
+# executive README — all rooted in the user's CSV / XLSX files.
+#
+# This recipe is intentionally narrower than research_pack: it skips
+# organizer + pdf_indexer (irrelevant for pure data workloads) and
+# centres on data_analyzer. The router promotes it over research_pack
+# when the workspace is dominated by tabular files and the user goal
+# mentions "report" / "data" / "分析".
+
+name: data_report_pack
+title: Data Report Pack
+description: |
+  Turn a folder of CSV / Excel data into a deliverable report:
+  per-file analysis with charts, a workspace overview, and an
+  LLM-written executive summary anchored to the data. Recommended
+  when the workspace is mostly tabular and you want a presentation-
+  ready report rather than a knowledge pack.
+
+tags: [data, report, analysis]
+
+input_expectation:
+  file_kinds: [tabular, excel]
+  min_files: 1
+  require_any: [tabular, excel]
+  keywords:
+    - data
+    - report
+    - analysis
+    - 数据
+    - 分析
+    - 报告
+    - csv
+    - excel
+
+stages:
+  - stage_id: s1_data_analyze
+    title: Run typed analyses on each CSV / XLSX and render charts
+    skill: data_analyzer
+    planner: rule
+    expected_outputs:
+      - analysis_report.md
+
+  - stage_id: s2_workspace_chart
+    title: Render a workspace overview chart (how the data is split)
+    skill: workspace_visualizer
+    planner: rule
+    expected_outputs:
+      - images/file_counts.png
+      - file_counts_summary.md
+
+  - stage_id: s3_synthesize
+    title: Synthesise an executive README anchored to the analysis
+    skill: agent
+    planner: llm
+    failure_policy: skip
+    expected_outputs:
+      - README.md
+      - SOURCES.md
+
+expected_outputs:
+  - analysis_report.md
+  - images/file_counts.png
+  - file_counts_summary.md
+  - README.md
+  - SOURCES.md
+
+verifiers:
+  - deliverable_completeness_verifier
+  - source_ledger_verifier
+  - summary_grounding_verifier
+  - chart_data_consistency_verifier
+
+repair_policy:
+  # Phase 21 — auto-repair on by default. data_report_pack only has
+  # one LLM stage (s3_synthesize) so every fail triggers a synth
+  # re-plan with the verifier hint.
+  enabled: true
+  max_rounds: 2

@@ -25,6 +25,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.schemas.task import DEFAULT_LOCALE, Locale
+
 
 class StageFailurePolicy(str, Enum):
     """How the runner reacts when a stage's verifier fails or its
@@ -158,6 +160,28 @@ class TaskGraph(BaseModel):
     preferences: dict[str, Any] = Field(
         default_factory=dict,
         description=("Carried into every stage's TaskSpec.preferences (e.g. naming_style)."),
+    )
+    stage_hints: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Phase 21 — per-stage clarifying hint threaded into "
+            "``skill.plan_with_llm(user_hint=...)`` when a stage's "
+            "planner is 'llm'. Populated by the recipe auto-repair loop "
+            "based on the verifier's ``suggested_hint``. Stages whose "
+            "stage_id is absent from this dict, or whose planner is "
+            "'rule', ignore it. Empty by default — Phase 13 stage-level "
+            "repair drives its own hint via the per-skill repair loop."
+        ),
+    )
+    locale: Locale = Field(
+        default=DEFAULT_LOCALE,
+        description=(
+            "v0.22 — language for user-facing generated content (plan "
+            "summaries, action reasons, README/SOURCES, verifier rationales, "
+            "repair hints). The taskgraph runner propagates this into every "
+            "stage's sub-TaskSpec, and the recipe verifier / repair flows "
+            "thread it into the judge call. Defaults to zh-CN."
+        ),
     )
 
     @model_validator(mode="after")

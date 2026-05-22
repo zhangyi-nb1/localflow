@@ -20,7 +20,7 @@ from __future__ import annotations
 import base64
 from typing import Any
 
-from app.schemas import ActionPlan
+from app.schemas import ActionPlan, TaskSpec, WorkspaceSnapshot
 from app.schemas.action import ActionType
 from app.tools import chart_ops
 
@@ -111,12 +111,14 @@ When the user asks you to draw / plot / chart / visualize / 绘制 / 可视化 /
    - (b) Summarize: one `index` action per category writing `<category>/index.md` describing the files now living there.
    - (c) Visualize: one `index` action emitting `images/file_counts.png` with `chart_request` whose counts reflect the post-move category sizes.
    Emit ALL of (a), (b), (c) in ONE plan — do not assume the user will run a follow-up task.
+   The harness performs a compound-goal coverage check: if the goal explicitly asks to organize, summarize/index, or chart/visualize and your plan omits that step, your plan is rejected and you must repair it.
 2. **Read previews first.** For every file with a TEXT PREVIEW, scan the first lines: a PDF preview revealing "Attention Is All You Need" is a paper on transformers; a .md preview starting with "# Project Roadmap" is a project plan. Let content override file_type when they conflict.
 3. **Category directories**: default to papers/, documents/, spreadsheets/, data/, notes/, images/, audio/, video/, archives/, code/, misc/. Use more specific names when previews reveal a strong semantic theme.
 4. **Semantic rename is encouraged** when the preview reveals a meaningful title. Example: a PDF named `paper_v3_final.pdf` whose preview's first line is "Agent Memory: A Survey" → propose `move source=paper_v3_final.pdf target=papers/agent-memory-survey.pdf` (kebab-case, lowercased).
 5. If a file already lives at the top of its target category AND has a sensible name, do NOT propose moving it.
 6. **Duplicate report**: if any sha256 collisions exist, emit one `index` writing `duplicates_report.md`.
-7. **Compound goals**: if the user listed multiple steps (含「然后/再/最后/then/finally/and」), every step must show up as one or more actions in your plan. Missing steps will leave the user unhappy.
+7. **Compound goals**: if the user listed multiple steps (含「然后/再/最后/then/finally/and」), every step must show up as one or more actions in your plan. Missing steps are planner errors, not acceptable simplifications.
+8. If the goal asks for a summary/index, include at least one text `index` or `summarize` action with non-empty `metadata.content`. If it asks for a chart/visualization, include a PNG `index` action with `metadata.chart_request`. Put chart actions after all organization actions so counts reflect the post-move state.
 
 # Content-driven rename (v0.16.1 — explicit rules)
 When the user's goal mentions "rename", "重命名", "改名", "title-based",
@@ -165,6 +167,180 @@ class _ChartPostProcessError(RuntimeError):
     skill's plan_with_llm wrapper catches this and falls back to a
     markdown placeholder so one bad chart doesn't sink the whole plan.
     """
+
+
+_ORGANIZE_HINTS = (
+    "organize",
+    "organise",
+    "sort",
+    "group",
+    "categorize",
+    "categorise",
+    "classify",
+    "arrange",
+    "整理",
+    "分类",
+    "归类",
+    "按类型",
+    "移动",
+    "收纳",
+)
+_SUMMARY_HINTS = (
+    "summarize",
+    "summarise",
+    "summary",
+    "index",
+    "catalog",
+    "catalogue",
+    "write a report",
+    "write report",
+    "generate a report",
+    "generate report",
+    "总结",
+    "汇总",
+    "摘要",
+    "索引",
+    "生成报告",
+    "写报告",
+    "概览",
+)
+_CHART_HINTS = (
+    "chart",
+    "plot",
+    "visualize",
+    "visualise",
+    "graph",
+    "bar chart",
+    "draw",
+    "画图",
+    "绘制",
+    "可视化",
+    "图表",
+    "柱状图",
+)
+_COMPOUND_MARKERS = (
+    " then ",
+    " and then ",
+    " finally ",
+    " after that ",
+    " next ",
+    "然后",
+    "最后",
+    "接着",
+    "之后",
+    "再",
+)
+_ORGANIZE_ACTIONS = {
+    ActionType.MKDIR,
+    ActionType.MOVE,
+    ActionType.RENAME,
+    ActionType.COPY,
+}
+_TEXT_OUTPUT_ACTIONS = {ActionType.INDEX, ActionType.SUMMARIZE}
+
+
+def validate_compound_goal_coverage(
+    task: TaskSpec,
+    snapshot: WorkspaceSnapshot,
+    plan: ActionPlan,
+) -> list[str]:
+    """Reject agent plans that are safe but incomplete for explicit
+    compound goals.
+
+    This runs before chart post-processing so chart requests are still
+    visible as ``metadata.chart_request``. It deliberately checks only
+    the presence and ordering of user-requested steps; content quality is
+    left to the LLM and later semantic verifiers.
+    """
+    goal = task.user_goal or ""
+    wants_organize = _has_any(goal, _ORGANIZE_HINTS)
+    wants_summary = _has_any(goal, _SUMMARY_HINTS)
+    wants_chart = _has_any(goal, _CHART_HINTS)
+    has_compound_marker = _has_any(goal, _COMPOUND_MARKERS)
+    explicit_step_count = sum(1 for flag in (wants_organize, wants_summary, wants_chart) if flag)
+
+    # Single-step goals still get their explicit requirement checked, but
+    # completely unrelated requests should not be forced into the
+    # organize/summarize/chart template.
+    if explicit_step_count == 0 and not has_compound_marker:
+        return []
+
+    errors: list[str] = []
+    if wants_organize and _has_top_level_files(snapshot) and not _has_organize_action(plan):
+        errors.append(
+            "compound goal requests file organization, but the plan has no mkdir/move/"
+            "rename/copy action for the top-level workspace files."
+        )
+    if wants_summary and not _has_text_summary_output(plan):
+        errors.append(
+            "compound goal requests a summary/index, but the plan has no text "
+            "index/summarize action with non-empty metadata.content."
+        )
+    if wants_chart and not _has_chart_output(plan):
+        errors.append(
+            "compound goal requests a chart/visualization, but the plan has no PNG "
+            "index action with metadata.chart_request."
+        )
+    if wants_organize and wants_chart:
+        order_error = _validate_chart_after_organization(plan)
+        if order_error:
+            errors.append(order_error)
+    return errors
+
+
+def _has_any(goal: str, hints: tuple[str, ...]) -> bool:
+    goal_lower = goal.lower()
+    return any(h.lower() in goal_lower for h in hints)
+
+
+def _has_top_level_files(snapshot: WorkspaceSnapshot) -> bool:
+    return any("/" not in f.path.replace("\\", "/") for f in snapshot.files)
+
+
+def _has_organize_action(plan: ActionPlan) -> bool:
+    return any(action.action_type in _ORGANIZE_ACTIONS for action in plan.actions)
+
+
+def _has_text_summary_output(plan: ActionPlan) -> bool:
+    for action in plan.actions:
+        if action.action_type not in _TEXT_OUTPUT_ACTIONS:
+            continue
+        if (action.target_path or "").lower().endswith(".png"):
+            continue
+        content = action.metadata.get("content") if action.metadata else None
+        if isinstance(content, str) and content.strip():
+            return True
+    return False
+
+
+def _has_chart_output(plan: ActionPlan) -> bool:
+    for action in plan.actions:
+        target = (action.target_path or "").lower()
+        if action.action_type == ActionType.INDEX and target.endswith(".png"):
+            if isinstance(action.metadata.get("chart_request"), dict):
+                return True
+    return False
+
+
+def _validate_chart_after_organization(plan: ActionPlan) -> str | None:
+    org_positions = [
+        idx for idx, action in enumerate(plan.actions) if action.action_type in _ORGANIZE_ACTIONS
+    ]
+    chart_positions = [
+        idx
+        for idx, action in enumerate(plan.actions)
+        if action.action_type == ActionType.INDEX
+        and (action.target_path or "").lower().endswith(".png")
+        and isinstance(action.metadata.get("chart_request"), dict)
+    ]
+    if not org_positions or not chart_positions:
+        return None
+    if min(chart_positions) <= max(org_positions):
+        return (
+            "compound goal chart action must come after organization actions so "
+            "chart counts reflect the post-move workspace state."
+        )
+    return None
 
 
 def render_chart_actions(plan: ActionPlan) -> ActionPlan:

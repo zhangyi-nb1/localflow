@@ -1,4 +1,5 @@
-"""Memory page — edit forbidden_paths + naming_style, browse audit."""
+"""Settings page (v0.22, C-nav: renamed from Memory) — edit
+forbidden_paths + naming_style, browse audit."""
 
 from __future__ import annotations
 
@@ -16,8 +17,8 @@ from app.ui._layout import (
 
 
 def main() -> None:
-    configure_page("app.page_title.memory", icon="⚙")
-    render_header("app.page_title.memory", "memory.subtitle")
+    configure_page("app.page_title.settings", icon="⚙")
+    render_header("app.page_title.settings", "memory.subtitle")
     render_unsafe_banner()
     render_sandbox_sidebar()
 

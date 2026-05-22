@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from app.agent.client import AnthropicClient, LLMClient, LLMClientError, StructuredResponse
+from app.agent.locale_prompts import locale_instruction
 from app.agent.prompts import (
     SYSTEM_PROMPT,
     TOOL_DESCRIPTION,
@@ -33,12 +34,16 @@ from app.schemas import (
 )
 
 DEFAULT_MAX_ATTEMPTS = 3
+ExtraPlanValidator = Callable[[TaskSpec, WorkspaceSnapshot, ActionPlan], list[str]]
 
 
 class PlannerFailure(RuntimeError):
     """Raised when the LLM planner can't produce a valid plan in the
     configured number of attempts. Carries the attempt history so the
     caller can audit what went wrong.
+    ``extra_validator`` lets a skill reject safe-but-incomplete plans
+    with actionable errors that feed the same repair loop. The default
+    is ``None`` so existing skills keep their exact behavior.
     """
 
     def __init__(self, message: str, attempts: list["AttemptLog"]) -> None:
@@ -87,6 +92,7 @@ def plan_with_llm(
     trace: TraceLogger | None = None,
     prior_plan_actions: list[Action] | None = None,
     user_hint: str | None = None,
+    extra_validator: ExtraPlanValidator | None = None,
 ) -> ActionPlan:
     """Drop-in replacement for ``plan_organization`` that uses an LLM.
 
@@ -114,6 +120,10 @@ def plan_with_llm(
     message so the LLM rewrites its plan with the clarification in
     context. This reuses the same single-LLM-call codepath as a fresh
     plan — no new state machine.
+
+    ``extra_validator`` lets a skill reject safe-but-incomplete plans
+    with actionable errors that feed the same repair loop. The default
+    is ``None`` so existing skills keep their exact behavior.
     """
     if client is None:
         client = _default_client()
@@ -122,6 +132,7 @@ def plan_with_llm(
         max_attempts=max_attempts,
         system_prompt=system_prompt,
         trace=trace,
+        extra_validator=extra_validator,
     )
     return planner.plan(
         task,
@@ -172,6 +183,7 @@ class LLMPlanner:
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
         system_prompt: str | None = None,
         trace: TraceLogger | None = None,
+        extra_validator: ExtraPlanValidator | None = None,
     ) -> None:
         self.client = client
         self.max_attempts = max_attempts
@@ -180,6 +192,7 @@ class LLMPlanner:
         self.system_prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
         # Phase 9 — optional trace stream.
         self.trace = trace
+        self.extra_validator = extra_validator
         self.last_attempts: list[AttemptLog] = []
 
     def plan(
@@ -216,6 +229,13 @@ class LLMPlanner:
             self._emit_repair(task, attempt=0, errors=[f"user_hint: {user_hint[:200]}"])
         self.last_attempts = []
 
+        # v0.22 — splice the locale-discipline paragraph onto the system
+        # prompt at call time so the LLM honours task.locale for every
+        # piece of user-facing prose it generates (summaries, reasons,
+        # index bodies). Doing it here (rather than in __init__) means a
+        # single planner instance can serve tasks in different locales.
+        system_for_call = self.system_prompt + "\n\n" + locale_instruction(task.locale)
+
         for attempt in range(1, self.max_attempts + 1):
             if on_attempt is not None:
                 on_attempt(attempt)
@@ -223,7 +243,7 @@ class LLMPlanner:
             self._emit_call_start(task, attempt)
             try:
                 response = self.client.generate_structured(
-                    system=self.system_prompt,
+                    system=system_for_call,
                     messages=messages,
                     tool_name=TOOL_NAME,
                     tool_description=TOOL_DESCRIPTION,
@@ -244,7 +264,7 @@ class LLMPlanner:
                     f"LLM call failed on attempt {attempt}: {exc}", self.last_attempts
                 ) from exc
 
-            plan_or_errors = self._validate(task, response.payload)
+            plan_or_errors = self._validate(task, snapshot, response.payload)
             if isinstance(plan_or_errors, ActionPlan):
                 self._emit_call_end(
                     task,
@@ -314,7 +334,7 @@ class LLMPlanner:
     # -- internals -----------------------------------------------------
 
     def _validate(
-        self, task: TaskSpec, payload: dict[str, Any]
+        self, task: TaskSpec, snapshot: WorkspaceSnapshot, payload: dict[str, Any]
     ) -> ActionPlan | tuple[list[str], str]:
         # 1. Pydantic schema validation.
         try:
@@ -347,7 +367,18 @@ class LLMPlanner:
         if not assessment.passed:
             return (_format_policy_errors(assessment), "policy_blocked")
 
-        # 5. Plan must have a fresh ID — accept what the model returned but
+        # 5. Optional skill-specific completeness checks. The generic
+        # validators can prove a plan is safe and well-formed; a skill
+        # can also reject plans that are incomplete for its own promise.
+        if self.extra_validator is not None:
+            try:
+                extra_errors = self.extra_validator(task, snapshot, plan)
+            except Exception as exc:
+                extra_errors = [f"extra_validator crashed: {type(exc).__name__}: {exc}"]
+            if extra_errors:
+                return (extra_errors, "schema_invalid")
+
+        # 6. Plan must have a fresh ID; accept what the model returned but
         # normalize to a UUID-prefixed shape if it's empty.
         if not plan.plan_id:
             plan = plan.model_copy(update={"plan_id": f"plan-{uuid.uuid4().hex[:8]}"})

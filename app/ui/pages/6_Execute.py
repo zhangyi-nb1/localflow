@@ -31,7 +31,7 @@ def main() -> None:
     render_sandbox_sidebar()
     # v0.16.1 — same robust-nav pattern as Plan page.
     if st.session_state.pop("_nav_to_rollback", False):
-        st.switch_page("pages/3_Rollback.py")
+        st.switch_page("pages/7_Rollback.py")
 
     task_id = _pick_task()
     if task_id is None:

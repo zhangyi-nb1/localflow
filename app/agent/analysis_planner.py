@@ -31,6 +31,7 @@ from app.agent.analysis_prompts import (
     render_user_prompt,
 )
 from app.agent.client import LLMClient, LLMClientError, StructuredResponse
+from app.agent.locale_prompts import locale_instruction
 from app.agent.planner import _build_refinement_message, _default_client
 from app.schemas import Action, ActionPlan, TaskSpec, WorkspaceSnapshot
 from app.schemas.analysis import (
@@ -77,6 +78,10 @@ def plan_analysis_with_llm(
 
     workspace_root = Path(snapshot.root)
     tool_schema = build_analysis_spec_tool_schema()
+    # v0.22 — locale-aware system prompt: appends the language-discipline
+    # paragraph so analysis_report summaries / chart titles honour
+    # task.locale just like folder_organizer indices do.
+    system_for_call = SYSTEM_PROMPT + "\n\n" + locale_instruction(task.locale)
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": render_user_prompt(task, snapshot)}
     ]
@@ -95,7 +100,7 @@ def plan_analysis_with_llm(
             on_attempt(attempt)
         try:
             response = client.generate_structured(
-                system=SYSTEM_PROMPT,
+                system=system_for_call,
                 messages=messages,
                 tool_name=TOOL_NAME,
                 tool_description=TOOL_DESCRIPTION,
@@ -198,13 +203,14 @@ def _retry_with_empty_result_hint(
         "workspace summary."
     )
     tool_schema = build_analysis_spec_tool_schema()
+    system_for_call = SYSTEM_PROMPT + "\n\n" + locale_instruction(task.locale)
     messages = [
         {"role": "user", "content": render_user_prompt(task, snapshot)},
         {"role": "user", "content": hint},
     ]
     try:
         response = client.generate_structured(
-            system=SYSTEM_PROMPT,
+            system=system_for_call,
             messages=messages,
             tool_name=TOOL_NAME,
             tool_description=TOOL_DESCRIPTION,

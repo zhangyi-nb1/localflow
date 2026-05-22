@@ -1,13 +1,16 @@
 """workspace_visualizer final_report.md renderer.
 
-Mirrors the structure of folder_organizer / data_reporter — a fixed
-header, the verifier verdict, and a compact action table.
+v0.22: the markdown body is rendered from
+``app/templates/reports/workspace_visualizer.md.j2`` using
+``task.locale`` for bilingual output. Mirrors folder_organizer's
+template shape (header + verifier verdict + expected outputs).
 """
 
 from __future__ import annotations
 
 from app.harness.executor import ExecutionOutcome
 from app.schemas import ActionPlan, ExecutionStatus, TaskSpec, VerificationResult
+from app.templates import render_report
 
 
 def render_final_report(
@@ -21,28 +24,17 @@ def render_final_report(
     failed = sum(1 for r in outcome.records if r.status == ExecutionStatus.FAILED)
     skipped = sum(1 for r in outcome.records if r.status == ExecutionStatus.SKIPPED)
 
-    lines: list[str] = []
-    lines.append(f"# Final report — task `{task.task_id}`")
-    lines.append("")
-    lines.append(f"- Skill: `{task.skill}`")
-    lines.append(f"- Workspace: `{task.workspace_root}`")
-    lines.append(f"- Goal: {task.user_goal}")
-    lines.append("")
-    lines.append("## Execution summary")
-    lines.append("")
-    lines.append(f"- Total actions: **{len(outcome.records)}**")
-    lines.append(f"- Succeeded: **{success}**")
-    lines.append(f"- Failed: **{failed}**")
-    lines.append(f"- Skipped (checkpoint): **{skipped}**")
-    lines.append("")
-    lines.append("## Verifier verdict")
-    lines.append("")
-    lines.append(f"**{'PASSED' if verification.passed else 'FAILED'}** — {verification.summary}")
-    lines.append("")
-    if plan.expected_outputs:
-        lines.append("## Outputs")
-        lines.append("")
-        for out in plan.expected_outputs:
-            lines.append(f"- `{out}`")
-        lines.append("")
-    return "\n".join(lines)
+    ctx = {
+        "task_id": task.task_id,
+        "skill": task.skill,
+        "workspace_root": task.workspace_root,
+        "user_goal": task.user_goal,
+        "total_actions": len(outcome.records),
+        "succeeded": success,
+        "failed": failed,
+        "skipped": skipped,
+        "verifier_passed": verification.passed,
+        "verifier_summary": verification.summary,
+        "expected_outputs": list(plan.expected_outputs or []),
+    }
+    return render_report("workspace_visualizer", locale=task.locale, ctx=ctx)

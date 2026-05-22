@@ -96,6 +96,7 @@ def run_taskgraph(
     *,
     trace: TraceLogger | None = None,
     approved: bool = False,
+    persist_graph: bool = True,
 ) -> TaskGraphResult:
     """Walk ``graph.stages`` sequentially. Returns a structured
     :class:`TaskGraphResult` regardless of success / failure.
@@ -103,6 +104,11 @@ def run_taskgraph(
     The runner NEVER raises through the call boundary — any stage
     crash is caught, recorded on its :class:`StageResult.error`, and
     the runner consults ``failure_policy`` to decide what to do.
+
+    ``persist_graph`` (Phase 21.1): when False, skip writing
+    ``taskgraph.json``. Used by :func:`replay_from_stage` so the
+    truncated sub-graph it constructs doesn't overwrite the original
+    (full) graph spec already on disk — preserves audit trail.
     """
     started = time.perf_counter()
     if not approved:
@@ -114,7 +120,8 @@ def run_taskgraph(
     # Persist the graph spec for audit / replay.
     if graph.task_id is None:
         graph = graph.model_copy(update={"task_id": run_store.task_id})
-    run_store.write_json(run_store.taskgraph_path, graph.model_dump(mode="json"))
+    if persist_graph:
+        run_store.write_json(run_store.taskgraph_path, graph.model_dump(mode="json"))
 
     registry = get_default_registry()
     aggregated = RollbackManifest(
@@ -214,6 +221,15 @@ def _run_one_stage(
         forbidden_actions=forbidden_actions,
         forbidden_paths=list(graph.forbidden_paths),
         preferences=dict(graph.preferences),
+        # Phase 20: surface the stage's declared deliverables to the
+        # plan() / plan_with_llm() call so the LLM (or rule planner)
+        # sees the contract. The agent meta-skill uses this to ensure
+        # both README.md AND SOURCES.md get generated, fixing a Phase
+        # 19 regression where the LLM only produced README.
+        expected_outputs=list(stage.expected_outputs),
+        # v0.22 — propagate graph-level locale so every stage's LLM
+        # planner produces user-facing prose in the user's language.
+        locale=graph.locale,
     )
 
     stage_store = StageRunStore(run_store, stage.stage_id)
@@ -229,7 +245,15 @@ def _run_one_stage(
         stage_store.save_workspace(snapshot)
 
         if stage.planner == "llm":
-            plan = skill.plan_with_llm(sub_task, snapshot, trace=trace)
+            # Phase 21 — recipe auto-repair injects a user_hint here
+            # when re-planning a stage to fix a failed deliverable
+            # verifier. Skills that don't accept user_hint can ignore
+            # it (the meta-skill agent does accept it).
+            llm_kwargs: dict = {"trace": trace}
+            hint = graph.stage_hints.get(stage.stage_id)
+            if hint:
+                llm_kwargs["user_hint"] = hint
+            plan = skill.plan_with_llm(sub_task, snapshot, **llm_kwargs)
         else:
             plan = skill.plan(sub_task, snapshot)
 
@@ -392,7 +416,15 @@ def replay_from_stage(
     # entries don't collide with kept upstream entries (different stage
     # prefixes already disambiguate).
     sub_graph = graph.model_copy(update={"stages": graph.stages[pivot:]})
-    sub_result = run_taskgraph(sub_graph, run_store=run_store, trace=trace, approved=True)
+    # Phase 21.1: persist_graph=False — the truncated sub_graph must not
+    # overwrite the original taskgraph.json on disk (audit trail).
+    sub_result = run_taskgraph(
+        sub_graph,
+        run_store=run_store,
+        trace=trace,
+        approved=True,
+        persist_graph=False,
+    )
 
     # Re-stitch the manifest: upstream entries + the new affected entries.
     new_aggregated = run_store.load_rollback()

@@ -1,7 +1,17 @@
+"""folder_organizer final_report.md renderer.
+
+v0.22: the markdown body is rendered from
+``app/templates/reports/folder_organizer.md.j2`` using the locale on
+``task.locale`` (zh-CN default, en-US optional). Keeps the historical
+public signature so existing callers (cli.py, contract tests) keep
+working.
+"""
+
 from __future__ import annotations
 
 from app.harness.executor import ExecutionOutcome
 from app.schemas import ActionPlan, ExecutionStatus, TaskSpec, VerificationResult
+from app.templates import render_report
 
 
 def render_final_report(
@@ -15,56 +25,31 @@ def render_final_report(
     failed = sum(1 for r in outcome.records if r.status == ExecutionStatus.FAILED)
     skipped = sum(1 for r in outcome.records if r.status == ExecutionStatus.SKIPPED)
 
-    lines: list[str] = []
-    lines.append(f"# Final report — task `{task.task_id}`")
-    lines.append("")
-    lines.append(f"- Skill: `{task.skill}`")
-    lines.append(f"- Workspace: `{task.workspace_root}`")
-    lines.append(f"- Goal: {task.user_goal}")
-    lines.append("")
-    lines.append("## Execution summary")
-    lines.append("")
-    lines.append(f"- Total actions: **{len(outcome.records)}**")
-    lines.append(f"- Succeeded: **{success}**")
-    lines.append(f"- Failed: **{failed}**")
-    lines.append(f"- Skipped (checkpoint): **{skipped}**")
-    lines.append(f"- Rollback entries recorded: **{len(outcome.manifest.entries)}**")
-    lines.append("")
+    failed_actions = [
+        {"action_id": r.action_id, "error": r.error}
+        for r in outcome.records
+        if r.status == ExecutionStatus.FAILED
+    ]
 
-    lines.append("## Verifier verdict")
-    lines.append("")
-    lines.append(f"**{'PASSED' if verification.passed else 'FAILED'}** — {verification.summary}")
-    lines.append("")
-    if verification.checks:
-        lines.append("| Check | Result | Detail |")
-        lines.append("|-------|--------|--------|")
-        for c in verification.checks:
-            badge = "ok" if c.passed else "fail"
-            lines.append(f"| {c.name} | {badge} | {c.detail} |")
-        lines.append("")
-
-    if failed:
-        lines.append("## Failed actions")
-        lines.append("")
-        for r in outcome.records:
-            if r.status == ExecutionStatus.FAILED:
-                lines.append(f"- `{r.action_id}` — {r.error}")
-        lines.append("")
-
-    if outcome.manifest.generated_files:
-        lines.append("## Generated files")
-        for p in outcome.manifest.generated_files:
-            lines.append(f"- `{p}`")
-        lines.append("")
-
-    if outcome.manifest.created_dirs:
-        lines.append("## Created directories")
-        for d in outcome.manifest.created_dirs:
-            lines.append(f"- `{d}/`")
-        lines.append("")
-
-    lines.append("## How to undo")
-    lines.append("")
-    lines.append(f"```bash\nlocalflow rollback --run-id {outcome.run_id}\n```")
-    lines.append("")
-    return "\n".join(lines)
+    ctx = {
+        "task_id": task.task_id,
+        "skill": task.skill,
+        "workspace_root": task.workspace_root,
+        "user_goal": task.user_goal,
+        "total_actions": len(outcome.records),
+        "succeeded": success,
+        "failed": failed,
+        "skipped": skipped,
+        "rollback_entries": len(outcome.manifest.entries),
+        "verifier_passed": verification.passed,
+        "verifier_summary": verification.summary,
+        "verifier_checks": [
+            {"name": c.name, "passed": c.passed, "detail": c.detail}
+            for c in (verification.checks or [])
+        ],
+        "failed_actions": failed_actions,
+        "generated_files": list(outcome.manifest.generated_files),
+        "created_dirs": list(outcome.manifest.created_dirs),
+        "run_id": outcome.run_id,
+    }
+    return render_report("folder_organizer", locale=task.locale, ctx=ctx)

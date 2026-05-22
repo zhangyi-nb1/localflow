@@ -1,0 +1,33 @@
+# data_reporter · {{ T.final_report_h1_prefix }} `{{ task_id }}`
+
+- {{ T.workspace_label }}: `{{ workspace_root }}`
+- {{ T.goal_label }}: {{ user_goal }}
+
+## {{ T.outcome_h2 }}
+- {{ T.actions_inline }}: {{ total_actions }}  ·  {{ T.succeeded_inline }}: {{ succeeded }}  ·  {{ T.failed_inline }}: {{ failed }}
+- {{ T.verifier_inline }}: **{{ T.passed_badge if verifier_passed else T.failed_badge }}** — {{ verifier_summary }}
+
+{% if first_action %}
+## {{ T.sources_analyzed_h2 }}
+
+{{ T.sources_summary_template.format(total=sources_total, ok=sources_ok, bad=sources_bad) }}
+
+{% for s in ok_sources %}
+- `{{ s.path }}` — {{ T.rows_cols_template.format(rows=s.rows_read, cols=s.cols) }}{% if s.truncated %} {{ T.truncated_suffix }}{% endif %}
+{% endfor %}
+{% for s in bad_sources %}
+- `{{ s.path }}` — **{{ T.error_label }}**: {{ s.error }}
+{% endfor %}
+
+## {{ T.output_h2 }}
+
+- `{{ first_action_target }}` {{ T.rollback_restores_suffix }}
+
+{% endif %}
+## {{ T.how_to_undo_h2 }}
+
+{{ T.how_to_undo_intro }}
+
+```bash
+localflow rollback --run-id {{ run_id }}
+```

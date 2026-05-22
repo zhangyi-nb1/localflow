@@ -20,7 +20,11 @@ from app.schemas import (
     WorkspaceSnapshot,
 )
 from app.skills._base import Skill
-from app.skills.agent.llm_planner import AGENT_SYSTEM_PROMPT, render_chart_actions
+from app.skills.agent.llm_planner import (
+    AGENT_SYSTEM_PROMPT,
+    render_chart_actions,
+    validate_compound_goal_coverage,
+)
 from app.skills.agent.planner import plan_agent_fallback
 from app.skills.agent.reporter import render_final_report
 from app.skills.agent.validator import validate_agent_plan
@@ -73,6 +77,7 @@ class AgentSkill(Skill):
             task,
             snapshot,
             system_prompt=AGENT_SYSTEM_PROMPT,
+            extra_validator=validate_compound_goal_coverage,
             **kwargs,
         )
         # Post-process: render any chart_request blocks into PNG bytes

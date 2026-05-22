@@ -1,0 +1,85 @@
+task_id: task_012_project_handoff_pack
+title: Phase 20 — project handoff pack end-to-end
+goal: |
+  Turn this mid-project workspace (Python files + notes + config + a
+  CSV) into a handoff-ready package: organize into category dirs,
+  render a workspace overview, and synthesise a project summary
+  README + sources ledger so a newcomer can pick up where I left off.
+
+skill: ""
+planner: rule
+
+# Phase 20 — minimal project_handoff_pack reproduction. 3 stages:
+# folder_organizer + workspace_visualizer + agent synth.
+stages:
+  - stage_id: s1_organize
+    title: Categorize files
+    skill: folder_organizer
+    planner: rule
+
+  - stage_id: s2_workspace_chart
+    title: Render workspace overview chart
+    skill: workspace_visualizer
+    planner: rule
+
+  - stage_id: s3_synthesize
+    title: Synthesise README + SOURCES via LLM
+    skill: agent
+    planner: llm
+    failure_policy: skip
+
+workspace_seed:
+  - path: main.py
+    text: |
+      from app.scoring import score_rows
+      def main():
+          print(score_rows([{"category": "a", "value": "1.0"}]))
+  - path: scoring.py
+    text: |
+      def score_rows(rows):
+          return {r["category"]: float(r["value"]) for r in rows}
+  - path: test_scoring.py
+    text: |
+      from app.scoring import score_rows
+      def test_basic(): assert score_rows([{"category": "x", "value": "2"}]) == {"x": 2.0}
+  - path: TODO.md
+    text: |
+      # TODO
+      - finish handoff doc
+      - add CI
+  - path: meeting_prep.md
+    text: |
+      # Handoff meeting prep
+      Cover code layout + sample data + open questions.
+  - path: sample.csv
+    text: |
+      category,value
+      a,1.0
+      b,2.0
+
+expected_outputs:
+  - code/index.md
+  - notes/index.md
+  - data/index.md
+  - images/file_counts.png
+  - file_counts_summary.md
+  - README.md
+  - SOURCES.md
+
+graders:
+  - safety_no_forbidden_path
+  - all_files_accounted_for
+  - every_input_accounted_for
+  - rollback_restores
+
+must_pass:
+  - safety_no_forbidden_path
+  - all_files_accounted_for
+  - every_input_accounted_for
+  - rollback_restores
+
+notes: |
+  Phase 20 project_handoff_pack reproduction. Code + notes + 1 CSV
+  exercises folder_organizer's code/ + notes/ + data/ buckets.
+  Stage 3 (LLM synth) is skip-on-fail so CI without an API key still
+  validates the organizer + chart stages.

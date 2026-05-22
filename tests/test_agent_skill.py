@@ -20,8 +20,10 @@ plumbing.
 from __future__ import annotations
 
 import base64
+from datetime import datetime, timezone
 
-from app.schemas import ActionPlan
+from app.agent import FakeLLMClient
+from app.schemas import ActionPlan, FileMeta, TaskSpec, WorkspaceSnapshot
 from app.schemas.action import Action, ActionType, RiskLevel
 from app.skills import get_default_registry
 from app.skills.agent import AGENT_SYSTEM_PROMPT, render_chart_actions
@@ -100,6 +102,200 @@ def test_agent_rule_fallback_delegates_to_folder_organizer() -> None:
     plan = sk.plan(task, snap)
     assert plan.actions, "rule fallback should produce at least one action"
     assert plan.summary.startswith("[agent rule-fallback]")
+
+
+# ───────────────────────────────────── compound-goal coverage
+
+
+def _compound_task(goal: str, task_id: str = "t-compound") -> TaskSpec:
+    return TaskSpec(
+        task_id=task_id,
+        user_goal=goal,
+        workspace_root="/fake",
+        skill="agent",
+        allowed_actions=["mkdir", "move", "rename", "copy", "index"],
+        forbidden_actions=["delete", "overwrite", "shell"],
+    )
+
+
+def _compound_snapshot(task_id: str = "t-compound") -> WorkspaceSnapshot:
+    now = datetime.now(timezone.utc)
+    files = [
+        FileMeta(path="paper.pdf", file_type="pdf", size_bytes=1, modified_at=now),
+        FileMeta(path="note.txt", file_type="text", size_bytes=1, modified_at=now),
+    ]
+    return WorkspaceSnapshot(
+        snapshot_id="snap-compound",
+        task_id=task_id,
+        root="/fake",
+        files=files,
+        total_files=len(files),
+        total_size_bytes=2,
+    )
+
+
+def _compound_payload(
+    task_id: str,
+    *,
+    include_summary: bool = True,
+    include_chart: bool = True,
+    chart_first: bool = False,
+) -> dict:
+    actions = [
+        {
+            "action_id": "a-001",
+            "action_type": "mkdir",
+            "target_path": "papers",
+            "reason": "Create papers category.",
+            "risk_level": "low",
+            "reversible": True,
+            "requires_approval": True,
+        },
+        {
+            "action_id": "a-002",
+            "action_type": "move",
+            "source_path": "paper.pdf",
+            "target_path": "papers/paper.pdf",
+            "reason": "Organize PDF into papers.",
+            "risk_level": "medium",
+            "reversible": True,
+            "requires_approval": True,
+        },
+    ]
+    if include_summary:
+        actions.append(
+            {
+                "action_id": "a-003",
+                "action_type": "index",
+                "target_path": "papers/index.md",
+                "reason": "Summarize organized papers.",
+                "risk_level": "low",
+                "reversible": True,
+                "requires_approval": False,
+                "metadata": {"content": "# papers\n\n- paper.pdf\n"},
+            }
+        )
+    if include_chart:
+        chart_action = {
+            "action_id": "a-004",
+            "action_type": "index",
+            "target_path": "charts/file_counts.png",
+            "reason": "Chart post-organization file counts.",
+            "risk_level": "low",
+            "reversible": True,
+            "requires_approval": False,
+            "metadata": {
+                "content": None,
+                "chart_request": {
+                    "kind": "bar",
+                    "title": "Files per category",
+                    "xlabel": "category",
+                    "counts": [{"label": "papers", "value": 1}],
+                },
+                "overwrite_existing": True,
+            },
+        }
+        if chart_first:
+            actions.insert(0, chart_action)
+        else:
+            actions.append(chart_action)
+    return {
+        "plan_id": "plan-compound",
+        "task_id": task_id,
+        "summary": "Organize files, summarize results, and chart counts.",
+        "risk_summary": "All writes are reversible.",
+        "expected_outputs": ["papers/index.md", "charts/file_counts.png"],
+        "actions": actions,
+    }
+
+
+def _last_repair_content(client: FakeLLMClient) -> str:
+    messages = client.calls[-1]["messages"]
+    content = messages[-1]["content"]
+    assert isinstance(content, list)
+    return str(content[0]["content"])
+
+
+def test_agent_compound_chinese_missing_chart_repairs() -> None:
+    task = _compound_task("整理文件，然后总结，最后绘制柱状图")
+    snap = _compound_snapshot(task.task_id)
+    client = FakeLLMClient(
+        payloads=[
+            _compound_payload(task.task_id, include_chart=False),
+            _compound_payload(task.task_id),
+        ]
+    )
+
+    plan = get_default_registry().require("agent").plan_with_llm(task, snap, client=client)
+
+    assert len(client.calls) == 2
+    assert "chart/visualization" in _last_repair_content(client)
+    chart = plan.actions[-1]
+    assert chart.target_path == "charts/file_counts.png"
+    assert "binary_content_b64" in chart.metadata
+
+
+def test_agent_compound_english_missing_chart_repairs() -> None:
+    task = _compound_task("organize the files, then summarize them, finally chart counts")
+    snap = _compound_snapshot(task.task_id)
+    client = FakeLLMClient(
+        payloads=[
+            _compound_payload(task.task_id, include_chart=False),
+            _compound_payload(task.task_id),
+        ]
+    )
+
+    plan = get_default_registry().require("agent").plan_with_llm(task, snap, client=client)
+
+    assert len(client.calls) == 2
+    assert "chart/visualization" in _last_repair_content(client)
+    assert any((a.target_path or "").endswith(".png") for a in plan.actions)
+
+
+def test_agent_compound_missing_summary_feedback_is_specific() -> None:
+    task = _compound_task("organize files, then summarize, then draw a chart")
+    snap = _compound_snapshot(task.task_id)
+    client = FakeLLMClient(
+        payloads=[
+            _compound_payload(task.task_id, include_summary=False),
+            _compound_payload(task.task_id),
+        ]
+    )
+
+    get_default_registry().require("agent").plan_with_llm(task, snap, client=client)
+
+    feedback = _last_repair_content(client)
+    assert "summary/index" in feedback
+    assert "metadata.content" in feedback
+
+
+def test_agent_simple_organize_does_not_require_summary_or_chart() -> None:
+    task = _compound_task("organize files")
+    snap = _compound_snapshot(task.task_id)
+    payload = _compound_payload(task.task_id, include_summary=False, include_chart=False)
+    client = FakeLLMClient(payloads=[payload])
+
+    plan = get_default_registry().require("agent").plan_with_llm(task, snap, client=client)
+
+    assert len(client.calls) == 1
+    assert [a.action_type.value for a in plan.actions] == ["mkdir", "move"]
+
+
+def test_agent_compound_chart_before_organize_repairs() -> None:
+    task = _compound_task("organize, then summarize, finally chart the file counts")
+    snap = _compound_snapshot(task.task_id)
+    client = FakeLLMClient(
+        payloads=[
+            _compound_payload(task.task_id, chart_first=True),
+            _compound_payload(task.task_id),
+        ]
+    )
+
+    plan = get_default_registry().require("agent").plan_with_llm(task, snap, client=client)
+
+    assert len(client.calls) == 2
+    assert "after organization actions" in _last_repair_content(client)
+    assert (plan.actions[-1].target_path or "").endswith(".png")
 
 
 # ───────────────────────────────────── chart_request post-processor
@@ -376,3 +572,6 @@ def test_system_prompt_calls_out_compound_goals() -> None:
     # Bilingual marker words — pinned so prompt translations don't
     # silently break compound detection guidance.
     assert "然后" in p or "compound" in p.lower()
+    assert "coverage check" in p
+    assert "summary/index" in p
+    assert "chart actions after all organization actions" in p

@@ -422,6 +422,598 @@ reason line so users know exactly what's being chosen.
 
 ---
 
+## Phase 22 — UI productisation + bilingual substrate (v0.22.0)
+
+**Trigger**: the v0.21 product-arc ledger called out two outstanding
+gaps before LocalFlow could be handed to a non-developer:
+(1) **terminology** — the UI still surfaced `Skill` / `Approval Token` /
+`Verifier` / `Dry-run` to end users, every one of which forced a
+"what is that?" tutorial; (2) **language** — the LLM-synthesised
+README / SOURCES / per-stage reports were always English even when the
+user typed a Chinese goal. v0.22 closes both gaps in one release
+without touching the kernel.
+
+**Goal**: ship a pack-buyer experience — landing page, soft
+terminology, native-language deliverables — on top of the v0.17-v0.21
+substrate. No new harness primitive, no new skill, no new schema for
+the kernel. Pure productisation.
+
+**Five lanes shipped**:
+
+- **Lane B2 — Locale plumbing.** New
+  `app/agent/locale_prompts.py::locale_instruction(locale)` returns a
+  one-paragraph language directive (e.g. *"Write all narrative
+  prose, headings, and bullet points in Simplified Chinese ..."*)
+  appended to every LLM system prompt that synthesises user-facing
+  text (agent / data_analyzer / pdf_indexer reporters). New
+  `TaskGraph.locale: Literal["zh-CN", "en-US"]` schema field; new
+  `--locale {zh-CN,en-US}` flag on `localflow taskgraph run` and
+  `localflow pack run` (CLI rejects anything else with a friendly
+  error). Existing graphs with no `locale:` field default to the
+  English path, so v0.21 YAMLs run byte-identically.
+
+- **Lane D — Bilingual deliverable templates.** Six new Jinja2
+  templates under `app/templates/reports/` (one per reporting skill:
+  `agent.md.j2` / `folder_organizer.md.j2` / `pdf_indexer.md.j2` /
+  `data_reporter.md.j2` / `data_analyzer.md.j2` /
+  `workspace_visualizer.md.j2`). Each template carries a `{% if
+  locale == "zh-CN" %} ... {% else %} ... {% endif %}` block so
+  headings + section labels + boilerplate prose match the requested
+  language. Each skill's `reporter.py` was rewired to render the
+  template instead of building the markdown by string concatenation
+  — English text is the default branch, so missing translations fall
+  back gracefully. +15 tests in
+  `tests/test_bilingual_reports.py` (parametrised over both locales
+  × every reporter).
+
+- **Lane A-copy — terminology polish.** Public-facing UI strings in
+  `app/ui/_i18n.py` softened across the board: Skill → Capability /
+  能力; Approval Token → Approve / 确认授权; Verifier → Check /
+  校验; Dry-run → Preview / 预览. Power-user override labels on the
+  Plan page (behind the "(advanced)" expander) keep their technical
+  clarifier so MCP / CLI users can still tell what they're picking.
+  `pack.cards.stage_line` dropped the raw `skill · planner` suffix —
+  the per-stage card now reads `1. ✓ **Organize files by type**`
+  with no jargon.
+
+- **Lane A-home — product landing page.** `app/ui/main.py` rewritten
+  from "intro paragraph + manual lifecycle table" to a real product
+  landing surface:
+    - Hero with one-line value prop.
+    - 3 featured pack cards (research_pack / data_report_pack /
+      project_handoff_pack) rendered as `st.container(border=True)`
+      with title + 1-line description + "Try this pack" primary CTA.
+    - CTAs use session-state handoff (`_home_pack_select` key) +
+      `st.switch_page("pages/0_Pack.py")` to land on the Pack page
+      with the matching recipe card auto-expanded.
+    - Manual lifecycle table demoted to "Or take manual control"
+      section near the bottom for power users.
+  CTAs are disabled until a workspace is picked.
+
+- **Lane C-nav — partial sidebar restructure.** Two new pages:
+    - `app/ui/pages/1_Workspace.py` — active workspace browser
+      (file count + total size + run count + per-file table capped
+      at 200 entries).
+    - `app/ui/pages/3_Runs.py` — index of every past task
+      (workspace filter / per-run table with status + rollback
+      availability / "Open in Rollback" button using session-state
+      handoff / inline final_report.md preview).
+  `4_Memory.py` renamed to `4_Settings.py` (page title bumped to
+  `⚙ Settings`). Pack page title bumped from `Pack` to
+  `Create Pack`. Plan / Execute / Rollback pages pushed to `5_*` /
+  `6_*` / `7_*` prefixes so the natural sidebar order reads Home →
+  Workspace → Create Pack → Runs → Settings → (advanced).
+  Every cross-page `st.switch_page("pages/N_*.py")` call updated to
+  match the new prefixes.
+
+**What's NOT in v0.22 (deferred)**:
+- **Full `st.navigation` collapse** — the original C-nav scope
+  wanted the advanced 5/6/7 pages hidden from the default sidebar
+  via `st.navigation` + `st.Page`. Deferred because Streamlit's
+  `set_page_config` may only be called once per script run, which
+  forces touching every page's `configure_page` to make it
+  idempotent — that's a refactor that needs a running browser to
+  verify, out of scope for this session. The partial C-nav already
+  delivers the new IA via natural prefix ordering.
+- DataOps deepening (multi-table joins / anomaly detection /
+  conclusion grounding) — Phase 23.
+- StageRunStore backup-path bug surfaced in Phase 19 testing —
+  Phase 24 engineering cleanup.
+
+**Live verification**:
+- Full test suite: 658 → **681 passed**; +23 new tests (15
+  bilingual reports + 8 covering locale flag / template fallback /
+  page registration / handoff session-state contract). 0
+  regressions.
+- `localflow taskgraph run examples/research_pack/workspace_pack.yaml
+  --locale zh-CN --yes` against a fresh workspace produces a Chinese
+  README + SOURCES + per-stage reports; the same command with
+  `--locale en-US` (or omitted) produces English. Stage outputs
+  (file moves, charts, pdf_index titles) are language-neutral.
+- Streamlit UI smoke (manual): the new home renders the 3 pack
+  cards, clicking "Try this pack" navigates to the Pack page with
+  the right recipe pre-selected. New Workspace + Runs pages
+  populate against an existing `.localflow/runs/` directory.
+
+**Kernel touch**: NO. New module `app/agent/locale_prompts.py` lives
+above the harness. New `TaskGraph.locale` field is read by skill
+reporters, not by `app/harness/*`. Jinja templates are rendered by
+skill code, not by the executor. UI pages are entirely outside the
+kernel. **28th** zero-kernel-touch phase.
+
+**§10.7 ledger row 28** added below.
+
+---
+
+## Phase 21 — Recipe Auto-Repair Loop (v0.21.0)
+
+**Trigger**: productisation guide §2.5 "repair 主要依赖 failed verdict
+的 hint" — Phase 19 deliverable verifiers already attach a typed
+``suggested_hint`` to every failure, but those hints were display-only.
+v0.21 closes the loop: when a recipe verifier fails, the hint flows
+into ``skill.plan_with_llm(user_hint=...)`` for the targeted stage,
+that stage is rolled back + replayed, and verifiers re-run.
+
+**Goal**: take the hand-off from Phase 19's structured-hint contract
+all the way to a re-planned, re-executed deliverable — without
+touching the harness kernel.
+
+**Shipped**:
+- `app/schemas/taskgraph.py` — new ``TaskGraph.stage_hints: dict[str,
+  str]`` field (stage_id → hint). The runner reads it when planning
+  a stage with planner='llm' and threads it through as ``user_hint``.
+- `app/schemas/recipe.py` — new ``RecipeSpec.repair_target_map: dict
+  [str, str]`` (verifier_name → stage_id) + ``resolve_repair_target``
+  helper that defaults to the recipe's last LLM stage when no
+  explicit mapping is set. ABORT-promotion preserved from Phase 17.
+- `app/harness/taskgraph_runner.py` (`_run_one_stage`) — when
+  ``stage.planner == "llm"`` AND ``graph.stage_hints[stage_id]`` is
+  populated, passes ``user_hint=...`` to ``skill.plan_with_llm``.
+  Skills that don't accept the kwarg (rule-planned stages) ignore it.
+  +6 lines, no kernel-behaviour change.
+- `app/harness/recipe_repair.py` (NEW) — ``run_recipe_repair`` is the
+  orchestration entrypoint:
+    1. Picks the first non-skipped fail verdict with a hint.
+    2. Resolves its target stage via ``recipe.resolve_repair_target``.
+    3. ``model_copy``s the TaskGraph with ``stage_hints[target] = hint``.
+    4. Calls ``replay_from_stage`` (Phase 15 primitive — rolls back
+       affected entries + replays).
+    5. Re-builds a ``RecipeVerifierContext`` from the post-replay
+       workspace + manifest and re-runs every verifier the recipe
+       declared.
+    6. Repeats up to ``repair_policy.max_rounds`` (≤ 3). Halts on:
+       *passed* / *exhausted* / *no_repairable_failures* /
+       *no_target_stage* / *replay_error*.
+  Returns a ``RecipeRepairResult`` with per-attempt history that the
+  CLI renders as a Rich table.
+- `app/cli.py` — ``pack run`` now triggers the loop when (a) every
+  stage PASSED, (b) ≥ 1 recipe verifier FAILED, (c)
+  ``recipe.repair_policy.enabled`` is true. Persists
+  ``<run_dir>/recipe_repair.json`` AND rewrites
+  ``recipe_verification.json`` to the post-repair verdict.
+- All 3 flagship recipes now ship with ``repair_policy.enabled=true``
+  + ``max_rounds=2``. ``research_pack`` + ``project_handoff_pack``
+  add ``repair_target_map`` entries routing coverage / review-queue
+  failures back to the organizer (instead of the synth default).
+- `tests/test_recipe_repair.py` (12) — schema helpers, halt
+  conditions, happy path, exhaustion, replay-error capture,
+  stage_hint wiring, TaskGraph backward compat.
+
+**Live verification**:
+- All 3 flagship recipes still compile + load (`localflow pack list`).
+- The flagship recipes now expose ``repair_policy.enabled=true`` to
+  the user via ``pack describe`` so the auto-repair behaviour is
+  transparent.
+- Full test suite: 646 → **658 passed**; +12 new tests, 0 regressions.
+
+**Kernel touch**: NO. ``app/harness/recipe_repair.py`` is a new
+orchestration module; ``app/harness/taskgraph_runner.py`` gains 6
+lines wiring stage_hints into the existing ``plan_with_llm`` call —
+the hint is passed by value, no kernel state changes. **27th**
+zero-kernel-touch phase.
+
+**What's NOT in v0.21 (deferred)**:
+- DataOps deepening (multi-table joins, anomaly detection,
+  conclusion grounding) — bundled with Phase 22 originally; split
+  to its own Phase 22 alongside WebCollect deepening + Trace
+  dashboard.
+- Recipe repair targeting at the per-verdict level (right now the
+  loop picks the first repairable verdict per round; if multiple
+  verifiers want different stages repaired, only one runs per
+  round). Phase 22 will add parallel + bulk-repair semantics.
+- StageRunStore backup-path bug (a-009 ValueError on dirty
+  workspace) — Phase 23 cleanup.
+
+---
+
+## Phase 20 — Flagship packs formalised + product-led README + Phase 19 bug fixes (v0.20.0)
+
+**Trigger**: productisation guide §12 Phase A ("产品主线重包装") +
+§8 ("旗舰场景") — the project's positioning was still
+engineering-led ("safe execution harness") rather than product-led
+("local-first workspace delivery agent"). Phase 17 introduced the
+Recipe layer but only the research_pack flagship had a runnable
+example workspace; data_report_pack + project_handoff_pack were
+catalog-only. Phase 19 also surfaced 3 real product-quality bugs
+that hand-waved verifier failures in the user's live testing.
+
+**Goal**: ship the three flagship packs with full demo material;
+rewrite the README narrative from feature-list to deliverable-pack
+product positioning; fix the 3 real bugs Phase 19 verifiers caught
+in user testing.
+
+**Shipped**:
+
+  Bug fixes (driven by Phase 19's live-testing feedback):
+  - `route_low_confidence_to_review` now auto-propagates as a
+    workspace preference when a recipe declares `review_queue_
+    verifier`. Fixes the Phase 19 finding where `untitled.dat` was
+    force-classified into `misc/` instead of `review/`.
+    User overrides still win (CLI / memory pref).
+    File: `app/schemas/recipe.py:compile_to_taskgraph`.
+  - `TaskSpec.expected_outputs` is a new field; the TaskGraph runner
+    populates it from `stage.expected_outputs` for every stage; the
+    agent meta-skill's user prompt now includes a "REQUIRED
+    deliverables" section. Fixes the Phase 19 finding where the
+    LLM synthesised README but skipped SOURCES.md.
+    Files: `app/schemas/task.py`, `app/harness/taskgraph_runner.py`,
+    `app/agent/prompts.py`.
+  - `chart_data_consistency_verifier` now scopes ONLY to
+    `analysis_charts/`. Workspace-overview charts (file_counts.png
+    in `images/`) are metadata-driven, not row-driven — comparing
+    them to an unrelated CSV produced false-positive failures in
+    Phase 19 user testing. Falls back to `analysis_report.md` when
+    no per-chart caption exists.
+    File: `app/eval/recipe_verifiers/semantic.py`.
+
+  Three flagship pack demos:
+  - `examples/data_report_pack/seed.py` + workspace + README —
+    3 CSVs (revenue / users / errors) + 1 XLSX + a seed README.
+    Designed for the 3-stage data_analyzer → workspace_visualizer →
+    agent synth recipe.
+  - `examples/project_handoff_pack/seed.py` + workspace + README —
+    4 .py files + .csv + 2 .md notes + .env.example +
+    pyproject snippet + a tiny .png. Designed for folder_organizer →
+    workspace_visualizer → agent synth recipe.
+  - `evals/workspace_pack/task_011_data_report_pack.yaml` (new)
+  - `evals/workspace_pack/task_012_project_handoff_pack.yaml` (new)
+  - `.gitignore` extended to ignore the new workspace dirs.
+
+  Documentation:
+  - `README.md` top section rewritten: deliverable-pack hero +
+    three flagship Pack table + Goal Interpreter quickstart + a
+    "what's in a deliverable pack" tree. Engineering description
+    of the harness moved to "Why a harness, not a script" later
+    in the doc.
+  - `What's shipped` section gains 4 new entries at the top
+    (Pack system / Goal Interp / Primitives / Verifiers) covering
+    Phase 17-19 product layers.
+  - Roadmap reflowed: Phase 21 = auto-repair wiring + DataOps;
+    Phase 22 = WebCollect + Trace dashboard; Phase 23 = engineering
+    debt + StageRunStore backup-path bug fix.
+
+  Tests:
+  - `tests/test_recipe_schema.py` — 3 new tests for the auto-
+    propagation behaviour: review_queue_verifier wires the
+    preference, recipes without it don't, user overrides win.
+  - `tests/test_eval_runner.py` — task discovery expectation bumped
+    9 → 11.
+  - `tests/test_recipe_verifiers_semantic.py` — 2 chart-consistency
+    tests rewritten to match the new analysis_charts/ scope +
+    analysis_report.md fallback; 1 new test pinning the
+    workspace-overview exclusion behaviour.
+
+**Live verification**:
+- `python examples/data_report_pack/seed.py` → 5 files plant cleanly.
+- `python examples/project_handoff_pack/seed.py` → 10 files plant
+  cleanly.
+- `localflow pack describe data_report_pack` / `project_handoff_pack`
+  shows the 3-stage layouts.
+- Full test suite: 642 → **646 passed**; +4 tests, 0 regressions.
+
+**Kernel touch**: NO. The bug fixes are all application-layer:
+recipe compilation, task spec field, LLM prompt content, verifier
+scope filter. **26th** zero-kernel-touch phase. `app/harness/*`
+unchanged (Phase 5 + Phase 16 remain the only exceptions).
+
+**What's NOT in v0.20 (deferred to Phase 21)**:
+- Auto-repair loop wiring: Phase 19 verifier `suggested_hint`s
+  exist on every fail verdict but aren't yet consumed by Phase 13's
+  repair loop. Phase 21 will glue them.
+- DataOps deepening (multi-table joins, anomaly detection,
+  conclusion grounding) — report §12 Phase F.
+- StageRunStore backup-path bug surfaced in user testing (a-009
+  `index notes/index.md` ValueError on dirty workspace) — Phase 23
+  cleanup.
+
+---
+
+## Phase 19 — Deliverable Verifier expansion (v0.19.0)
+
+**Trigger**: productisation guide §3.3 ("structural verifiers pass
+while semantic quality fails") + §10 (the explicit list of 7
+verifiers the project should prioritise: Coverage, SourceLedger,
+SummaryGrounding, ChartDataConsistency, ReviewQueue,
+DeliverableCompleteness, TopicCoherence). v0.14 had `every_input_
+accounted_for` + `analysis_result_nonempty` as starter semantic
+graders; v0.19 ships the full 7 at the **recipe** (not eval-task)
+level so every `pack run` gets a deliverable verdict.
+
+**Goal**: after a pack's stages finish, run every grader the recipe
+declared in its `verifiers:` field. Persist the bundle as
+`recipe_verification.json`. Surface verifier failures as exit code 3
+(distinguishable from "pipeline crashed" exit code 1) so CI separates
+broken pipelines from broken quality.
+
+**Shipped**:
+- `app/eval/recipe_verifiers/` — new package, separate registry from
+  `app/eval/graders/` so the recipe-level abstraction can evolve
+  independently. Three modules:
+    * `_schema.py` — `RecipeVerifierContext` + `RecipeVerifierVerdict`
+      + `RecipeVerification` envelope (all Pydantic v2).
+    * `_registry.py` — `@register` + `run_all` helpers. Catches
+      unknown verifier names AND verifier exceptions and surfaces
+      both as failed verdicts (typo / bug doesn't abort verification).
+    * `structural.py` (4 verifiers) + `semantic.py` (3 verifiers).
+- **4 structural verifiers** (no LLM):
+    * `coverage_verifier` — every input file moved OR cited in `*.md`
+      (closes the gap §10 #1 named).
+    * `source_ledger_verifier` — backticked paths in `SOURCES.md`
+      resolve to real files (§10 #2).
+    * `review_queue_verifier` — unclassifiable extensions land in
+      `review/` (§10 #5).
+    * `deliverable_completeness_verifier` — every
+      `recipe.expected_outputs` path exists on disk (§10 #6).
+- **3 semantic verifiers** (LLM-as-judge via `app.agent.judge`):
+    * `summary_grounding_verifier` — README claims trace to real
+      workspace files (§10 #3).
+    * `chart_data_consistency_verifier` — chart caption stats match
+      the source CSV preview (§10 #4).
+    * `topic_coherence_verifier` — first non-trivial category /
+      topics/<sub> directory is semantically coherent (§10 #7).
+- `app/cli.py` — `pack run` now executes recipe verifiers after the
+  TaskGraph finishes. Writes `<run_dir>/recipe_verification.json`,
+  renders a verdict table, displays `suggested_hint` for each
+  failure. **Exit code 3** = pipeline ran cleanly but ≥ 1 verifier
+  failed (vs 1 for pipeline crashes).
+- All three flagship recipes (`recipes/*.yaml`) updated to list the
+  new verifier names in their `verifiers:` field.
+- `tests/test_recipe_verifiers_structural.py` (16) — registry shape,
+  per-verifier happy / fail / skip paths, run_all error handling,
+  RecipeVerification aggregation.
+- `tests/test_recipe_verifiers_semantic.py` (13) — no-LLM skip,
+  judge mock for happy + fail paths, summary-md vs `<stem>_summary.md`
+  caption detection, topics/<sub>/ layout handling.
+- `docs/VERIFIERS.md` — full reference: 7-verifier table, integration
+  with `pack run`, graceful-degradation behaviour, extension guide.
+
+**Live verification** (research_pack vs the v0.14 seeded workspace):
+- All 5 stages PASSED in ~13 s (same as Phase 14).
+- 7 verifiers ran: 3 PASS, 3 FAIL, 1 SKIPPED. The failures caught
+  REAL issues the pipeline silently shipped pre-v0.19:
+    * `review_queue_verifier`: `untitled.dat` ended up in `misc/`
+      instead of `review/`.
+    * `chart_data_consistency_verifier`: the workspace-overview
+      chart's caption doesn't actually relate to the experiment
+      CSV (they're different datasets).
+    * `topic_coherence_verifier`: `images/index.md` claims 2 files
+      but the directory has 3.
+  Each failure has a `suggested_hint` ready for Phase 20+ auto-repair.
+- Full test suite: 608 → **637 passed**; +29 new tests, 0 regressions.
+
+**Kernel touch**: NO. New package `app/eval/recipe_verifiers/` is
+application-layer; `app/cli.py` adds verifier orchestration AFTER the
+runner returns. **26th** zero-kernel-touch phase. `app/harness/*`
+unchanged.
+
+**What's NOT in v0.19 (deferred)**:
+- Auto-repair loop consuming the `suggested_hint` field — Phase 20
+  will wire it into recipe-level stage repair (Phase 13's loop
+  consumes per-stage hints today; recipe-level needs a wider
+  context-aware re-plan).
+- Vision-LLM image grader for chart_data_consistency — currently
+  uses the text caption + CSV preview path. Phase 22+ when vision
+  primitives land.
+- TopicCoherence over a sample of topic dirs (not just the first) —
+  trivial extension, deferred until empirically useful.
+
+---
+
+## Phase 18 — Capability Primitives + LLM Goal Interpreter (v0.18.0)
+
+**Trigger**: productisation guide §4.3 ("flip from skill-first to
+recipe-first") + §6.2 ("Delivery Planner asks clarifying questions
+when goal is vague") + §7 (the canonical "User Goal → Goal
+Interpreter → TaskGraph Planner" framework diagram). v0.17 shipped
+the Recipe layer; v0.18 ships the layer that sits ABOVE it (Goal
+Interpreter) and the layer BELOW it (Capability Primitives), closing
+two of the three boxes between "user goal" and "executing skill".
+
+**Goal**: when a user's goal doesn't clearly map onto one recipe, ask
+clarifying questions instead of crashing or silently picking the
+wrong pack. Plus give the LLM Interpreter (and Phase 19 verifiers) a
+stable typed primitive surface to talk about capabilities at —
+without naming a skill.
+
+**Shipped**:
+- `app/primitives/_schemas.py` — typed I/O models: `ContentRef`,
+  `Content`, `Classification`, `ContentKind` enum (7 coarse buckets:
+  document / note / table / image / code / structured / binary).
+- `app/primitives/extract_content.py` — primitive #1, dispatches over
+  ContentKind to `pdf_ops` / `text_ops` / `data_ops`. Best-effort,
+  never raises; `error="binary"` for images, `"missing"` for absent
+  files, `"unreadable"` when the backend returns None.
+- `app/primitives/classify_content.py` — primitive #2, curated
+  extension → label table (paper / data / note / code / structured
+  / image / binary). Confidence = 1.0 on extension hit, 0.5 on
+  ContentKind fallback, 0.2 on binary.
+- `app/primitives/catalog.py` — 10-entry `PrimitiveEntry` registry.
+  Only 2 entries are implemented wrappers; the other 8 are
+  catalog-only with `backed_by` pointers to the tool / skill that
+  provides the behaviour today. The doc (`docs/CAPABILITIES.md`)
+  explains the "earn its wrapper" rule that keeps abstraction
+  minimal.
+- `app/agent/goal_interpreter.py` — `GoalInterpreter` class.
+  Decision tree:
+    1. Router scores ≥ `CONFIDENT_SCORE_THRESHOLD` (=6) with margin
+       ≥ `CONFIDENT_MARGIN` (=2) → commit deterministically,
+       source='router', no LLM call.
+    2. Ambiguous + no LLM client → degrade to router top with
+       low-confidence rationale, source='router'.
+    3. Ambiguous + LLM client → call LLM with strict tool schema
+       (`recipe_name` enum-constrained to loaded names);
+       `decision=pick` returns a recipe, `decision=clarify` returns
+       1–3 short questions in the user's language. Source='llm'.
+    4. LLM call fails / returns unknown recipe → defense-in-depth
+       fallback to router top with explanation in `rationale`.
+  Three layers of safety net: schema enum-constraint, payload
+  validation, post-hoc unknown-name check.
+- CLI: `localflow goal "..." --workspace <ws> [--no-llm] [--run]`.
+  Goal text in any language; presents clarifying questions
+  interactively at the prompt (max 2 rounds); on confident pick,
+  prints the suggested pack + the full router ranking. With
+  `--run`, chains directly into `pack run`.
+- UI: Pack page's "Suggest" block (Phase 17) replaced with a
+  Phase 18 "🎯 Interpret a goal" block that walks the full
+  GoalInterpreter loop. Session-state machinery handles the
+  clarifying-question rerun cycle.
+- `docs/CAPABILITIES.md` — the full primitive taxonomy + layering
+  diagram. Documents the "earn its wrapper" abstraction discipline.
+- `tests/test_primitives.py` (17) — schema enum coverage, path
+  normalisation, every implemented primitive's happy + error paths,
+  catalog completeness invariants.
+- `tests/test_goal_interpreter.py` (9) — all three decision paths
+  (router-confident, router-fallback, LLM-driven pick + clarify),
+  LLM failure degradation, unknown-recipe defense-in-depth, audit
+  trail, clarifying-round answer propagation, public threshold
+  constants.
+- `tests/test_goal_cli.py` (3) — command registration, missing
+  workspace exit code, end-to-end `--no-llm` confident pick.
+
+**Live verification**:
+- `localflow goal "整理研究资料" --workspace examples/research_pack/workspace --no-llm`
+  returns `Suggested pack: research_pack` with source='router',
+  score +9, margin +6 → router-confident path, no LLM call.
+- `localflow goal "做点东西" --workspace examples/research_pack/workspace --no-llm`
+  degrades to router fallback with low-confidence rationale (no
+  crash, no clarification round in router-only mode).
+- The `--no-llm` flag forces the deterministic path even when a key
+  is set — useful for CI / dry runs.
+- Full test suite: 578 → **608 passed**; +30 new tests, 0
+  regressions.
+
+**Kernel touch**: NO. `app/primitives/` is a new application module;
+`app/agent/goal_interpreter.py` lives alongside the existing planner.
+**25th** zero-kernel-touch phase. `app/harness/*` unchanged.
+
+**What's NOT in v0.18 (deferred to Phase 19)**:
+- Wrapping the other 8 primitive entries as typed functions —
+  deferred until a verifier or recipe needs them at the function
+  level (the catalog points at the existing backend in the
+  meantime).
+- Deliverable verifier expansion (CoverageVerifier,
+  SourceLedgerVerifier, SummaryGroundingVerifier, …) — Phase 19's
+  job; v0.18 just establishes the primitive I/O contracts those
+  verifiers will consume.
+- Vision-LM backed `extract_content` for images — Phase 22+ when
+  the WebCollect deepening also lands.
+
+---
+
+## Phase 17 — Recipe / Pack System (v0.17.0)
+
+**Trigger**: the productisation guide
+(`localflow_productization_development_guide.md`) diagnosed
+LocalFlow's biggest product-shape gap (§3.1 "current features exist
+as modules, not as user outcomes") and prescribed the fix (§4.3
+flip from skill-first to recipe-first; §5 reposition as
+"Local-first Workspace Delivery Agent"; §12 Phase B "Recipe / Pack
+System"). v0.17 ships that layer.
+
+**Goal**: give users a product-level entry point — they pick a
+deliverable pack (Research Pack / Data Report Pack / Project
+Handoff Pack), never a skill name. Each pack compiles to a
+TaskGraph the v0.11 runner already drives. Zero kernel changes.
+
+**Shipped**:
+- `app/schemas/recipe.py` — `RecipeSpec`, `RecipeStage`,
+  `InputExpectation`, `RepairPolicy`. Field order matches §12
+  Phase B verbatim: name / description / input_expectation / stages
+  / expected_outputs / verifiers / repair_policy.
+  `RecipeSpec.compile_to_taskgraph()` is the bridge that emits a
+  v0.11 `TaskGraph`; `repair_policy.enabled=true` promotes every
+  ABORT stage to REPAIR with `max_retries=max_rounds` (SKIP /
+  CONTINUE stages preserved).
+- `app/recipes/registry.py` — `RecipeRegistry` with lazy load,
+  cached scan, error list (broken YAMLs surface in a separate
+  warning section instead of silently disappearing).
+  `LOCALFLOW_RECIPES_DIR` env var override.
+- `app/recipes/router.py` — deterministic, no-LLM scorer over
+  (user_goal, workspace_snapshot). Rule:
+  `score = (keyword hits × 2) + (file-kind matches, cap 5)
+         - (10 if min_files violated) - (5 if require_any violated)`.
+  Phase 18 will add an LLM clarifying path on top.
+- `recipes/research_pack.yaml` — research workspace (PDFs + data
+  + notes + images) → 5-stage pack with per-category indexes,
+  PDF index, analysis report, overview chart, README, SOURCES.
+- `recipes/data_report_pack.yaml` — tabular-only workspace →
+  3-stage pack (data_analyzer + workspace_visualizer + agent
+  synth).
+- `recipes/project_handoff_pack.yaml` — code project →
+  3-stage pack (folder_organizer + workspace_visualizer + agent
+  synth).
+- CLI: `localflow pack list / describe / suggest / run`. The `run`
+  subcommand is functionally identical to `taskgraph run` against
+  the compiled graph — same approval ceremony, same single
+  aggregated rollback.
+- `app/ui/pages/0_Pack.py` — Streamlit page with filename prefix
+  `0_` so it lands FIRST in the sidebar (ahead of Plan / Execute /
+  Rollback / Memory). Three sub-flows: Browse, Suggest, Run.
+- `tests/test_recipe_schema.py` (8) — schema validation,
+  duplicate-stage rejection, compile round-trip, repair promotion
+  semantics.
+- `tests/test_recipe_registry.py` (8) — directory loading,
+  duplicate-name rejection, missing-dir handling, reload, the
+  three shipped flagships always compile cleanly.
+- `tests/test_recipe_router.py` (8) — keyword scoring, file-kind
+  cap, min_files penalty, require_any penalty, tie-breaking,
+  end-to-end routing for the three flagships.
+- `tests/test_pack_cli.py` (7) — `pack list/describe/suggest/run`
+  exit codes + error messages.
+- `docs/RECIPES.md` — full schema reference + CLI surface + UI
+  surface + extension guide.
+
+**Live verification**:
+- `localflow pack list` shows all 3 flagships with stage/output
+  counts.
+- `localflow pack suggest examples/research_pack/workspace --goal
+  "整理我的研究资料"` ranks research_pack first with score +9 and
+  exposes the keyword + file-kind reasons.
+- `localflow pack describe research_pack` prints the spec, stage
+  list, expected deliverables, verifiers, and repair policy.
+- Full test suite: 542 → **578 passed**; +36 new tests.
+
+**Kernel touch**: NO. Pure application layer — Recipe compiles
+DOWN to v0.11 TaskGraph; the runner / executor / verifier /
+rollback paths are untouched. **24th** zero-kernel-touch phase.
+
+**§10.7 ledger position**: 24 of 27 phases so far have been
+zero-kernel-touch. Phase 5 (forbidden_paths primitive) and Phase
+16 (ActionType.FETCH) remain the only documented kernel exceptions.
+
+**What's NOT in v0.17 (deferred to Phase 18)**:
+- LLM-powered Goal Interpreter (clarifying questions when no
+  recipe scores high enough).
+- Capability primitives layer (`app/primitives/*`) — pulling
+  `extract_content` / `classify_content` / etc. out of skills so
+  recipes can compose at the function level, not just the skill
+  level.
+- Recipe-level verifier wiring — `verifiers:` is recorded as
+  metadata in v0.17 and consumed in Phase 19's Deliverable
+  Verifier expansion.
+
+---
+
 ## Phase 14 — Workspace Pack Builder (v0.14.0)
 
 **Trigger**: v0.10-v0.13 each shipped a substrate piece (TaskGraph,
@@ -1128,8 +1720,14 @@ post-nav persistence, fresh-session reset). Total 318 → 319.
 | **15 (v0.15.0)** | NO | Integration / exposure layer — vision-based `chart_accurate` grader (Anthropic-style multimodal call; graceful skip on no LLM / unsupported provider); MCP `taskgraph_run` + `verify_semantic` + `repair_run` tools so external MCP clients can drive v0.10 TaskGraph + v0.13 semantic verifier + auto-repair; `filter_manifest_to_stage` helper + `localflow rollback --stage <id>` for per-stage rollback; `replay_from_stage` + `localflow taskgraph replay --from-stage` for cross-stage repair; `StageSpec.cross_stage_repair_target` field (declarative hook, currently consumed by the CLI helper). +8 tests (518 → 526). |
 | **16 (v0.16.0)** | **YES** (2nd exception) | Ecosystem layer — (1) HMAC-SHA256 skill manifest signing with `LOCALFLOW_REQUIRE_SIGNED_SKILLS` gate + `localflow skills-sig sign/verify` CLI; (2) per-skill LLM tool schema capability scoping — `build_action_plan_tool_schema(allowed_action_types=...)` restricts the `action_type` enum to the calling task's `allowed_actions`, defense-in-depth so the LLM literally can't propose a forbidden action type; (3) **WebCollect skill + new `ActionType.FETCH`** (2nd deliberate §10.7 exception after Phase 5): executor learns HTTPS GET, policy_guard enforces `fetch_allowed_domains` allowlist, `localflow memory allow-domain/disallow-domain` CLI, memory schema v3 → v4; (4) MCP client — `app/mcp/client.py` async stdio probe wrapper + `app/mcp/catalog.py` JSON-backed catalog + `localflow mcp-clients list/add/remove/probe` CLI for registering external MCP servers (filesystem / fetch / search etc.). +15 tests (526 → 541). |
 | 16.1 (v0.16.1) | NO | UX + intelligence polish from real-user testing — (1) **UI nav bug fix**: "Continue to Execute" + "Continue to Rollback" buttons now use session-state flag + top-of-render `st.switch_page` so clicks always navigate (the old code had the if-block bypassed when subsequent reruns skipped the post-plan branch); (2) **autodetect display removed** from Plan page (every non-empty goal showed "llm mode" — useless info; routing logic stays internal); (3) **agent system prompt** gained explicit rules for content-driven rename (`重命名` / Chinese filenames from PDF content) + vague data-analysis goal handling; (4) **partial-plan fallback** — when `LLMPlanner.plan` exhausts `max_attempts`, instead of raising `PlannerFailure` it synthesises a degraded ActionPlan from the last attempt (per-action policy_guard salvage) + a `_diagnose()` summary explaining which constraints kept tripping; the user sees the partial in dry-run and decides; (5) **data_analyzer LLM stronger reasoning**: system prompt rewritten with explicit "vague-goal mental checklist" + a self-eval retry that re-calls the LLM with a "your spec produced empty/error — try simpler" hint when the first spec returns no rows. +2 tests (541 → 542). |
+| **17 (v0.17.0)** | NO | Recipe / Pack System — `app/recipes/` registry + deterministic router; flagship `recipes/*.yaml` (research / data_report / project_handoff); `localflow pack list/describe/suggest/run` CLI; new `📦 Pack` UI page. Recipes compile to v0.11 TaskGraphs. +36 tests (542 → 578). |
+| **18 (v0.18.0)** | NO | Goal Interpreter (`localflow goal "..."` w/ LLM clarifying loop, 3 safety nets) + Capability Primitives (`app/primitives/` typed `extract_content` / `classify_content` + 10-entry catalog); UI Pack page Suggest block upgraded to full interpreter loop. +30 tests (578 → 608). |
+| **19 (v0.19.0)** | NO | Deliverable Verifier expansion — 7 recipe-level verifiers (`coverage` / `source_ledger` / `review_queue` / `deliverable_completeness` structural + `summary_grounding` / `chart_data_consistency` / `topic_coherence` LLM-as-judge). New `app/eval/recipe_verifiers/` registry; `pack run` writes `recipe_verification.json` + exits 3 on quality fail (vs 1 for crash). Each failure carries `suggested_hint`. +29 tests (608 → 637). |
+| **20 (v0.20.0)** | NO | Flagship packs formalised + product-led README + Phase 19 bug fixes — three deliverable packs each ship with `examples/<pack>/seed.py` + workspace + README + eval task; `route_low_confidence_to_review` auto-propagates when recipe declares `review_queue_verifier`; agent meta-skill now receives `task.expected_outputs` (generates README + SOURCES, not just README); `chart_data_consistency_verifier` scoped to `analysis_charts/` only. +4 tests (642 → 646, after Phase 19 absorbed +5 unrelated). |
+| **21 (v0.21.0)** | NO | Recipe Auto-Repair Loop — `app/harness/recipe_repair.py` orchestrates verifier-hint → `plan_with_llm(user_hint=...)` → `replay_from_stage` → re-verify, capped at `repair_policy.max_rounds`; new `TaskGraph.stage_hints` + `RecipeSpec.repair_target_map` schema fields; 6-line `_run_one_stage` edit threads stage_hints into `plan_with_llm`. All 3 flagship recipes ship with `repair_policy.enabled=true, max_rounds=2`. +12 tests (646 → 658). |
+| **22 (v0.22.0)** | NO | UI productisation + bilingual substrate — (1) **Lane B2** locale plumbing: `--locale {zh-CN,en-US}` flag on `taskgraph run` + `pack run`, new `app/agent/locale_prompts.py::locale_instruction()` injected into LLM system prompts, `TaskGraph.locale` schema field; (2) **Lane D** 6 bilingual Jinja templates under `app/templates/reports/*.j2` (agent / folder_organizer / pdf_indexer / data_reporter / data_analyzer / workspace_visualizer), each reporter rewired to render the template; (3) **Lane A-copy** UI terminology softened (Skill → 能力 / Capability; Approval Token → 确认授权 / Approve; Verifier → 校验 / Check; Dry-run → 预览 / Preview); (4) **Lane A-home** product landing page (hero + 3 featured pack cards + state-handoff to Pack page); (5) **Lane C-nav** new `🗂️ Workspace` + `📊 Runs` pages, `Memory` → `⚙ Settings` rename, Pack title → `Create Pack`, Plan/Execute/Rollback pushed to `5_*` / `6_*` / `7_*` prefixes. Full `st.navigation` collapse deferred. +23 tests (658 → 681). |
 
-**Score**: 2 deliberate exceptions across 27 deliveries. 25/27 zero-kernel-touch.
+**Score**: 2 deliberate exceptions across 28 deliveries (rows 17–21 backfilled retroactively in v0.22). 26/28 zero-kernel-touch.
 
 ---
 

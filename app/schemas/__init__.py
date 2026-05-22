@@ -1,6 +1,12 @@
 from app.schemas.action import Action, ActionType, RiskLevel
 from app.schemas.execution import ExecutionRecord, ExecutionStatus
 from app.schemas.plan import ActionPlan
+from app.schemas.recipe import (
+    InputExpectation,
+    RecipeSpec,
+    RecipeStage,
+    RepairPolicy,
+)
 from app.schemas.risk import RiskAssessment, RiskVerdict
 from app.schemas.rollback import RollbackEntry, RollbackManifest
 from app.schemas.semantic import SemanticVerdict, SemanticVerificationResult
@@ -10,7 +16,7 @@ from app.schemas.source_ledger import (
     SourceEntry,
     SourceLedger,
 )
-from app.schemas.task import TaskSpec
+from app.schemas.task import DEFAULT_LOCALE, Locale, TaskSpec
 from app.schemas.taskgraph import (
     StageFailurePolicy,
     StageResult,
@@ -31,6 +37,10 @@ __all__ = [
     "ExecutionStatus",
     "FailureType",
     "FileMeta",
+    "InputExpectation",
+    "RecipeSpec",
+    "RecipeStage",
+    "RepairPolicy",
     "RiskAssessment",
     "RiskLevel",
     "RiskVerdict",
@@ -49,6 +59,8 @@ __all__ = [
     "TaskGraph",
     "TaskGraphResult",
     "TaskSpec",
+    "Locale",
+    "DEFAULT_LOCALE",
     "TraceEvent",
     "TraceEventType",
     "TraceStatus",

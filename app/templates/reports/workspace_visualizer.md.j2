@@ -1,0 +1,24 @@
+# {{ T.final_report_h1_prefix }} `{{ task_id }}`
+
+- {{ T.skill_label }}: `{{ skill }}`
+- {{ T.workspace_label }}: `{{ workspace_root }}`
+- {{ T.goal_label }}: {{ user_goal }}
+
+## {{ T.execution_summary_h2 }}
+
+- {{ T.total_actions_label }}: **{{ total_actions }}**
+- {{ T.succeeded_label }}: **{{ succeeded }}**
+- {{ T.failed_label }}: **{{ failed }}**
+- {{ T.skipped_label }}: **{{ skipped }}**
+
+## {{ T.verifier_verdict_h2 }}
+
+**{{ T.passed_badge if verifier_passed else T.failed_badge }}** — {{ verifier_summary }}
+
+{% if expected_outputs %}
+## {{ T.outputs_h2 }}
+
+{% for out in expected_outputs %}
+- `{{ out }}`
+{% endfor %}
+{% endif %}

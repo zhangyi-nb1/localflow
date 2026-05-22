@@ -1,6 +1,13 @@
+"""pdf_indexer final_report.md renderer.
+
+v0.22: rendered via ``app/templates/reports/pdf_indexer.md.j2`` so
+the per-PDF source list + output section respect ``task.locale``.
+"""
+
 from __future__ import annotations
 
 from app.schemas import ActionPlan, ExecutionStatus, TaskSpec, VerificationResult
+from app.templates import render_report
 
 
 def render_pdf_index_report(
@@ -13,35 +20,25 @@ def render_pdf_index_report(
     success = sum(1 for r in outcome.records if r.status == ExecutionStatus.SUCCESS)
     failed = sum(1 for r in outcome.records if r.status == ExecutionStatus.FAILED)
 
-    lines: list[str] = []
-    lines.append(f"# pdf_indexer report — task `{task.task_id}`")
-    lines.append("")
-    lines.append(f"- Workspace: `{task.workspace_root}`")
-    lines.append(f"- Goal: {task.user_goal}")
-    lines.append("")
-    lines.append("## Outcome")
-    lines.append(f"- Actions: {len(plan.actions)}  ·  succeeded: {success}  ·  failed: {failed}")
-    lines.append(
-        f"- Verifier: **{'PASSED' if verification.passed else 'FAILED'}** — {verification.summary}"
-    )
-    lines.append("")
-
+    first_action = None
+    sources: list[dict] = []
     if plan.actions:
-        action = plan.actions[0]
-        provenance = action.metadata.get("provenance", {}) or {}
+        first_action = plan.actions[0]
+        provenance = first_action.metadata.get("provenance", {}) or {}
         sources = provenance.get("sources", []) or []
-        lines.append("## Index sources")
-        lines.append("")
-        lines.append(f"Synthesized from {len(sources)} source PDF(s):")
-        lines.append("")
-        for src in sources:
-            marker = "preview" if src.get("has_preview") else "filename-only"
-            lines.append(f'- `{src["path"]}` — title: "{src["title"]}" ({marker})')
-        lines.append("")
-        lines.append(f"## Output\n\n- `{action.target_path}` (written; rollback restores)")
-        lines.append("")
 
-    lines.append("## How to undo")
-    lines.append("")
-    lines.append(f"```bash\nlocalflow rollback --run-id {outcome.run_id}\n```")
-    return "\n".join(lines)
+    ctx = {
+        "task_id": task.task_id,
+        "workspace_root": task.workspace_root,
+        "user_goal": task.user_goal,
+        "total_actions": len(plan.actions),
+        "succeeded": success,
+        "failed": failed,
+        "verifier_passed": verification.passed,
+        "verifier_summary": verification.summary,
+        "first_action": first_action is not None,
+        "first_action_target": first_action.target_path if first_action else "",
+        "sources": sources,
+        "run_id": outcome.run_id,
+    }
+    return render_report("pdf_indexer", locale=task.locale, ctx=ctx)

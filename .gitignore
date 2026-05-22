@@ -58,6 +58,15 @@ sandbox_*/
 # seed.py + workspace_pack.yaml + README.md only.
 examples/research_pack/workspace/
 
+# Phase 20 demo workspaces — same regenerate-from-seed pattern.
+examples/data_report_pack/workspace/
+examples/project_handoff_pack/workspace/
+
+# Codex / MCP local config — has machine-specific absolute paths
+# (same problem as .mcp.json). Keep on disk for the developer's IDE
+# but never commit.
+.codex/
+
 # Proxy/connection probe scripts — debug-only, contain internal IPs.
 # Memory note: "保留在仓库根（不进 git）".
 probe_*.py

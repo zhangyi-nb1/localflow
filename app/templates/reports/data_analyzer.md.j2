@@ -1,0 +1,30 @@
+# data_analyzer · {{ T.final_report_h1_prefix }} `{{ task_id }}`
+
+- **{{ T.workspace_label }}**: `{{ workspace_root }}`
+- **{{ T.goal_label }}**: {{ user_goal }}
+
+## {{ T.execution_summary_h2 }}
+
+- {{ T.total_actions_label }}: **{{ total_actions }}**
+- {{ T.succeeded_label }}: **{{ succeeded }}**  ·  {{ T.failed_label }}: **{{ failed }}**  ·  {{ T.skipped_label }}: **{{ skipped }}**
+- {{ T.rollback_entries_label }}: **{{ rollback_entries }}**
+
+## {{ T.verifier_verdict_h2 }}
+
+**{{ T.passed_badge if verifier_passed else T.failed_badge }}** — {{ verifier_summary }}
+
+{% if generated_files %}
+## {{ T.generated_files_h2 }}
+
+{% for p in generated_files %}
+- `{{ p }}`
+{% endfor %}
+
+{% endif %}
+## {{ T.how_to_undo_h2 }}
+
+{{ T.how_to_undo_intro }}
+
+```bash
+localflow rollback --run-id {{ run_id }}
+```

@@ -176,6 +176,8 @@ def test_pdf_indexer_runs_through_executor(pdf_workspace, pdf_task, run_store) -
     assert "Agent Memory" in body
 
     # Reporter produces a valid markdown report citing sources.
+    # v0.22: report H1 is now bilingual (Chinese default); just assert the
+    # skill name appears and the per-PDF title from sources is included.
     report = skill.report(task=pdf_task, plan=plan, outcome=outcome, verification=result)
-    assert "pdf_indexer report" in report
+    assert "pdf_indexer" in report
     assert "Agent Memory" in report

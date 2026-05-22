@@ -38,10 +38,14 @@ _DICT: dict[str, dict[Lang, str]] = {
         "zh": "面向本地工作区的 LLM 智能体安全执行框架。",
     },
     "app.page_title.home": {"en": "Home", "zh": "首页"},
+    "app.page_title.pack": {"en": "Create Pack", "zh": "新建成果包"},
+    "app.page_title.workspace": {"en": "Workspace", "zh": "工作区"},
+    "app.page_title.runs": {"en": "Runs", "zh": "运行记录"},
     "app.page_title.plan": {"en": "Plan", "zh": "规划"},
     "app.page_title.execute": {"en": "Execute", "zh": "执行"},
     "app.page_title.rollback": {"en": "Rollback", "zh": "回滚"},
     "app.page_title.memory": {"en": "Memory", "zh": "偏好记忆"},
+    "app.page_title.settings": {"en": "Settings", "zh": "设置"},
     "app.header_prefix": {
         "en": "🌀 LocalFlow — {title}",
         "zh": "🌀 LocalFlow — {title}",
@@ -158,38 +162,134 @@ _DICT: dict[str, dict[Lang, str]] = {
             "但你已经放开了 UI 层的护栏。如需关闭：从 URL 中删除 `?unsafe=1`。"
         ),
     },
+    # ───────────────────────── workspace page ─────────────────────────
+    "workspace.subtitle": {
+        "en": "Browse the active workspace — counts, sizes, and recent runs.",
+        "zh": "查看当前工作区 — 文件数、大小、最近的运行记录。",
+    },
+    "workspace.no_workspace": {
+        "en": "Pick a workspace in the sidebar to see its contents.",
+        "zh": "请在左侧栏挑选一个工作区，然后查看它的内容。",
+    },
+    "workspace.summary.title": {
+        "en": "### Summary",
+        "zh": "### 概览",
+    },
+    "workspace.summary.total_files": {"en": "Total files", "zh": "文件总数"},
+    "workspace.summary.total_size": {"en": "Total size", "zh": "总大小"},
+    "workspace.summary.runs_here": {"en": "Runs on this workspace", "zh": "在此工作区的运行数"},
+    "workspace.file_list.title": {
+        "en": "### Files",
+        "zh": "### 文件列表",
+    },
+    "workspace.file_list.empty": {
+        "en": "_(workspace is empty)_",
+        "zh": "_(工作区是空的)_",
+    },
+    "workspace.file_list.col.path": {"en": "Path", "zh": "路径"},
+    "workspace.file_list.col.size": {"en": "Size", "zh": "大小"},
+    "workspace.file_list.col.modified": {"en": "Modified", "zh": "最近修改"},
+    "workspace.file_list.truncated": {
+        "en": "Showing first {n} of {total} files. Use the CLI or filesystem to browse the rest.",
+        "zh": "仅显示前 {n} / {total} 个文件。其余请用 CLI 或文件管理器查看。",
+    },
+    # ───────────────────────── runs page ─────────────────────────
+    "runs.subtitle": {
+        "en": "Every task LocalFlow has executed on this machine — open, re-read, or undo.",
+        "zh": "本机上 LocalFlow 跑过的每一个任务 — 可查看、重读或撤销。",
+    },
+    "runs.empty": {
+        "en": "No runs yet. Try a pack on the **📦 Create Pack** page to get started.",
+        "zh": "还没有任何运行记录。可以去 **📦 新建成果包** 页面试一下。",
+    },
+    "runs.empty_ws": {
+        "en": "No runs for the current workspace yet. Switch workspace in the sidebar to see others.",
+        "zh": "当前工作区还没有运行记录。可以在左侧栏切换工作区查看其他记录。",
+    },
+    "runs.filter.this_workspace": {
+        "en": "Filter to the active workspace only",
+        "zh": "只显示当前工作区的记录",
+    },
+    "runs.table.col.task_id": {"en": "Task", "zh": "任务"},
+    "runs.table.col.skill": {"en": "Capability", "zh": "能力"},
+    "runs.table.col.workspace": {"en": "Workspace", "zh": "工作区"},
+    "runs.table.col.status": {"en": "Status", "zh": "状态"},
+    "runs.table.col.rollback": {"en": "Rollback", "zh": "撤销"},
+    "runs.status.executed": {"en": "✅ Executed", "zh": "✅ 已执行"},
+    "runs.status.planned": {"en": "📋 Planned only", "zh": "📋 仅规划"},
+    "runs.rollback.available": {"en": "available", "zh": "可撤销"},
+    "runs.rollback.none": {"en": "—", "zh": "—"},
+    "runs.action.open_rollback": {
+        "en": "↺ Open in Rollback",
+        "zh": "↺ 打开撤销页面",
+    },
+    "runs.action.view_report": {
+        "en": "📄 View final report",
+        "zh": "📄 查看最终报告",
+    },
+    "runs.detail.no_report": {
+        "en": "_(no final report on disk for this task)_",
+        "zh": "_(该任务没有最终报告文件)_",
+    },
     # ───────────────────────── home page ─────────────────────────
+    "home.hero.tagline": {
+        "en": "Turn a messy workspace into a deliverable pack — with preview, approval, and one-click undo.",
+        "zh": "把杂乱的工作区，一键变成可交付的成果包 — 全程可预览、可授权、可撤销。",
+    },
+    "home.packs.heading": {
+        "en": "### Pick a pack to run",
+        "zh": "### 挑一个成果包",
+    },
+    "home.packs.subheading": {
+        "en": "Each pack runs end-to-end on your workspace, shows a preview, and stays one click away from undo.",
+        "zh": "每个成果包都会在你的工作区里端到端跑完一遍，先预览、再执行，随时可一键撤销。",
+    },
+    "home.packs.try_button": {
+        "en": "Try {title} →",
+        "zh": "试试 {title} →",
+    },
+    "home.packs.no_workspace": {
+        "en": "Pick a workspace in the sidebar to enable the pack buttons.",
+        "zh": "请先在左侧栏挑选一个工作区，再选成果包。",
+    },
+    "home.packs.unavailable": {
+        "en": "_Pack `{name}` not found in the recipe registry._",
+        "zh": "_未在 recipe 注册表中找到 `{name}` 成果包。_",
+    },
+    "home.advanced.heading": {
+        "en": "### Or take manual control",
+        "zh": "### 或自己组装",
+    },
     "home.intro": {
         "en": (
-            "The LLM proposes; the harness disposes. Use the sidebar pages "
-            "to walk a workspace through the lifecycle:\n\n"
+            "Prefer to write your own goal and pick a capability by hand? "
+            "Walk your workspace through the manual lifecycle:\n\n"
             "```\n  Plan  →  Execute  →  Rollback\n"
-            "            (with dry-run + approval)   (with hash-drift guard)\n```"
+            "            (preview + approve)            (drift-safe undo)\n```"
         ),
         "zh": (
-            "AI 出方案，harness 决定能不能动。通过左侧栏的页面让一个 workspace "
-            "走完完整生命周期：\n\n"
+            "想自己写目标、自己挑能力？通过下方页面让工作区走完完整生命周期：\n\n"
             "```\n  Plan  →  Execute  →  Rollback\n"
-            "            （含 dry-run + 审批）         （含哈希漂移保护）\n```"
+            "            （预览 + 确认授权）        （含漂移保护的撤销）\n```"
         ),
     },
     "home.table.header": {"en": "| Page | What it does |", "zh": "| 页面 | 作用 |"},
     "home.table.divider": {"en": "|---|---|", "zh": "|---|---|"},
     "home.table.plan": {
-        "en": "| **📋 Plan** | Write a goal — LocalFlow picks the skill + planner. |",
-        "zh": "| **📋 Plan** | 写下你的目标 — LocalFlow 自动挑选 skill 与 planner。 |",
+        "en": "| **📋 Plan** | Write a goal — LocalFlow picks the right capability + how to plan it. |",
+        "zh": "| **📋 Plan** | 写下你的目标 — LocalFlow 自动挑选合适的能力与规划方式。 |",
     },
     "home.table.execute": {
-        "en": "| **🔍 Execute** | Render dry-run, approve, commit. Verifier runs automatically. |",
-        "zh": "| **🔍 Execute** | 渲染预演、审批、执行。Verifier 会自动运行。 |",
+        "en": "| **🔍 Execute** | Preview the change, approve, commit. Checks run automatically. |",
+        "zh": "| **🔍 Execute** | 预览变更、确认授权、提交执行。校验会自动运行。 |",
     },
     "home.table.rollback": {
         "en": "| **↺ Rollback** | Preview each reverse op + drift detection. `--force` to override. |",
         "zh": "| **↺ Rollback** | 预览每一个反向操作 + 漂移检测。`--force` 可覆盖。 |",
     },
     "home.table.memory": {
-        "en": "| **⚙ Memory** | Edit `forbidden_paths` + `naming_style`. Audit log. |",
-        "zh": "| **⚙ Memory** | 编辑 `forbidden_paths` 与 `naming_style`。含审计日志。 |",
+        "en": "| **⚙ Settings** | Edit forbidden paths + naming style. Includes audit log. |",
+        "zh": "| **⚙ 设置** | 编辑禁止路径、命名风格。含审计日志。 |",
     },
     "home.workspace.header": {"en": "### Workspace", "zh": "### 工作区"},
     "home.active_workspace": {
@@ -228,8 +328,8 @@ _DICT: dict[str, dict[Lang, str]] = {
         "zh": "如：按文件类型整理 / organize by file type",
     },
     "plan.goal.empty_hint": {
-        "en": "_Start typing your goal above to see what skill + planner LocalFlow will use._",
-        "zh": "_先在上方输入目标，LocalFlow 会自动告诉你将使用哪个 skill + planner。_",
+        "en": "_Start typing your goal above to see which capability LocalFlow will use._",
+        "zh": "_先在上方输入目标，LocalFlow 会告诉你将使用哪种能力。_",
     },
     "plan.autodetect.label": {
         "en": "ℹ️ **Auto-detected** · skill=`{skill}` · planner=`{planner}`",
@@ -263,8 +363,8 @@ _DICT: dict[str, dict[Lang, str]] = {
         "en": "▶ Override (advanced) — pick skill / planner manually",
         "zh": "▶ 高级覆盖（手动选择 skill / planner）",
     },
-    "plan.override.skill": {"en": "Skill", "zh": "Skill（技能）"},
-    "plan.override.planner": {"en": "Planner", "zh": "Planner（规划方式）"},
+    "plan.override.skill": {"en": "Capability", "zh": "能力"},
+    "plan.override.planner": {"en": "How to plan", "zh": "规划方式"},
     "plan.override.planner_help": {
         "en": (
             "`rule` is deterministic + instant. `llm` is slower but understands semantic goals."
@@ -413,8 +513,8 @@ _DICT: dict[str, dict[Lang, str]] = {
     },
     # ───────────────────────── execute page ─────────────────────────
     "execute.subtitle": {
-        "en": "Dry-run → review → approve → execute → verify.",
-        "zh": "Dry-run → 审阅 → 审批 → 执行 → Verify。",
+        "en": "Preview → review → approve → execute → check.",
+        "zh": "预览 → 审阅 → 确认授权 → 执行 → 校验。",
     },
     "execute.task.label": {"en": "Task", "zh": "Task"},
     "execute.no_runs": {
@@ -437,7 +537,7 @@ _DICT: dict[str, dict[Lang, str]] = {
         "en": "Task `{task_id}` already executed + verified.",
         "zh": "Task `{task_id}` 已执行 + 已校验。",
     },
-    "execute.verifier_badge": {"en": "Verifier:", "zh": "Verifier："},
+    "execute.verifier_badge": {"en": "Check:", "zh": "校验："},
     # Phase 13 — semantic verifier panel.
     "execute.semantic.passed": {
         "en": "Semantic verifier: ✓ {summary}",
@@ -464,15 +564,15 @@ _DICT: dict[str, dict[Lang, str]] = {
         "en": "To re-run on a fresh state, create a new task from the **📋 Plan** page.",
         "zh": "如要在干净的状态下重新跑，请回到 **📋 Plan** 新建一个 task。",
     },
-    "execute.stage1.header": {"en": "Stage 1 — Dry run", "zh": "阶段 1 — Dry run（预演）"},
-    "execute.stage1.button": {"en": "🔍 Render dry-run", "zh": "🔍 渲染预演"},
+    "execute.stage1.header": {"en": "Stage 1 — Preview", "zh": "阶段 1 — 预览"},
+    "execute.stage1.button": {"en": "🔍 Show preview", "zh": "🔍 生成预览"},
     "execute.stage1.spinner": {
-        "en": "Computing dry-run...",
-        "zh": "正在计算预演…",
+        "en": "Building preview...",
+        "zh": "正在生成预览…",
     },
     "execute.stage1.fail": {
-        "en": "Dry-run failed: {err_type}: {err}",
-        "zh": "预演失败：{err_type}: {err}",
+        "en": "Preview failed: {err_type}: {err}",
+        "zh": "预览失败：{err_type}: {err}",
     },
     "execute.stage1.risk": {"en": "**Risk:**", "zh": "**风险：**"},
     "execute.stage1.actions_to_execute": {
@@ -484,14 +584,14 @@ _DICT: dict[str, dict[Lang, str]] = {
         "zh": "⚠️ {n} 条警告",
     },
     "execute.stage1.preview_expander": {
-        "en": "📄 Dry-run preview (markdown)",
-        "zh": "📄 Dry-run 预览（Markdown）",
+        "en": "📄 Preview (markdown)",
+        "zh": "📄 预览（Markdown）",
     },
     "execute.stage1.hint": {
-        "en": "Click **Render dry-run** above to preview every planned action.",
-        "zh": "点上方 **Render dry-run** 预览每一个计划好的动作。",
+        "en": "Click **Show preview** above to see every planned action.",
+        "zh": "点上方 **生成预览** 查看每一个计划好的动作。",
     },
-    "execute.stage2.header": {"en": "Stage 2 — Approval", "zh": "阶段 2 — Approval（审批）"},
+    "execute.stage2.header": {"en": "Stage 2 — Approve", "zh": "阶段 2 — 确认授权"},
     "execute.stage2.blocked": {
         "en": "Policy guard blocked one or more actions (see warnings above). Execute will refuse the run.",
         "zh": "Policy guard 拦住了一个或多个动作（见上方警告）。Execute 会拒绝运行。",
@@ -511,12 +611,12 @@ _DICT: dict[str, dict[Lang, str]] = {
     },
     "execute.stage3.button": {"en": "🚀 Execute now", "zh": "🚀 立即执行"},
     "execute.stage3.token_missing": {
-        "en": "Approval token missing. Re-run dry-run.",
-        "zh": "缺少 approval_token。请重新跑 dry-run。",
+        "en": "Approval missing. Please re-run the preview to refresh.",
+        "zh": "确认授权已失效，请重新预览一次。",
     },
     "execute.stage3.token_validate": {
-        "en": "Validating approval token...",
-        "zh": "正在校验 approval_token…",
+        "en": "Verifying your approval...",
+        "zh": "正在核对授权…",
     },
     "execute.stage3.executing": {
         "en": "Executing... (writing real changes)",
@@ -533,7 +633,7 @@ _DICT: dict[str, dict[Lang, str]] = {
     "execute.metric.executed": {"en": "Executed", "zh": "已执行"},
     "execute.metric.failed": {"en": "Failed", "zh": "失败"},
     "execute.metric.skipped": {"en": "Skipped", "zh": "跳过"},
-    "execute.metric.verifier": {"en": "Verifier", "zh": "Verifier"},
+    "execute.metric.verifier": {"en": "Check", "zh": "校验"},
     "execute.success": {
         "en": "✅ Task `{task_id}` complete. Run recorded in `{path}`.",
         "zh": "✅ Task `{task_id}` 已完成。Run 数据写在 `{path}`。",
@@ -547,8 +647,8 @@ _DICT: dict[str, dict[Lang, str]] = {
         "zh": "也可以在左侧栏点 **↺ Rollback** 执行撤销。",
     },
     "execute.fail.verifier": {
-        "en": "❌ Verifier failed:",
-        "zh": "❌ Verifier 失败：",
+        "en": "❌ Check failed:",
+        "zh": "❌ 校验未通过：",
     },
     # ───────────────────────── rollback page ─────────────────────────
     "rollback.subtitle": {
@@ -869,6 +969,269 @@ _DICT: dict[str, dict[Lang, str]] = {
     "common.status.partial": {"en": "PARTIAL", "zh": "部分完成"},
     "common.status.clean": {"en": "CLEAN", "zh": "干净"},
     "common.status.conflicts": {"en": "CONFLICTS", "zh": "冲突"},
+    # ───────────────────────── pack page (Phase 17 + 18 + 19) ─────────────────────────
+    "pack.heading": {
+        "en": "📦 Pack — deliverable knowledge packs",
+        "zh": "📦 交付包 — 可交付的知识包",
+    },
+    "pack.subtitle": {
+        "en": (
+            "Pick a deliverable pack instead of an individual skill. Each pack "
+            "compiles to a multi-stage TaskGraph the harness runs end-to-end "
+            "with one approval, one rollback."
+        ),
+        "zh": (
+            "选一个交付包，而不是去挑某个 skill。每个交付包都会编译为多阶段 "
+            "TaskGraph，由 Harness 一次审批、一次回滚地端到端执行。"
+        ),
+    },
+    "pack.load_errors_title": {
+        "en": "⚠️ {n} recipe load error(s)",
+        "zh": "⚠️ {n} 个交付包 YAML 加载错误",
+    },
+    "pack.no_recipes_loaded": {
+        "en": "No recipes loaded. Check that the `recipes/` directory exists at `{path}`.",
+        "zh": "没有可用的交付包。请检查 `recipes/` 目录是否存在：`{path}`。",
+    },
+    # ── Goal Interpreter block (Phase 18)
+    "pack.goal.expander_title": {
+        "en": "🎯 Interpret a goal (Phase 18)",
+        "zh": "🎯 解释你的目标 (Phase 18)",
+    },
+    "pack.goal.description": {
+        "en": (
+            "Type what you want; the Goal Interpreter picks a deliverable pack "
+            "— using the LLM for clarifying questions when your goal is ambiguous."
+        ),
+        "zh": (
+            "告诉我你想做什么，目标解释器会为你挑一个交付包 — "
+            "目标含糊时会调用 LLM 反问你 1~3 个澄清问题。"
+        ),
+    },
+    "pack.goal.input_label": {"en": "Goal", "zh": "目标"},
+    "pack.goal.input_placeholder": {
+        "en": "e.g. 'organize my research papers' / '整理我的研究资料'",
+        "zh": "例如：'整理我的研究资料' / 'organize my research papers'",
+    },
+    "pack.goal.use_llm_label": {
+        "en": "Use LLM for clarifying questions",
+        "zh": "目标模糊时让 LLM 提澄清问题",
+    },
+    "pack.goal.use_llm_help": {
+        "en": (
+            "Off = router-only (deterministic; degrades to best router pick on "
+            "low confidence). On = LLM may ask up to 3 short clarifying questions "
+            "before committing."
+        ),
+        "zh": (
+            "关闭 = 仅用确定性路由器（低置信度时也会兜底返回最高分的交付包）。"
+            "开启 = LLM 最多反问 3 个澄清问题，再决定选哪个交付包。"
+        ),
+    },
+    "pack.goal.button_interpret": {"en": "Interpret", "zh": "解释"},
+    "pack.goal.scanning_workspace": {"en": "Scanning workspace…", "zh": "正在扫描工作区…"},
+    "pack.goal.no_llm_fallback": {
+        "en": "No LLM client available; falling back to router-only.",
+        "zh": "未找到可用的 LLM 客户端，已退回到纯路由器模式。",
+    },
+    "pack.goal.suggested": {
+        "en": "**Suggested pack:** `{name}`  ·  source={source}\n\n{rationale}",
+        "zh": "**推荐交付包：** `{name}`  ·  来源：{source}\n\n{rationale}",
+    },
+    "pack.goal.run_button": {"en": "▶ Run {title}", "zh": "▶ 运行 {title}"},
+    "pack.goal.need_clarification": {
+        "en": "**Need clarification** ({source}). {rationale}",
+        "zh": "**需要进一步澄清**（{source}）。{rationale}",
+    },
+    "pack.goal.answer_label": {"en": "Your answer", "zh": "你的回答"},
+    "pack.goal.answer_placeholder": {
+        "en": "Type your answer and press Enter…",
+        "zh": "在这里输入你的回答，回车提交…",
+    },
+    "pack.goal.submit_clarify": {"en": "Submit clarification", "zh": "提交澄清"},
+    "pack.goal.router_audit_title": {
+        "en": "Router ranking (audit)",
+        "zh": "路由器评分（审计明细）",
+    },
+    "pack.goal.audit_col_rank": {"en": "rank", "zh": "排名"},
+    "pack.goal.audit_col_recipe": {"en": "recipe", "zh": "交付包"},
+    "pack.goal.audit_col_score": {"en": "score", "zh": "得分"},
+    "pack.goal.audit_col_why": {"en": "why", "zh": "原因"},
+    "pack.goal.audit_no_signals": {"en": "(no signals)", "zh": "（无匹配信号）"},
+    # ── Pack cards (Phase 17)
+    "pack.cards.heading": {"en": "### Available packs", "zh": "### 可用的交付包"},
+    "pack.cards.stats": {
+        "en": "**Stages:** {stages}  ·  **Deliverables:** {outputs}  ·  **Tags:** {tags}",
+        "zh": "**阶段数：** {stages}  ·  **交付物：** {outputs}  ·  **标签：** {tags}",
+    },
+    "pack.cards.tags_none": {"en": "—", "zh": "—"},
+    "pack.cards.stages_label": {"en": "**Stages:**", "zh": "**阶段：**"},
+    "pack.cards.stage_line": {
+        "en": "  {idx}. {badge} **{title}**",
+        "zh": "  {idx}. {badge} **{title}**",
+    },
+    "pack.cards.expected_outputs_popover": {
+        "en": "Expected deliverables",
+        "zh": "预期交付物",
+    },
+    "pack.cards.verifiers_popover": {
+        "en": "Verifiers ({n})",
+        "zh": "校验器（{n}）",
+    },
+    "pack.cards.verifiers_none": {
+        "en": "_(no recipe-level verifiers)_",
+        "zh": "_(未配置交付包级校验器)_",
+    },
+    "pack.cards.repair_map_label": {
+        "en": "**Repair routing:**",
+        "zh": "**修复路由：**",
+    },
+    "pack.cards.repair_map_line": {
+        "en": "  · `{verifier}` → replays `{stage_id}`",
+        "zh": "  · `{verifier}` → 重放 `{stage_id}`",
+    },
+    "pack.cards.repair_map_default": {
+        "en": "  _(other verifiers default to the last LLM stage)_",
+        "zh": "  _(其他校验器默认重放最后一个 LLM 阶段)_",
+    },
+    "pack.cards.enable_repair_label": {"en": "Enable repair", "zh": "开启自动修复"},
+    "pack.cards.enable_repair_help": {
+        "en": (
+            "Promote ABORT stages to REPAIR. Requires the semantic verifier "
+            "preference to actually trigger."
+        ),
+        "zh": (
+            "把 ABORT 策略的阶段提升为 REPAIR（自动修复）。还需要在偏好里开启"
+            "语义校验器才会真正触发。"
+        ),
+    },
+    "pack.cards.run_button": {"en": "▶ Run {title}", "zh": "▶ 运行 {title}"},
+    # ── Pack execution + result (Phase 17)
+    "pack.exec.running": {
+        "en": "Running pack `{name}` ({stages} stages)…",
+        "zh": "正在执行交付包 `{name}`（共 {stages} 个阶段）…",
+    },
+    "pack.exec.failed": {
+        "en": "Pack run failed: {err_type}: {err}",
+        "zh": "交付包执行失败：{err_type}：{err}",
+    },
+    "pack.result.heading": {
+        "en": "### {badge} Last pack run: `{name}`  ({ms} ms)",
+        "zh": "### {badge} 上次交付包运行：`{name}`（{ms} 毫秒）",
+    },
+    "pack.result.run_id": {"en": "Run ID: `{run_id}`", "zh": "运行 ID：`{run_id}`"},
+    "pack.result.col_stage": {"en": "stage", "zh": "阶段"},
+    "pack.result.col_status": {"en": "status", "zh": "状态"},
+    "pack.result.col_actions": {"en": "actions", "zh": "动作数"},
+    "pack.result.col_verifier": {"en": "verifier", "zh": "校验"},
+    "pack.result.col_ms": {"en": "ms", "zh": "毫秒"},
+    "pack.result.rollback_hint": {
+        "en": (
+            "To undo this pack run: `localflow rollback --run-id {run_id}`  "
+            "(or use the Rollback page in the sidebar)."
+        ),
+        "zh": (
+            "如需撤销本次运行：`localflow rollback --run-id {run_id}`  "
+            "（或使用左侧栏的「回滚」页）。"
+        ),
+    },
+    # ── Recipe-level verifier table (Phase 21.1 — UI parity with CLI)
+    "pack.result.verifier_heading": {
+        "en": "#### Recipe verifiers",
+        "zh": "#### 交付包级校验器",
+    },
+    "pack.result.verifier_passed": {
+        "en": "✅ All recipe verifiers passed.",
+        "zh": "✅ 所有交付包级校验器均通过。",
+    },
+    "pack.result.verifier_failed": {
+        "en": "❌ One or more recipe verifiers failed.",
+        "zh": "❌ 有一个或多个交付包级校验器未通过。",
+    },
+    "pack.result.col_verifier_name": {"en": "verifier", "zh": "校验器"},
+    "pack.result.col_verifier_status": {"en": "status", "zh": "状态"},
+    "pack.result.col_verifier_detail": {"en": "detail", "zh": "明细"},
+    "pack.result.col_verifier_hint": {"en": "suggested hint", "zh": "建议提示"},
+    "pack.result.verifier_status_passed": {"en": "✅ passed", "zh": "✅ 通过"},
+    "pack.result.verifier_status_failed": {"en": "❌ failed", "zh": "❌ 失败"},
+    "pack.result.verifier_status_skipped": {"en": "⏭ skipped", "zh": "⏭ 跳过"},
+    # ── Recipe-level repair attempts table (Phase 21.1)
+    "pack.result.repair_heading": {
+        "en": "#### Auto-repair attempts",
+        "zh": "#### 自动修复过程",
+    },
+    "pack.result.repair_summary": {
+        "en": ("Rounds used: **{rounds}**  ·  Halted because: `{halt}`  ·  {verb}"),
+        "zh": ("已用轮数：**{rounds}**  ·  停止原因：`{halt}`  ·  {verb}"),
+    },
+    "pack.result.repair_verb_repaired": {
+        "en": "✅ Repaired",
+        "zh": "✅ 已修复",
+    },
+    "pack.result.repair_verb_still_failing": {
+        "en": "❌ Still failing",
+        "zh": "❌ 仍未通过",
+    },
+    "pack.result.col_repair_attempt": {"en": "#", "zh": "#"},
+    "pack.result.col_repair_verifier": {"en": "verifier", "zh": "校验器"},
+    "pack.result.col_repair_target": {"en": "replays stage", "zh": "重放阶段"},
+    "pack.result.col_repair_hint": {"en": "hint", "zh": "提示"},
+    "pack.result.col_repair_passed": {"en": "outcome", "zh": "结果"},
+    "pack.result.col_repair_ms": {"en": "ms", "zh": "毫秒"},
+    "pack.result.repair_outcome_passed": {"en": "✅ passed", "zh": "✅ 通过"},
+    "pack.result.repair_outcome_failed": {"en": "❌ still failing", "zh": "❌ 仍未通过"},
+    "pack.result.repair_outcome_error": {"en": "💥 error: {err}", "zh": "💥 错误：{err}"},
+    "pack.exec.verifier_exception": {
+        "en": "Recipe verifier raised: {err_type}: {err}",
+        "zh": "交付包级校验器抛出异常：{err_type}：{err}",
+    },
+    # ── Goal Interpreter rationale (Phase 18 — router-only branches)
+    "goal_interp.rationale.router_confident": {
+        "en": (
+            "Router scored {name} at {score} (margin {margin} over next "
+            "candidate); deterministic pick."
+        ),
+        "zh": ("路由器给 {name} 评 {score} 分（领先第二名 {margin} 分）；确定性挑选。"),
+    },
+    "goal_interp.rationale.no_llm_router_pick": {
+        "en": (
+            "No LLM available; falling back to router top pick ({name}, score "
+            "{score}). Confidence is low — consider re-running with a clearer "
+            "goal."
+        ),
+        "zh": (
+            "未找到可用的 LLM 客户端，已退回到路由器最高分选项（{name}，得分 "
+            "{score}）。置信度偏低 — 建议用更明确的目标重试。"
+        ),
+    },
+    "goal_interp.rationale.no_llm_clarify": {
+        "en": ("No LLM available and router has no positive-scoring recipe."),
+        "zh": ("未找到可用的 LLM 客户端，且路由器没有正向得分的交付包。"),
+    },
+    "goal_interp.rationale.no_recipes_loaded": {
+        "en": ("No recipes are loaded; ask the user to install or configure recipes."),
+        "zh": "尚未加载任何交付包；请先在 recipes/ 目录或环境变量里配置。",
+    },
+    "goal_interp.rationale.llm_failed_pick": {
+        "en": (
+            "LLM call failed ({err}); falling back to router. Top pick: {name} (score {score})."
+        ),
+        "zh": ("LLM 调用失败（{err}），已退回到路由器。最高分：{name}（得分 {score}）。"),
+    },
+    "goal_interp.rationale.llm_failed_clarify": {
+        "en": ("LLM call failed ({err}); router has no positive-scoring recipe either."),
+        "zh": ("LLM 调用失败（{err}），且路由器也没有正向得分的交付包。"),
+    },
+    "goal_interp.rationale.llm_invalid_envelope": {
+        "en": (
+            "LLM returned an invalid envelope ({err}); falling back to router top pick ({name})."
+        ),
+        "zh": ("LLM 返回了无效的结构（{err}），已退回到路由器最高分（{name}）。"),
+    },
+    "goal_interp.rationale.llm_unknown_recipe": {
+        "en": ("LLM picked unknown recipe '{ghost}'; router fallback to {name}."),
+        "zh": ("LLM 选了一个不存在的交付包 '{ghost}'，已退回到路由器选项 {name}。"),
+    },
 }
 
 
@@ -911,6 +1274,16 @@ def current_lang() -> Lang:
         return st.session_state.get(SESSION_LANG_KEY, DEFAULT_LANG)  # type: ignore[return-value]
     except Exception:
         return DEFAULT_LANG
+
+
+def current_locale() -> str:
+    """v0.22 — map the UI's short language code (``en`` / ``zh``) to the
+    BCP-47-style :class:`app.schemas.task.Locale` (``en-US`` / ``zh-CN``)
+    used by TaskSpec / TaskGraph for generated-content language. Callers
+    pass the result into ``compile_to_taskgraph(locale=...)`` so the LLM
+    produces README / SOURCES / verifier rationales in the user's
+    language."""
+    return {"en": "en-US", "zh": "zh-CN"}.get(current_lang(), "zh-CN")
 
 
 def render_language_toggle() -> None:

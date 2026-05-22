@@ -1,0 +1,138 @@
+# Phase 17 (v0.17.0) — Research Pack recipe.
+#
+# Productisation guide §8.1: the flagship use case. Takes a messy
+# research workspace (PDFs / data / images / notes / web clips) and
+# produces a deliverable knowledge pack (categorised dirs + per-PDF
+# index + analysis report + overview chart + top-level README +
+# sources ledger).
+#
+# This recipe formalises the v0.14.0 `examples/research_pack/
+# workspace_pack.yaml` demo into the Phase 17 Recipe layer. The
+# underlying TaskGraph is identical; the wrapper adds:
+#   - input_expectation (so the router suggests this pack for the
+#     right kind of workspace).
+#   - expected_outputs (pack-level deliverables surfaced in `pack
+#     describe`).
+#   - repair_policy.enabled=false by default — opt in via
+#     `localflow memory set enable_semantic_verifier true`
+#     before running.
+#
+# Usage:
+#   localflow pack describe research_pack
+#   localflow pack run research_pack --workspace ./my_messy_dir/
+
+name: research_pack
+title: Research Pack
+description: |
+  Turn a messy pile of research material (PDFs, CSVs, images, notes,
+  web clippings) into a deliverable knowledge pack: per-category
+  indexes, per-PDF summaries, a data analysis report with charts, a
+  workspace overview chart, a top-level README, and a sources ledger
+  that tracks every original file.
+
+tags: [research, study, knowledge]
+
+input_expectation:
+  file_kinds: [pdf, text, tabular, excel, image]
+  min_files: 2
+  require_any: [pdf, text, tabular, excel]
+  keywords:
+    - research
+    - paper
+    - study
+    - knowledge
+    - 资料
+    - 论文
+    - 研究
+    - 学习
+    - notes
+    - 笔记
+
+stages:
+  - stage_id: s1_organize
+    title: Categorise files by type (papers / data / images / notes / misc)
+    skill: folder_organizer
+    planner: rule
+    expected_outputs:
+      - papers/index.md
+      - data/index.md
+      - images/index.md
+      - notes/index.md
+      - misc/index.md
+
+  - stage_id: s2_pdf_index
+    title: Build a per-PDF index with extracted titles
+    skill: pdf_indexer
+    planner: rule
+    expected_outputs:
+      - pdf_index.md
+
+  - stage_id: s3_data_analyze
+    title: Analyse CSV/Excel data and render charts
+    skill: data_analyzer
+    planner: rule
+    expected_outputs:
+      - analysis_report.md
+
+  - stage_id: s4_workspace_chart
+    title: Render a workspace overview chart (post-organize layout)
+    skill: workspace_visualizer
+    planner: rule
+    expected_outputs:
+      - images/file_counts.png
+      - file_counts_summary.md
+
+  - stage_id: s5_synthesize
+    title: Synthesise top-level README + sources ledger via the LLM
+    skill: agent
+    planner: llm
+    # No LLM key in this environment? Stage gracefully degrades to
+    # SKIPPED, the other four stages' outputs still ship.
+    failure_policy: skip
+    expected_outputs:
+      - README.md
+      - SOURCES.md
+
+expected_outputs:
+  - papers/index.md
+  - data/index.md
+  - images/index.md
+  - notes/index.md
+  - misc/index.md
+  - pdf_index.md
+  - analysis_report.md
+  - images/file_counts.png
+  - file_counts_summary.md
+  - README.md
+  - SOURCES.md
+
+# Phase 19 — recipe-level deliverable verifiers. These run AFTER the
+# pack finishes; failures surface as exit code 3 (vs 1 for pipeline
+# crashes) so CI distinguishes "delivered but failed quality checks"
+# from "pipeline broken". See docs/VERIFIERS.md for the full reference.
+verifiers:
+  - deliverable_completeness_verifier
+  - coverage_verifier
+  - source_ledger_verifier
+  - review_queue_verifier
+  - summary_grounding_verifier
+  - chart_data_consistency_verifier
+  - topic_coherence_verifier
+
+repair_policy:
+  # Phase 21 — auto-repair on by default for the canonical flagship.
+  # Most deliverable failures trace back to the synth stage's prose
+  # (README didn't cite some files, SOURCES is missing, etc.); the
+  # default target resolution sends every failure there. Override per
+  # verifier below if a different stage is the root cause.
+  enabled: true
+  max_rounds: 2
+
+repair_target_map:
+  # Coverage problems usually mean the organizer dropped a file —
+  # repair by re-planning the organize stage, not the synth stage.
+  coverage_verifier: s1_organize
+  review_queue_verifier: s1_organize
+  # The remaining verifiers (source_ledger, summary_grounding,
+  # chart_data_consistency, topic_coherence, deliverable_completeness)
+  # all trace back to the synth stage — default target picks it.

@@ -1,0 +1,75 @@
+task_id: task_011_data_report_pack
+title: Phase 20 — data report pack end-to-end
+goal: |
+  Turn this tabular-only workspace (revenue + users CSVs) into a
+  deliverable data report: per-CSV analysis with charts, a workspace
+  overview, and an LLM-synthesised executive README + sources ledger.
+
+skill: ""
+planner: rule
+
+# Phase 20 — minimal data_report_pack reproduction. 3 stages, no
+# folder_organizer (we want to test analysis + synth, not file moves).
+stages:
+  - stage_id: s1_data_analyze
+    title: Analyse the CSVs
+    skill: data_analyzer
+    planner: rule
+
+  - stage_id: s2_workspace_chart
+    title: Render workspace overview chart
+    skill: workspace_visualizer
+    planner: rule
+
+  - stage_id: s3_synthesize
+    title: Synthesise executive README + SOURCES via LLM
+    skill: agent
+    planner: llm
+    failure_policy: skip
+
+workspace_seed:
+  - path: revenue.csv
+    text: |
+      date,product,revenue_usd,orders
+      2026-04-01,alpha,1240.5,24
+      2026-04-01,beta,870.0,18
+      2026-04-02,alpha,1180.25,22
+      2026-04-02,beta,905.5,19
+      2026-04-03,alpha,1320.0,27
+      2026-04-03,beta,945.75,20
+
+  - path: users.csv
+    text: |
+      date,active_users,new_users,churned_users
+      2026-04-01,12450,240,95
+      2026-04-02,12595,215,70
+      2026-04-03,12740,230,85
+      2026-04-04,12885,250,105
+      2026-04-05,13030,245,100
+
+  - path: README.md
+    text: |
+      # Dataset notes
+      Two CSVs from analytics warehouse, week of 2026-04-01.
+
+expected_outputs:
+  - analysis_report.md
+  - images/file_counts.png
+  - file_counts_summary.md
+  - README.md
+  - SOURCES.md
+
+graders:
+  - safety_no_forbidden_path
+  - rollback_restores
+  - analysis_result_nonempty
+
+must_pass:
+  - safety_no_forbidden_path
+  - rollback_restores
+  - analysis_result_nonempty
+
+notes: |
+  Phase 20 data_report_pack reproduction. Narrower than task_010
+  (no PDF stage, no organizer). Stage 3 is LLM with skip-on-fail so
+  CI without an API key still validates stages 1-2.

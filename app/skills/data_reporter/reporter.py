@@ -1,6 +1,13 @@
+"""data_reporter final_report.md renderer.
+
+v0.22: rendered via ``app/templates/reports/data_reporter.md.j2`` so
+the "Sources analyzed" + "Outcome" sections honour ``task.locale``.
+"""
+
 from __future__ import annotations
 
 from app.schemas import ActionPlan, ExecutionStatus, TaskSpec, VerificationResult
+from app.templates import render_report
 
 
 def render_data_report(
@@ -13,42 +20,31 @@ def render_data_report(
     success = sum(1 for r in outcome.records if r.status == ExecutionStatus.SUCCESS)
     failed = sum(1 for r in outcome.records if r.status == ExecutionStatus.FAILED)
 
-    lines: list[str] = []
-    lines.append(f"# data_reporter report — task `{task.task_id}`")
-    lines.append("")
-    lines.append(f"- Workspace: `{task.workspace_root}`")
-    lines.append(f"- Goal: {task.user_goal}")
-    lines.append("")
-    lines.append("## Outcome")
-    lines.append(f"- Actions: {len(plan.actions)}  ·  succeeded: {success}  ·  failed: {failed}")
-    lines.append(
-        f"- Verifier: **{'PASSED' if verification.passed else 'FAILED'}** — {verification.summary}"
-    )
-    lines.append("")
-
+    first_action = None
+    sources: list[dict] = []
     if plan.actions:
-        action = plan.actions[0]
-        prov = action.metadata.get("provenance", {}) or {}
+        first_action = plan.actions[0]
+        prov = first_action.metadata.get("provenance", {}) or {}
         sources = prov.get("sources", []) or []
-        ok_sources = [s for s in sources if not s.get("error")]
-        bad_sources = [s for s in sources if s.get("error")]
-        lines.append("## Sources analyzed")
-        lines.append("")
-        lines.append(
-            f"Scanned {len(sources)} tabular file(s); "
-            f"{len(ok_sources)} parsed, {len(bad_sources)} skipped."
-        )
-        lines.append("")
-        for s in ok_sources:
-            trunc = " (truncated)" if s.get("truncated") else ""
-            lines.append(f"- `{s['path']}` — {s['rows_read']} rows × {s['cols']} cols{trunc}")
-        for s in bad_sources:
-            lines.append(f"- `{s['path']}` — **error**: {s.get('error')}")
-        lines.append("")
-        lines.append(f"## Output\n\n- `{action.target_path}` (rollback restores)")
-        lines.append("")
+    ok_sources = [s for s in sources if not s.get("error")]
+    bad_sources = [s for s in sources if s.get("error")]
 
-    lines.append("## How to undo")
-    lines.append("")
-    lines.append(f"```bash\nlocalflow rollback --run-id {outcome.run_id}\n```")
-    return "\n".join(lines)
+    ctx = {
+        "task_id": task.task_id,
+        "workspace_root": task.workspace_root,
+        "user_goal": task.user_goal,
+        "total_actions": len(plan.actions),
+        "succeeded": success,
+        "failed": failed,
+        "verifier_passed": verification.passed,
+        "verifier_summary": verification.summary,
+        "first_action": first_action is not None,
+        "first_action_target": first_action.target_path if first_action else "",
+        "sources_total": len(sources),
+        "sources_ok": len(ok_sources),
+        "sources_bad": len(bad_sources),
+        "ok_sources": ok_sources,
+        "bad_sources": bad_sources,
+        "run_id": outcome.run_id,
+    }
+    return render_report("data_reporter", locale=task.locale, ctx=ctx)

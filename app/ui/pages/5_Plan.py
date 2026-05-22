@@ -48,7 +48,7 @@ def main() -> None:
     # rerun lands in a code path (e.g. _maybe_show_last_plan) that
     # doesn't re-render the originating button.
     if st.session_state.pop("_nav_to_execute", False):
-        st.switch_page("pages/2_Execute.py")
+        st.switch_page("pages/6_Execute.py")
     workspace = require_workspace()
 
     registry = get_default_registry()

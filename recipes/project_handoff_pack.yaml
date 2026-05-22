@@ -1,0 +1,91 @@
+# Phase 17 (v0.17.0) — Project Handoff Pack recipe.
+#
+# Productisation guide §8.3: workspace looks like an in-flight project
+# (code + notes + a smattering of data / images). User wants a clean
+# handoff: organized structure, a per-file index, a workspace overview
+# chart, and an LLM-written project summary that points to important
+# files.
+#
+# Phase 17 keeps this recipe deliberately conservative — Phase 18 will
+# add a dedicated "code_summarizer" primitive; until then the agent
+# stage handles synthesis with the post-organize file layout in
+# context.
+
+name: project_handoff_pack
+title: Project Handoff Pack
+description: |
+  Turn a mid-project workspace (code, notes, data, images, logs) into
+  a handoff-ready package: an organised folder layout, per-category
+  indexes, a workspace overview chart, and an LLM-written project
+  summary with setup notes and known risks. Recommended when you want
+  to hand the work to someone else (or your future self).
+
+tags: [project, handoff, code]
+
+input_expectation:
+  file_kinds: [code, text, structured, tabular, image]
+  min_files: 3
+  require_any: [code, text]
+  keywords:
+    - project
+    - handoff
+    - 项目
+    - 交接
+    - readme
+    - documentation
+    - 文档
+    - codebase
+
+stages:
+  - stage_id: s1_organize
+    title: Categorise files (code / docs / data / images / misc)
+    skill: folder_organizer
+    planner: rule
+    expected_outputs:
+      - code/index.md
+      - data/index.md
+      - images/index.md
+      - notes/index.md
+      - misc/index.md
+
+  - stage_id: s2_workspace_chart
+    title: Render a workspace overview chart of the post-organize layout
+    skill: workspace_visualizer
+    planner: rule
+    expected_outputs:
+      - images/file_counts.png
+      - file_counts_summary.md
+
+  - stage_id: s3_synthesize
+    title: Synthesise project summary + setup notes + risks
+    skill: agent
+    planner: llm
+    failure_policy: skip
+    expected_outputs:
+      - README.md
+      - SOURCES.md
+
+expected_outputs:
+  - code/index.md
+  - data/index.md
+  - images/index.md
+  - notes/index.md
+  - misc/index.md
+  - images/file_counts.png
+  - file_counts_summary.md
+  - README.md
+  - SOURCES.md
+
+verifiers:
+  - deliverable_completeness_verifier
+  - coverage_verifier
+  - source_ledger_verifier
+  - summary_grounding_verifier
+  - topic_coherence_verifier
+
+repair_policy:
+  enabled: true
+  max_rounds: 2
+
+repair_target_map:
+  coverage_verifier: s1_organize

@@ -397,7 +397,18 @@ class Executor:
                     action_id=action.action_id,
                     op=RollbackOpType.RESTORE_FROM_BACKUP,
                     target_path=rel,
-                    backup_path=str(backup_abs.relative_to(self.run_store.run_dir).as_posix()),
+                    # Phase 21.1: relative_to(run_dir) breaks for StageRunStore
+                    # (its backups_dir points to the PARENT run_dir's backups/,
+                    # which isn't a subpath of the stage's run_dir). Compute the
+                    # relative path against backups_dir.parent — that's run_dir
+                    # for a regular RunStore, parent.run_dir for a StageRunStore.
+                    # The rollback consumer always uses the parent RunStore, so
+                    # the resulting "backups/<file>" path resolves correctly.
+                    backup_path=str(
+                        backup_abs.relative_to(
+                            self.run_store.backups_dir.parent
+                        ).as_posix()
+                    ),
                     metadata={"after_hash": hash_after} if hash_after else {},
                 ),
             )

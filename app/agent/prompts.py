@@ -325,6 +325,22 @@ def _clip_preview(text: str, max_chars: int) -> str:
 
 def render_user_prompt(task: TaskSpec, snapshot: WorkspaceSnapshot) -> str:
     summary = render_workspace_summary(snapshot)
+    # Phase 20 — surface the recipe's expected deliverables to the LLM
+    # so it produces every contracted file (e.g. README.md AND SOURCES.md
+    # for a research pack, not just README.md). Empty list omits the
+    # section so single-skill tasks without a contract see the same prompt
+    # they always have.
+    expected_block = ""
+    if task.expected_outputs:
+        bullets = "\n".join(f"  - `{p}`" for p in task.expected_outputs)
+        expected_block = (
+            f"\n## REQUIRED deliverables\n"
+            f"You MUST produce every file listed below. Each file must "
+            f"appear as the target of an `index` / `summarize` / `create_file` "
+            f"action (with the actual markdown body in `metadata.content`):\n"
+            f"{bullets}\n"
+        )
+
     return f"""# Task
 task_id: `{task.task_id}`
 workspace_root: `{task.workspace_root}`
@@ -334,7 +350,7 @@ workspace_root: `{task.workspace_root}`
 
 ## Workspace snapshot
 {summary}
-
+{expected_block}
 ## What to do
 Generate a complete ActionPlan and call the `submit_action_plan` tool. Remember:
 - Every path RELATIVE to workspace_root.
