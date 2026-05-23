@@ -136,6 +136,35 @@ def evaluate_action(
             reasons.append(f"PYTHON_COMPUTE metadata is not a valid ComputeAction: {exc}")
         else:
             for ref in compute.inputs:
+                # Cross-platform absolute-path defence. ``resolve_inside``
+                # is host-OS aware: on POSIX it treats ``C:/Windows/...``
+                # as a relative path (no drive-letter concept) and the
+                # path naively resolves inside the workspace_root, which
+                # masks a hostile planner trying to break out on
+                # Windows. We reject the obvious absolute / drive / UNC
+                # / home-shorthand patterns here BEFORE resolve_inside,
+                # so workspace-relative inputs remain the only legal
+                # shape regardless of host OS.
+                _path_str = ref.rel_path
+                _abs_violation: str | None = None
+                if not _path_str:
+                    _abs_violation = "empty path"
+                elif _path_str.startswith(("/", "\\", "~")):
+                    _abs_violation = "absolute or home-shorthand path"
+                elif (
+                    len(_path_str) >= 2
+                    and _path_str[0].isalpha()
+                    and _path_str[1] == ":"
+                ):
+                    # Windows drive-letter prefix (C:foo, C:/foo, C:\foo).
+                    _abs_violation = "Windows drive-letter absolute path"
+                if _abs_violation is not None:
+                    reasons.append(
+                        f"PYTHON_COMPUTE input {ref.rel_path!r}: "
+                        f"{_abs_violation} is not a workspace-relative input"
+                    )
+                    continue
+
                 try:
                     src_abs = resolve_inside(workspace_root, ref.rel_path)
                 except PolicyViolation as exc:
