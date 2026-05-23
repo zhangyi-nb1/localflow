@@ -79,11 +79,13 @@ def test_router_confident_path_skips_llm(tmp_path: Path) -> None:
     _write_recipe(tmp_path, "beta", keywords=["xyz"])
     fake = FakeLLMClient([])  # empty queue — must NOT be hit
     gi = GoalInterpreter(registry=RecipeRegistry(recipes_dir=tmp_path), client=fake)
-    snap = _snapshot([
-        ("a.pdf", "pdf"),
-        ("b.csv", "tabular"),
-        ("c.md", "text"),
-    ])
+    snap = _snapshot(
+        [
+            ("a.pdf", "pdf"),
+            ("b.csv", "tabular"),
+            ("c.md", "text"),
+        ]
+    )
     result = gi.interpret(user_goal="research paper study", snapshot=snap)
     assert result.decision == "pick"
     assert result.recipe_name == "alpha"
@@ -258,9 +260,7 @@ def test_router_confident_populates_rationale_key(tmp_path: Path) -> None:
 def test_no_llm_router_pick_populates_rationale_key(tmp_path: Path) -> None:
     _write_recipe(tmp_path, "alpha", keywords=["foo"])
     gi = GoalInterpreter(registry=RecipeRegistry(recipes_dir=tmp_path), client=None)
-    result = gi.interpret(
-        user_goal="foo", snapshot=_snapshot([("a.txt", "text")])
-    )
+    result = gi.interpret(user_goal="foo", snapshot=_snapshot([("a.txt", "text")]))
     # Single-keyword hit → low confidence → no_llm_router_pick branch.
     assert result.rationale_key == "goal_interp.rationale.no_llm_router_pick"
     assert result.rationale_args["name"] == "alpha"
@@ -274,9 +274,7 @@ def test_vague_goal_no_llm_clarifies_instead_of_picking(tmp_path: Path) -> None:
     The user reported: '随便弄一下' + --no-llm picked research_pack
     because the workspace had a PDF — even though nothing in the goal
     actually signalled the user wanted a knowledge pack."""
-    _write_recipe(
-        tmp_path, "alpha", keywords=["research"], file_kinds=["pdf"]
-    )
+    _write_recipe(tmp_path, "alpha", keywords=["research"], file_kinds=["pdf"])
     _write_recipe(tmp_path, "beta", keywords=["data"], file_kinds=["tabular"])
     gi = GoalInterpreter(registry=RecipeRegistry(recipes_dir=tmp_path), client=None)
     # Vague Chinese goal — no keyword hit against either recipe's

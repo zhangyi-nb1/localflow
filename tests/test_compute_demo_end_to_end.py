@@ -386,9 +386,7 @@ def test_compute_demo_emits_full_trace(demo_setup) -> None:
     assert TraceEventType.COMPUTE_ACTION_END.value in types
     assert TraceEventType.COMPUTE_OUTPUT_VERIFIED.value in types
     # The end event's status must be 'ok'.
-    end_evt = next(
-        e for e in events if e["event"] == TraceEventType.COMPUTE_ACTION_END.value
-    )
+    end_evt = next(e for e in events if e["event"] == TraceEventType.COMPUTE_ACTION_END.value)
     assert end_evt["payload"]["status"] == "ok"
 
     # Manifest has exactly one DELETE_SCRATCH_DIR entry.

@@ -64,6 +64,7 @@ def _had_keyword_hit(top: RecipeScore) -> bool:
     at least one of the recipe's keyword triggers)."""
     return any(reason.startswith("goal mentions") for reason in top.why)
 
+
 INTERPRETER_TOOL_NAME = "decide_recipe"
 INTERPRETER_TOOL_DESCRIPTION = (
     "Decide which deliverable pack (recipe) fits the user's goal + "
@@ -230,10 +231,7 @@ def _summarise_workspace(snapshot: WorkspaceSnapshot | None) -> str:
 
     counts: Counter[str] = Counter(f.file_type for f in snapshot.files)
     parts = [f"{k}={v}" for k, v in sorted(counts.items(), key=lambda kv: -kv[1])]
-    return (
-        f"Workspace summary: {len(snapshot.files)} file(s) total — "
-        + ", ".join(parts)
-    )
+    return f"Workspace summary: {len(snapshot.files)} file(s) total — " + ", ".join(parts)
 
 
 class GoalInterpreter:
@@ -283,8 +281,7 @@ class GoalInterpreter:
         """
         ranked = self.router.score_all(user_goal=user_goal, snapshot=snapshot)
         scores_audit = [
-            {"recipe": s.recipe.name, "score": s.score, "why": list(s.why)}
-            for s in ranked
+            {"recipe": s.recipe.name, "score": s.score, "why": list(s.why)} for s in ranked
         ]
 
         if not ranked:
@@ -392,21 +389,16 @@ class GoalInterpreter:
     ) -> GoalInterpretation:
         recipes_block = _summarise_recipes([s.recipe for s in ranked])
         workspace_block = _summarise_workspace(snapshot)
-        router_block = (
-            "Router's deterministic ranking (you may agree or override):\n"
-            + "\n".join(f"  - {s.recipe.name}: score {s.score:+d}" for s in ranked)
+        router_block = "Router's deterministic ranking (you may agree or override):\n" + "\n".join(
+            f"  - {s.recipe.name}: score {s.score:+d}" for s in ranked
         )
 
         user_block = (
-            f"User goal: {user_goal!r}\n\n"
-            f"{workspace_block}\n\n"
-            f"{recipes_block}\n\n"
-            f"{router_block}"
+            f"User goal: {user_goal!r}\n\n{workspace_block}\n\n{recipes_block}\n\n{router_block}"
         )
         if prior_answers:
             answers_block = "\n".join(
-                f"  Q{i + 1} → user answered: {a!r}"
-                for i, a in enumerate(prior_answers)
+                f"  Q{i + 1} → user answered: {a!r}" for i, a in enumerate(prior_answers)
             )
             user_block += f"\n\nPrior clarification round answers:\n{answers_block}"
 

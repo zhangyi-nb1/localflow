@@ -104,9 +104,7 @@ class ScratchWorkspace:
             try:
                 src.relative_to(workspace_root)
             except ValueError as exc:
-                raise ValueError(
-                    f"input {ref.rel_path!r} resolves outside workspace"
-                ) from exc
+                raise ValueError(f"input {ref.rel_path!r} resolves outside workspace") from exc
             if not src.is_file():
                 raise FileNotFoundError(f"input not a file: {ref.rel_path}")
             # Preserve the relative structure under inputs/ so scripts

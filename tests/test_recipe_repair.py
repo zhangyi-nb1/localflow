@@ -53,15 +53,11 @@ def _recipe(
 
 
 def _verification(verdicts: list[RecipeVerifierVerdict]) -> RecipeVerification:
-    return RecipeVerification.from_verdicts(
-        run_id="t1", recipe_name="demo", verdicts=verdicts
-    )
+    return RecipeVerification.from_verdicts(run_id="t1", recipe_name="demo", verdicts=verdicts)
 
 
 def _failing_verdict(name: str, hint: str = "fix it") -> RecipeVerifierVerdict:
-    return RecipeVerifierVerdict(
-        name=name, passed=False, detail="failed", suggested_hint=hint
-    )
+    return RecipeVerifierVerdict(name=name, passed=False, detail="failed", suggested_hint=hint)
 
 
 def _passing_verdict(name: str) -> RecipeVerifierVerdict:
@@ -133,9 +129,7 @@ def test_halts_when_only_skipped_or_hintless_failures(tmp_path: Path) -> None:
     verification = _verification(
         [
             _skipped_verdict("v1"),
-            RecipeVerifierVerdict(
-                name="v2", passed=False, detail="bad", suggested_hint=None
-            ),
+            RecipeVerifierVerdict(name="v2", passed=False, detail="bad", suggested_hint=None),
         ]
     )
     result = run_recipe_repair(
@@ -184,15 +178,14 @@ def test_round_1_replay_heals(tmp_path: Path) -> None:
     fake_store = _FakeRunStore()
 
     # Mock replay (we don't have a real workspace).
-    with patch(
-        "app.harness.recipe_repair.replay_from_stage", return_value=None
-    ), patch(
-        "app.harness.recipe_repair.run_all",
-        return_value=[_passing_verdict("coverage_verifier")],
-    ), patch(
-        "app.harness.recipe_repair._aggregate_moves", return_value={}
-    ), patch(
-        "app.harness.recipe_repair._aggregate_snapshot_inputs", return_value=[]
+    with (
+        patch("app.harness.recipe_repair.replay_from_stage", return_value=None),
+        patch(
+            "app.harness.recipe_repair.run_all",
+            return_value=[_passing_verdict("coverage_verifier")],
+        ),
+        patch("app.harness.recipe_repair._aggregate_moves", return_value={}),
+        patch("app.harness.recipe_repair._aggregate_snapshot_inputs", return_value=[]),
     ):
         result = run_recipe_repair(
             recipe=recipe,
@@ -225,19 +218,18 @@ def test_exhausted_after_max_rounds(tmp_path: Path) -> None:
         ]
     )
 
-    with patch(
-        "app.harness.recipe_repair.replay_from_stage", return_value=None
-    ), patch(
-        "app.harness.recipe_repair.run_all",
-        return_value=[
-            _failing_verdict("v1"),
-            _failing_verdict("v2"),
-            _failing_verdict("v3"),
-        ],
-    ), patch(
-        "app.harness.recipe_repair._aggregate_moves", return_value={}
-    ), patch(
-        "app.harness.recipe_repair._aggregate_snapshot_inputs", return_value=[]
+    with (
+        patch("app.harness.recipe_repair.replay_from_stage", return_value=None),
+        patch(
+            "app.harness.recipe_repair.run_all",
+            return_value=[
+                _failing_verdict("v1"),
+                _failing_verdict("v2"),
+                _failing_verdict("v3"),
+            ],
+        ),
+        patch("app.harness.recipe_repair._aggregate_moves", return_value={}),
+        patch("app.harness.recipe_repair._aggregate_snapshot_inputs", return_value=[]),
     ):
         result = run_recipe_repair(
             recipe=recipe,
@@ -269,9 +261,7 @@ def test_repair_skips_already_attempted_verifier(tmp_path: Path) -> None:
         },
         max_rounds=3,
     )
-    initial = _verification(
-        [_failing_verdict("sticky_failure"), _failing_verdict("fixable")]
-    )
+    initial = _verification([_failing_verdict("sticky_failure"), _failing_verdict("fixable")])
 
     # First replay: nothing changes. Second replay: clear 'fixable'.
     post_states = [
@@ -288,14 +278,11 @@ def test_repair_skips_already_attempted_verifier(tmp_path: Path) -> None:
         call_idx["n"] += 1
         return post_states[idx] if idx < len(post_states) else post_states[-1]
 
-    with patch(
-        "app.harness.recipe_repair.replay_from_stage", return_value=None
-    ), patch(
-        "app.harness.recipe_repair.run_all", side_effect=_next
-    ), patch(
-        "app.harness.recipe_repair._aggregate_moves", return_value={}
-    ), patch(
-        "app.harness.recipe_repair._aggregate_snapshot_inputs", return_value=[]
+    with (
+        patch("app.harness.recipe_repair.replay_from_stage", return_value=None),
+        patch("app.harness.recipe_repair.run_all", side_effect=_next),
+        patch("app.harness.recipe_repair._aggregate_moves", return_value={}),
+        patch("app.harness.recipe_repair._aggregate_snapshot_inputs", return_value=[]),
     ):
         result = run_recipe_repair(
             recipe=recipe,
@@ -348,15 +335,14 @@ def test_repair_loop_threads_hint_into_taskgraph(tmp_path: Path) -> None:
     def _capture(*, graph, **_):
         captured["stage_hints"] = dict(graph.stage_hints)
 
-    with patch(
-        "app.harness.recipe_repair.replay_from_stage", side_effect=_capture
-    ), patch(
-        "app.harness.recipe_repair.run_all",
-        return_value=[_passing_verdict("v1")],
-    ), patch(
-        "app.harness.recipe_repair._aggregate_moves", return_value={}
-    ), patch(
-        "app.harness.recipe_repair._aggregate_snapshot_inputs", return_value=[]
+    with (
+        patch("app.harness.recipe_repair.replay_from_stage", side_effect=_capture),
+        patch(
+            "app.harness.recipe_repair.run_all",
+            return_value=[_passing_verdict("v1")],
+        ),
+        patch("app.harness.recipe_repair._aggregate_moves", return_value={}),
+        patch("app.harness.recipe_repair._aggregate_snapshot_inputs", return_value=[]),
     ):
         run_recipe_repair(
             recipe=recipe,

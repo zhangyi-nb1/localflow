@@ -202,10 +202,7 @@ def run_taskgraph(
                 # status=PASSED and rely on ``verifier_passed=False``
                 # + ``failed_checks`` to surface the warning so the
                 # report doesn't lie about what happened.
-                if (
-                    result.action_count
-                    and result.success_count >= result.action_count
-                ):
+                if result.action_count and result.success_count >= result.action_count:
                     result.status = StageStatus.PASSED
                 else:
                     result.status = StageStatus.SKIPPED
@@ -222,9 +219,7 @@ def run_taskgraph(
         duration_ms=duration_ms,
     )
     if persist_result:
-        run_store.write_json(
-            run_store.taskgraph_result_path, tg_result.model_dump(mode="json")
-        )
+        run_store.write_json(run_store.taskgraph_result_path, tg_result.model_dump(mode="json"))
     return tg_result
 
 
@@ -315,9 +310,7 @@ def _run_one_stage(
                 # (planner.py gates it on prior_plan_actions + user_hint
                 # BOTH being set). Without this, recipe-level repair
                 # threaded the hint but the LLM never saw it.
-                prior_actions = _load_prior_actions_unprefixed(
-                    stage_store, stage.stage_id
-                )
+                prior_actions = _load_prior_actions_unprefixed(stage_store, stage.stage_id)
                 if prior_actions:
                     llm_kwargs["prior_plan_actions"] = prior_actions
             plan = skill.plan_with_llm(sub_task, snapshot, **llm_kwargs)
@@ -487,9 +480,7 @@ def replay_from_stage(
     prior_result: TaskGraphResult | None = None
     if run_store.exists(run_store.TASKGRAPH_RESULT_JSON):
         try:
-            prior_result = run_store.read_model(
-                run_store.taskgraph_result_path, TaskGraphResult
-            )
+            prior_result = run_store.read_model(run_store.taskgraph_result_path, TaskGraphResult)
         except Exception:
             prior_result = None
 
@@ -533,9 +524,7 @@ def replay_from_stage(
         )
     else:
         merged_result = sub_result
-    run_store.write_json(
-        run_store.taskgraph_result_path, merged_result.model_dump(mode="json")
-    )
+    run_store.write_json(run_store.taskgraph_result_path, merged_result.model_dump(mode="json"))
     return sub_result
 
 
@@ -610,9 +599,7 @@ def _prefix_action_ids(plan: ActionPlan, stage_id: str) -> ActionPlan:
     return plan.model_copy(update={"actions": new_actions})
 
 
-def _load_prior_actions_unprefixed(
-    stage_store: "StageRunStore", stage_id: str
-) -> list | None:
+def _load_prior_actions_unprefixed(stage_store: "StageRunStore", stage_id: str) -> list | None:
     """v0.22.x — load ``plan.json`` for a stage and strip the stage-id
     prefix from each action_id so the LLM's refinement message echoes
     them in their original form (re-prefixing happens later anyway).
@@ -633,9 +620,7 @@ def _load_prior_actions_unprefixed(
     for action in prior_plan.actions:
         if action.action_id.startswith(prefix):
             unprefixed.append(
-                action.model_copy(
-                    update={"action_id": action.action_id[len(prefix) :]}
-                )
+                action.model_copy(update={"action_id": action.action_id[len(prefix) :]})
             )
         else:
             unprefixed.append(action)

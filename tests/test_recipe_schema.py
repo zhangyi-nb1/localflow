@@ -170,9 +170,7 @@ def test_review_queue_verifier_auto_enables_review_routing_pref() -> None:
 
 
 def test_recipe_without_review_verifier_does_not_set_pref() -> None:
-    recipe = RecipeSpec.model_validate(
-        {**_minimal_recipe(), "verifiers": ["coverage_verifier"]}
-    )
+    recipe = RecipeSpec.model_validate({**_minimal_recipe(), "verifiers": ["coverage_verifier"]})
     tg = recipe.compile_to_taskgraph(workspace_root="/tmp/x")
     assert "route_low_confidence_to_review" not in tg.preferences
 

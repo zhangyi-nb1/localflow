@@ -23,7 +23,7 @@ def _write_recipe(dir_: Path, name: str, payload_yaml: str) -> Path:
 def _valid_yaml(name: str = "demo") -> str:
     return f"""
 name: {name}
-title: {name.replace('_', ' ').title()}
+title: {name.replace("_", " ").title()}
 description: A throwaway recipe.
 stages:
   - stage_id: s1

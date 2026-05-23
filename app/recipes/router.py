@@ -106,9 +106,7 @@ class RecipeRouter:
             if snapshot is not None and exp.require_any:
                 if not any(kind_counts.get(k, 0) > 0 for k in exp.require_any):
                     score -= 5
-                    why.append(
-                        f"missing one of: {', '.join(exp.require_any)}"
-                    )
+                    why.append(f"missing one of: {', '.join(exp.require_any)}")
 
             scores.append(RecipeScore(recipe=recipe, score=score, why=why))
 

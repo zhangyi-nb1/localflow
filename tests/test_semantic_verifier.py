@@ -285,14 +285,8 @@ def test_semantic_verifier_emits_verifier_check_per_verdict(
             **inner,
         }
 
-    rows = [
-        _json.loads(line)
-        for line in trace_path.read_text().splitlines()
-        if line.strip()
-    ]
-    verifier_rows = [
-        flat(r) for r in rows if r.get("event") == "verifier.check"
-    ]
+    rows = [_json.loads(line) for line in trace_path.read_text().splitlines() if line.strip()]
+    verifier_rows = [flat(r) for r in rows if r.get("event") == "verifier.check"]
     assert len(verifier_rows) == 2, (
         f"expected 2 verifier.check rows (one per grader), got {len(verifier_rows)}"
     )

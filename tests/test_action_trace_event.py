@@ -54,8 +54,7 @@ class TestSubclassContract:
         assert "a-001" in dumped
         # New optional fields must NOT appear in the dump when unset —
         # otherwise we'd bloat every trace line.
-        for new_field in ("thought", "reasoning", "tool_call_raw", "observation",
-                           "critic_result"):
+        for new_field in ("thought", "reasoning", "tool_call_raw", "observation", "critic_result"):
             assert f'"{new_field}"' not in dumped, (
                 f"unset new field {new_field!r} leaked into the JSON dump"
             )
@@ -191,7 +190,8 @@ class TestFailureSemantics:
 
     def test_inherits_is_failure(self) -> None:
         ok_evt = ActionTraceEvent(**_minimal(), status="ok")
-        fail_evt = ActionTraceEvent(**_minimal(), status="fail",
-                                     failure_type=FailureType.MISSING_OUTPUT)
+        fail_evt = ActionTraceEvent(
+            **_minimal(), status="fail", failure_type=FailureType.MISSING_OUTPUT
+        )
         assert not ok_evt.is_failure()
         assert fail_evt.is_failure()

@@ -207,12 +207,39 @@ def review_queue_verifier(ctx: RecipeVerifierContext) -> RecipeVerifierVerdict:
     ws = ctx.workspace_path
 
     known_exts = {
-        ".pdf", ".doc", ".docx",  # paper-ish
-        ".csv", ".tsv", ".xlsx", ".xls", ".parquet",  # tabular
-        ".md", ".markdown", ".txt", ".rst",  # notes
-        ".py", ".js", ".ts", ".go", ".rs", ".java", ".c", ".cpp",  # code
-        ".json", ".yaml", ".yml", ".xml", ".toml", ".ini",  # structured
-        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg",  # images
+        ".pdf",
+        ".doc",
+        ".docx",  # paper-ish
+        ".csv",
+        ".tsv",
+        ".xlsx",
+        ".xls",
+        ".parquet",  # tabular
+        ".md",
+        ".markdown",
+        ".txt",
+        ".rst",  # notes
+        ".py",
+        ".js",
+        ".ts",
+        ".go",
+        ".rs",
+        ".java",
+        ".c",
+        ".cpp",  # code
+        ".json",
+        ".yaml",
+        ".yml",
+        ".xml",
+        ".toml",
+        ".ini",  # structured
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".bmp",
+        ".svg",  # images
     }
 
     # Inputs whose extension wasn't in the curated set. We look at
@@ -245,9 +272,9 @@ def review_queue_verifier(ctx: RecipeVerifierContext) -> RecipeVerifierVerdict:
     for rel in unknown_inputs:
         basename = rel.rsplit("/", 1)[-1]
         moved_to = ctx.moves.get(rel)
-        in_review = (
-            moved_to is not None and moved_to.startswith("review/")
-        ) or (basename in review_md_blob)
+        in_review = (moved_to is not None and moved_to.startswith("review/")) or (
+            basename in review_md_blob
+        )
         if not in_review:
             forced.append(rel)
 
@@ -260,11 +287,7 @@ def review_queue_verifier(ctx: RecipeVerifierContext) -> RecipeVerifierVerdict:
                 f"were force-classified instead of routed to review/: "
                 f"{', '.join(forced[:5])}"
                 + (f", …(+{len(forced) - 5})" if len(forced) > 5 else "")
-                + (
-                    " (review/ has content)"
-                    if review_dir_has_content
-                    else " (review/ is missing)"
-                )
+                + (" (review/ has content)" if review_dir_has_content else " (review/ is missing)")
             ),
             score=(len(unknown_inputs) - len(forced)) / len(unknown_inputs),
             suggested_hint=(
@@ -340,12 +363,8 @@ def deliverable_completeness_verifier(
         # surface that stage_id as a typed repair_target_stage so the
         # recipe repair loop targets s2_workspace_chart (the actual
         # producer) instead of falling back to the last LLM stage.
-        missing_producers = {
-            producer_by_path[m] for m in missing if m in producer_by_path
-        }
-        repair_target_stage = (
-            next(iter(missing_producers)) if len(missing_producers) == 1 else None
-        )
+        missing_producers = {producer_by_path[m] for m in missing if m in producer_by_path}
+        repair_target_stage = next(iter(missing_producers)) if len(missing_producers) == 1 else None
         return RecipeVerifierVerdict(
             name="deliverable_completeness_verifier",
             passed=False,
@@ -382,11 +401,7 @@ def _skipped_stage_ids(ctx: RecipeVerifierContext) -> set[str]:
     tg = ctx.task_graph_result
     if tg is None:
         return set()
-    return {
-        s.stage_id
-        for s in tg.stages
-        if s.status in (StageStatus.SKIPPED, StageStatus.ABORTED)
-    }
+    return {s.stage_id for s in tg.stages if s.status in (StageStatus.SKIPPED, StageStatus.ABORTED)}
 
 
 def _producer_stage_by_deliverable(ctx: RecipeVerifierContext) -> dict[str, str]:

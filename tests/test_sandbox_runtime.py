@@ -217,9 +217,7 @@ def test_oversize_output_returns_over_size(sandbox) -> None:
             f.write(b"x" * 2048)
         """,
         expected_outputs=[
-            ArtifactSpec(
-                relative_path="outputs/big.bin", description="big", max_size_bytes=1024
-            )
+            ArtifactSpec(relative_path="outputs/big.bin", description="big", max_size_bytes=1024)
         ],
     )
     outcome = rt.execute(action, layout)
@@ -294,9 +292,7 @@ def test_cwd_isolation_prevents_workspace_imports(sandbox, tmp_path: Path) -> No
     sys.path; the only way in is the declared inputs list."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    (workspace / "secret_module.py").write_text(
-        "VALUE = 'sensitive'\n", encoding="utf-8"
-    )
+    (workspace / "secret_module.py").write_text("VALUE = 'sensitive'\n", encoding="utf-8")
     sw, rt = sandbox
     layout = sw.create_for_action("t-001", "a-001")
     # Don't call copy_inputs — confirm the script can't see the workspace.

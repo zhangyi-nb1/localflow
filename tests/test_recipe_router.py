@@ -88,14 +88,16 @@ def test_file_kind_matches_score_capped_at_five(tmp_path: Path) -> None:
         tmp_path,
         {"alpha": _yaml("alpha", file_kinds=["pdf", "tabular", "image", "code", "text", "excel"])},
     )
-    snap = _snapshot([
-        ("a.pdf", "pdf"),
-        ("b.csv", "tabular"),
-        ("c.png", "image"),
-        ("d.py", "code"),
-        ("e.md", "text"),
-        ("f.xlsx", "excel"),
-    ])
+    snap = _snapshot(
+        [
+            ("a.pdf", "pdf"),
+            ("b.csv", "tabular"),
+            ("c.png", "image"),
+            ("d.py", "code"),
+            ("e.md", "text"),
+            ("f.xlsx", "excel"),
+        ]
+    )
     ranked = router.score_all(user_goal="", snapshot=snap)
     # Six kinds matched but cap at 5.
     assert ranked[0].score == 5
@@ -159,30 +161,34 @@ def test_repo_recipes_route_correctly(tmp_path: Path) -> None:
     router = RecipeRouter()
 
     # Research pack — mixed workspace + Chinese keyword.
-    snap_research = _snapshot([
-        ("paper.pdf", "pdf"),
-        ("data.csv", "tabular"),
-        ("notes.md", "text"),
-    ])
+    snap_research = _snapshot(
+        [
+            ("paper.pdf", "pdf"),
+            ("data.csv", "tabular"),
+            ("notes.md", "text"),
+        ]
+    )
     best = router.best_match(user_goal="整理研究资料", snapshot=snap_research)
     assert best is not None and best.recipe.name == "research_pack"
 
     # Data report pack — pure tabular + English goal.
-    snap_data = _snapshot([
-        ("a.csv", "tabular"),
-        ("b.xlsx", "excel"),
-    ])
+    snap_data = _snapshot(
+        [
+            ("a.csv", "tabular"),
+            ("b.xlsx", "excel"),
+        ]
+    )
     best = router.best_match(user_goal="generate a data analysis report", snapshot=snap_data)
     assert best is not None and best.recipe.name == "data_report_pack"
 
     # Project handoff — code + notes.
-    snap_proj = _snapshot([
-        ("a.py", "code"),
-        ("b.py", "code"),
-        ("readme.md", "text"),
-        ("notes.md", "text"),
-    ])
-    best = router.best_match(
-        user_goal="prepare this project for handoff", snapshot=snap_proj
+    snap_proj = _snapshot(
+        [
+            ("a.py", "code"),
+            ("b.py", "code"),
+            ("readme.md", "text"),
+            ("notes.md", "text"),
+        ]
     )
+    best = router.best_match(user_goal="prepare this project for handoff", snapshot=snap_proj)
     assert best is not None and best.recipe.name == "project_handoff_pack"

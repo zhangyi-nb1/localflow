@@ -163,9 +163,7 @@ class SemanticVerifier:
                     run_id=run_id or task.task_id,
                     event_type=TraceEventType.VERIFIER_CHECK,
                     status="ok" if verdict.passed else "fail",
-                    failure_type=(
-                        None if verdict.passed else FailureType.SEMANTIC_MISMATCH
-                    ),
+                    failure_type=(None if verdict.passed else FailureType.SEMANTIC_MISMATCH),
                     detail=f"{verdict.grader}: {verdict.reason[:160]}",
                     payload=payload,
                 )

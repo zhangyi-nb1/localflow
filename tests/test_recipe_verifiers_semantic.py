@@ -22,9 +22,7 @@ def _recipe(**kw) -> RecipeSpec:
             "name": kw.get("name", "demo"),
             "title": kw.get("name", "demo"),
             "description": "test",
-            "stages": [
-                {"stage_id": "s1", "title": "s1", "skill": "folder_organizer"}
-            ],
+            "stages": [{"stage_id": "s1", "title": "s1", "skill": "folder_organizer"}],
             **{k: v for k, v in kw.items() if k != "name"},
         }
     )
@@ -67,11 +65,12 @@ def test_summary_grounding_passes_via_judge(tmp_path: Path) -> None:
         suggested_hint="—",
         token_usage={},
     )
-    with patch(
-        "app.eval.recipe_verifiers.semantic.get_default_client_or_none",
-        return_value=object(),
-    ), patch(
-        "app.eval.recipe_verifiers.semantic.judge", return_value=fake_verdict
+    with (
+        patch(
+            "app.eval.recipe_verifiers.semantic.get_default_client_or_none",
+            return_value=object(),
+        ),
+        patch("app.eval.recipe_verifiers.semantic.judge", return_value=fake_verdict),
     ):
         v = get("summary_grounding_verifier")(_ctx(tmp_path))
     assert v.passed and not v.skipped
@@ -86,11 +85,12 @@ def test_summary_grounding_fails_via_judge(tmp_path: Path) -> None:
         suggested_hint="rewrite README to reference real files in the workspace",
         token_usage={},
     )
-    with patch(
-        "app.eval.recipe_verifiers.semantic.get_default_client_or_none",
-        return_value=object(),
-    ), patch(
-        "app.eval.recipe_verifiers.semantic.judge", return_value=fake_verdict
+    with (
+        patch(
+            "app.eval.recipe_verifiers.semantic.get_default_client_or_none",
+            return_value=object(),
+        ),
+        patch("app.eval.recipe_verifiers.semantic.judge", return_value=fake_verdict),
     ):
         v = get("summary_grounding_verifier")(_ctx(tmp_path))
     assert not v.passed
@@ -130,9 +130,7 @@ def test_chart_consistency_skips_when_no_caption(tmp_path: Path) -> None:
 def test_chart_consistency_skips_when_no_llm(tmp_path: Path) -> None:
     (tmp_path / "analysis_charts").mkdir()
     (tmp_path / "analysis_charts" / "chart.png").write_bytes(b"\x89PNG\r\n")
-    (tmp_path / "analysis_charts" / "chart.md").write_text(
-        "Chart shows category counts.\n"
-    )
+    (tmp_path / "analysis_charts" / "chart.md").write_text("Chart shows category counts.\n")
     with patch(
         "app.eval.recipe_verifiers.semantic.get_default_client_or_none",
         return_value=None,
@@ -149,17 +147,16 @@ def test_chart_consistency_uses_analysis_report_md_fallback(
     (which data_analyzer always produces and sections by chart)."""
     (tmp_path / "analysis_charts").mkdir()
     (tmp_path / "analysis_charts" / "model_scores.png").write_bytes(b"\x89PNG\r\n")
-    (tmp_path / "analysis_report.md").write_text(
-        "## model_scores\nMean accuracy by model.\n"
-    )
+    (tmp_path / "analysis_report.md").write_text("## model_scores\nMean accuracy by model.\n")
     fake_verdict = JudgeVerdict(
         verdict=True, reason="consistent", suggested_hint="—", token_usage={}
     )
-    with patch(
-        "app.eval.recipe_verifiers.semantic.get_default_client_or_none",
-        return_value=object(),
-    ), patch(
-        "app.eval.recipe_verifiers.semantic.judge", return_value=fake_verdict
+    with (
+        patch(
+            "app.eval.recipe_verifiers.semantic.get_default_client_or_none",
+            return_value=object(),
+        ),
+        patch("app.eval.recipe_verifiers.semantic.judge", return_value=fake_verdict),
     ):
         v = get("chart_data_consistency_verifier")(_ctx(tmp_path))
     assert v.passed and not v.skipped
@@ -192,11 +189,12 @@ def test_topic_coherence_evaluates_first_eligible_dir(tmp_path: Path) -> None:
         suggested_hint="—",
         token_usage={},
     )
-    with patch(
-        "app.eval.recipe_verifiers.semantic.get_default_client_or_none",
-        return_value=object(),
-    ), patch(
-        "app.eval.recipe_verifiers.semantic.judge", return_value=fake_verdict
+    with (
+        patch(
+            "app.eval.recipe_verifiers.semantic.get_default_client_or_none",
+            return_value=object(),
+        ),
+        patch("app.eval.recipe_verifiers.semantic.judge", return_value=fake_verdict),
     ):
         v = get("topic_coherence_verifier")(_ctx(tmp_path))
     assert v.passed and not v.skipped
@@ -217,11 +215,12 @@ def test_topic_coherence_descends_into_topics_subdir(tmp_path: Path) -> None:
         suggested_hint="split into separate topic dirs",
         token_usage={},
     )
-    with patch(
-        "app.eval.recipe_verifiers.semantic.get_default_client_or_none",
-        return_value=object(),
-    ), patch(
-        "app.eval.recipe_verifiers.semantic.judge", return_value=fake_verdict
+    with (
+        patch(
+            "app.eval.recipe_verifiers.semantic.get_default_client_or_none",
+            return_value=object(),
+        ),
+        patch("app.eval.recipe_verifiers.semantic.judge", return_value=fake_verdict),
     ):
         v = get("topic_coherence_verifier")(_ctx(tmp_path))
     assert not v.passed

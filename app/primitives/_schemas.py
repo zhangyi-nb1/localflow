@@ -87,9 +87,7 @@ class Content(BaseModel):
     """
 
     ref: ContentRef
-    preview: str | None = Field(
-        default=None, description="Best-effort textual representation."
-    )
+    preview: str | None = Field(default=None, description="Best-effort textual representation.")
     metadata: dict[str, Any] = Field(
         default_factory=dict,
         description=(

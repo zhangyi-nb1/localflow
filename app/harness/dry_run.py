@@ -45,9 +45,7 @@ def simulate_action(workspace_root: Path, action: Action) -> dict:
         else:
             info["compute_summary"] = compute.script_summary
             info["compute_inputs"] = [r.rel_path for r in compute.inputs]
-            info["compute_outputs"] = [
-                spec.relative_path for spec in compute.expected_outputs
-            ]
+            info["compute_outputs"] = [spec.relative_path for spec in compute.expected_outputs]
             info["compute_timeout_sec"] = compute.sandbox_policy.timeout_sec
             info["compute_script"] = compute.script
     return info

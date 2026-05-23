@@ -663,11 +663,7 @@ def _attach_llm_provenance(plan: ActionPlan, response: "StructuredResponse") -> 
             # already validated against the named one and we record
             # what it actually saw.
             if tool_call_raw is None:
-                tool_call_raw = {
-                    k: block.get(k)
-                    for k in ("id", "name", "input")
-                    if k in block
-                }
+                tool_call_raw = {k: block.get(k) for k in ("id", "name", "input") if k in block}
 
     if thinking_blocks:
         plan.llm_reasoning = thinking_blocks

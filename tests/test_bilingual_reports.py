@@ -31,6 +31,7 @@ from app.templates._labels import labels_for
 
 # ─────────────────────── labels_for
 
+
 def test_labels_for_defaults_to_zh_when_locale_missing():
     assert labels_for(None)["_locale_code"] == "zh-CN"
     assert labels_for("")["_locale_code"] == "zh-CN"
@@ -105,6 +106,7 @@ def test_render_report_unknown_template_raises():
 
 # ─────────────────────── reporter integration — task.locale flows through
 
+
 def _make_outcome(*, run_id: str = "2026-05-22-002") -> ExecutionOutcome:
     return ExecutionOutcome(
         run_id=run_id,
@@ -131,7 +133,9 @@ def _make_task(locale: str) -> TaskSpec:
     )
 
 
-def _make_plan(*, expected_outputs: list[str] | None = None, with_index_action: bool = False) -> ActionPlan:
+def _make_plan(
+    *, expected_outputs: list[str] | None = None, with_index_action: bool = False
+) -> ActionPlan:
     actions: list[Action] = []
     if with_index_action:
         actions = [
@@ -280,9 +284,7 @@ def test_pdf_indexer_reporter_renders_both_locales():
                 metadata={
                     "content": "pdf",
                     "provenance": {
-                        "sources": [
-                            {"path": "a.pdf", "title": "Agents", "has_preview": True}
-                        ]
+                        "sources": [{"path": "a.pdf", "title": "Agents", "has_preview": True}]
                     },
                 },
             )
@@ -327,6 +329,7 @@ def test_agent_reporter_renders_both_locales():
 
 
 # ─────────────────────── template files exist on disk
+
 
 def test_all_expected_templates_ship_on_disk():
     """A missing .j2 would only show up at runtime via the rendered report."""

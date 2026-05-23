@@ -52,9 +52,7 @@ def list_names() -> list[str]:
     return sorted(_REGISTRY)
 
 
-def run_all(
-    names: list[str], ctx: RecipeVerifierContext
-) -> list[RecipeVerifierVerdict]:
+def run_all(names: list[str], ctx: RecipeVerifierContext) -> list[RecipeVerifierVerdict]:
     """Run every named verifier against the same context.
 
     Unknown names produce a failed verdict with a clear ``detail`` —
@@ -71,8 +69,7 @@ def run_all(
                     name=name,
                     passed=False,
                     detail=(
-                        f"verifier {name!r} not registered; "
-                        f"available: {', '.join(list_names())}"
+                        f"verifier {name!r} not registered; available: {', '.join(list_names())}"
                     ),
                 )
             )

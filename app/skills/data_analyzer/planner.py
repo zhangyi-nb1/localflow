@@ -427,8 +427,7 @@ def _render_report_md(
         if idx in chart_paths_by_idx:
             lines.append("")
             lines.append(
-                f"![{L['chart_alt'].format(source=r.spec.source_file)}]"
-                f"({chart_paths_by_idx[idx]})"
+                f"![{L['chart_alt'].format(source=r.spec.source_file)}]({chart_paths_by_idx[idx]})"
             )
         lines.append("")
 

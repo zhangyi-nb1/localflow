@@ -61,9 +61,7 @@ def _run_plan_and_execute(runner: CliRunner, ws: Path, env: dict[str, str]) -> s
 def _read_trace(home: Path, task_id: str) -> list[dict]:
     path = home / "runs" / task_id / "trace.jsonl"
     return [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
     ]
 
 
@@ -112,16 +110,15 @@ class TestTraceShow:
         # whole output because the title / footer might mention totals;
         # check the body lines explicitly.)
         body_lines = [
-            row_line for row_line in result.output.splitlines()
+            row_line
+            for row_line in result.output.splitlines()
             if "action." in row_line and "│" in row_line
         ]
         assert body_lines, "expected some action rows after filter"
         for line in body_lines:
             assert "action.start" not in line, f"action.start leaked through filter: {line}"
 
-    def test_show_observation_flag_prints_observation(
-        self, tmp_path: Path, isolated_home: Path
-    ):
+    def test_show_observation_flag_prints_observation(self, tmp_path: Path, isolated_home: Path):
         runner = CliRunner()
         env = os.environ.copy() | {"LOCALFLOW_HOME": str(isolated_home)}
         ws = _seed_workspace(tmp_path)
@@ -130,7 +127,8 @@ class TestTraceShow:
         # First confirm there's at least one ACTION_END row with observation.
         rows = _read_trace(isolated_home, task_id)
         end_rows_with_obs = [
-            r for r in rows
+            r
+            for r in rows
             if r.get("event") == "action.end"
             and (r.get("payload") or {}).get("observation") is not None
         ]
@@ -177,9 +175,7 @@ class TestTraceShow:
 class TestTraceSummary:
     """``localflow trace summary --task-id X`` reports counts."""
 
-    def test_summary_reports_event_histogram(
-        self, tmp_path: Path, isolated_home: Path
-    ):
+    def test_summary_reports_event_histogram(self, tmp_path: Path, isolated_home: Path):
         runner = CliRunner()
         env = os.environ.copy() | {"LOCALFLOW_HOME": str(isolated_home)}
         ws = _seed_workspace(tmp_path)
@@ -197,9 +193,7 @@ class TestTraceSummary:
         # ActionTraceEvent count line is the key Phase 25.1 signal.
         assert "ActionTraceEvent rows" in result.output
 
-    def test_summary_counts_action_trace_events(
-        self, tmp_path: Path, isolated_home: Path
-    ):
+    def test_summary_counts_action_trace_events(self, tmp_path: Path, isolated_home: Path):
         runner = CliRunner()
         env = os.environ.copy() | {"LOCALFLOW_HOME": str(isolated_home)}
         ws = _seed_workspace(tmp_path)
@@ -207,12 +201,9 @@ class TestTraceSummary:
 
         rows = _read_trace(isolated_home, task_id)
         expected_rich = sum(
-            1 for r in rows
-            if (r.get("payload") or {}).get("observation") is not None
+            1 for r in rows if (r.get("payload") or {}).get("observation") is not None
         )
-        assert expected_rich > 0, (
-            "test harness expected at least one ActionTraceEvent in the run"
-        )
+        assert expected_rich > 0, "test harness expected at least one ActionTraceEvent in the run"
 
         result = runner.invoke(
             app,

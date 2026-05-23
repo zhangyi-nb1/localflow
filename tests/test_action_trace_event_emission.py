@@ -196,9 +196,7 @@ class TestNonActionEventsStayPlain:
         executor, trace_path, workspace = executor_with_trace
         # Build a plan that will trigger POLICY_CHECK (forbidden path).
         executor.forbidden_actions = ("mkdir",)
-        plan = _plan_with_provenance(
-            [_mkdir_action()], task_id=executor.run_store.task_id
-        )
+        plan = _plan_with_provenance([_mkdir_action()], task_id=executor.run_store.task_id)
         executor.execute(plan, approved=True)
 
         rows = _read_trace_rows(trace_path)

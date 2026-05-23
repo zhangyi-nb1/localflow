@@ -456,9 +456,7 @@ class Executor:
                     # The rollback consumer always uses the parent RunStore, so
                     # the resulting "backups/<file>" path resolves correctly.
                     backup_path=str(
-                        backup_abs.relative_to(
-                            self.run_store.backups_dir.parent
-                        ).as_posix()
+                        backup_abs.relative_to(self.run_store.backups_dir.parent).as_posix()
                     ),
                     metadata={"after_hash": hash_after} if hash_after else {},
                 ),
@@ -526,9 +524,7 @@ class Executor:
 
         layout = self.scratch_workspace.create_for_action(task_id, action.action_id)
         try:
-            self.scratch_workspace.copy_inputs(
-                layout, self.workspace_root, compute.inputs
-            )
+            self.scratch_workspace.copy_inputs(layout, self.workspace_root, compute.inputs)
         except (FileNotFoundError, ValueError) as exc:
             # Inputs missing or escape attempt — surface as execution
             # error, still record rollback entry so the scratch dir is
@@ -761,8 +757,7 @@ class Executor:
             TraceEventType.ACTION_END,
         )
         has_rich_field = any(
-            v is not None
-            for v in (thought, reasoning, tool_call_raw, observation, critic_result)
+            v is not None for v in (thought, reasoning, tool_call_raw, observation, critic_result)
         )
         try:
             common_kwargs = dict(

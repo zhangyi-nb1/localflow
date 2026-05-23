@@ -50,8 +50,11 @@ def _pdf_bytes(title: str) -> bytes:
             b"/Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>"
         ),
         (
-            b"<< /Length " + str(stream_length).encode("ascii") + b" >>\nstream\n"
-            + stream_body + b"endstream"
+            b"<< /Length "
+            + str(stream_length).encode("ascii")
+            + b" >>\nstream\n"
+            + stream_body
+            + b"endstream"
         ),
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
     ]

@@ -249,9 +249,7 @@ def test_python_compute_input_escape_rejected(workspace: Path) -> None:
             "script": "print('hi')",
             "script_summary": "x",
             "inputs": [{"rel_path": "C:/Windows/System32/cmd.exe", "size_bytes": 1}],
-            "expected_outputs": [
-                {"relative_path": "outputs/out.txt", "description": "x"}
-            ],
+            "expected_outputs": [{"relative_path": "outputs/out.txt", "description": "x"}],
             "sandbox_policy": {"timeout_sec": 5},
         },
     )

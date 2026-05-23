@@ -56,6 +56,7 @@ def test_rollback_cli_works_for_taskgraph_only_run(tmp_path: Path) -> None:
     run_dir = localflow_home() / "runs" / run_id
     if run_dir.exists():
         import shutil
+
         shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True)
 
@@ -86,9 +87,7 @@ def test_rollback_cli_works_for_taskgraph_only_run(tmp_path: Path) -> None:
         json.dumps({"run_id": run_id, "task_id": run_id, "entries": []})
     )
 
-    result = runner.invoke(
-        app, ["rollback", "--run-id", run_id, "--yes"]
-    )
+    result = runner.invoke(app, ["rollback", "--run-id", run_id, "--yes"])
     assert result.exit_code == 0, result.stdout
     # Should print the OK badge with zero entries undone.
     assert "OK" in result.stdout
@@ -104,15 +103,14 @@ def test_rollback_cli_rejects_run_with_neither_artifact(tmp_path: Path) -> None:
     run_dir = localflow_home() / "runs" / run_id
     if run_dir.exists():
         import shutil
+
         shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True)
     (run_dir / "rollback_manifest.json").write_text(
         json.dumps({"run_id": run_id, "task_id": run_id, "entries": []})
     )
 
-    result = runner.invoke(
-        app, ["rollback", "--run-id", run_id, "--yes"]
-    )
+    result = runner.invoke(app, ["rollback", "--run-id", run_id, "--yes"])
     # typer.BadParameter exits with code 2; its message goes to stderr,
     # which CliRunner doesn't merge into stdout by default.
     assert result.exit_code == 2
@@ -182,8 +180,7 @@ def test_stage_runstore_executor_overwrite_uses_parent_backups(
     # Resolving against parent.run_dir must locate an actual backup file.
     resolved = parent.run_dir / bp
     assert resolved.exists(), (
-        f"backup file not found at {resolved} — relative_to "
-        f"computation likely broken"
+        f"backup file not found at {resolved} — relative_to computation likely broken"
     )
 
 
@@ -209,8 +206,7 @@ def test_run_taskgraph_persist_graph_false_skips_write(tmp_path: Path) -> None:
         "workspace_root": str(tmp_path),
         "user_goal": "original",
         "stages": [
-            {"stage_id": f"s{i}", "title": "x", "skill": "folder_organizer"}
-            for i in range(1, 4)
+            {"stage_id": f"s{i}", "title": "x", "skill": "folder_organizer"} for i in range(1, 4)
         ],
         "forbidden_actions": [],
         "stage_hints": {"marker": "original"},
@@ -244,13 +240,10 @@ def test_run_taskgraph_persist_graph_false_skips_write(tmp_path: Path) -> None:
     # The original taskgraph.json must be unchanged.
     on_disk = json.loads(run_store.taskgraph_path.read_text())
     assert on_disk["stage_hints"]["marker"] == "original", (
-        "persist_graph=False did not protect the original taskgraph.json "
-        f"— found: {on_disk}"
+        f"persist_graph=False did not protect the original taskgraph.json — found: {on_disk}"
     )
     assert on_disk["user_goal"] == "original"
-    assert len(on_disk["stages"]) == 3, (
-        "persist_graph=False should preserve original stages count"
-    )
+    assert len(on_disk["stages"]) == 3, "persist_graph=False should preserve original stages count"
 
 
 def test_run_taskgraph_persist_graph_true_writes_by_default(
@@ -309,4 +302,5 @@ def _cleanup_planted_runs():
         run_dir = runs_root / run_id
         if run_dir.exists():
             import shutil
+
             shutil.rmtree(run_dir, ignore_errors=True)

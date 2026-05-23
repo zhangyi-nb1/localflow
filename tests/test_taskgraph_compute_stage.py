@@ -62,9 +62,7 @@ class _ComputeStubSkill(Skill):
             ),
             script_summary="uppercase seed.txt",
             inputs=[ComputeInputRef(rel_path="seed.txt", size_bytes=10)],
-            expected_outputs=[
-                ArtifactSpec(relative_path="outputs/result.txt", description="x")
-            ],
+            expected_outputs=[ArtifactSpec(relative_path="outputs/result.txt", description="x")],
             sandbox_policy=SandboxPolicy(timeout_sec=10),
         )
         action = Action(
@@ -204,15 +202,11 @@ def test_aggregated_rollback_manifest_includes_delete_scratch_dir(
         workspace_root=str(ws),
         stages=[StageSpec(stage_id="s1", title="Compute", skill="compute_stub")],
     )
-    result = run_taskgraph(
-        graph, store, trace=trace, approved=True, registry=stub_registry
-    )
+    result = run_taskgraph(graph, store, trace=trace, approved=True, registry=stub_registry)
     assert result.passed
 
     manifest = store.load_rollback()
-    delete_scratch_ops = [
-        e for e in manifest.entries if e.op == RollbackOpType.DELETE_SCRATCH_DIR
-    ]
+    delete_scratch_ops = [e for e in manifest.entries if e.op == RollbackOpType.DELETE_SCRATCH_DIR]
     assert len(delete_scratch_ops) == 1
     # Stage prefix carried through.
     assert delete_scratch_ops[0].action_id == "s1.a-stub"

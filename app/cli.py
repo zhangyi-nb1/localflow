@@ -2112,9 +2112,7 @@ def cmd_taskgraph_run(
 
     if locale is not None:
         if locale not in {"zh-CN", "en-US"}:
-            console.print(
-                f"[red]invalid --locale {locale!r}; expected zh-CN or en-US[/]"
-            )
+            console.print(f"[red]invalid --locale {locale!r}; expected zh-CN or en-US[/]")
             raise typer.Exit(code=2)
         tg = tg.model_copy(update={"locale": locale})
 
@@ -2354,9 +2352,7 @@ def cmd_pack_describe(
     stage_table.add_column("planner")
     stage_table.add_column("policy", style="yellow")
     for i, s in enumerate(recipe.stages, 1):
-        stage_table.add_row(
-            str(i), s.stage_id, s.title, s.skill, s.planner, s.failure_policy.value
-        )
+        stage_table.add_row(str(i), s.stage_id, s.title, s.skill, s.planner, s.failure_policy.value)
     console.print(stage_table)
 
     console.print(
@@ -2370,9 +2366,7 @@ def cmd_pack_describe(
         )
 
     rp = recipe.repair_policy
-    console.print(
-        f"\n[bold]Repair policy:[/] enabled={rp.enabled}, max_rounds={rp.max_rounds}"
-    )
+    console.print(f"\n[bold]Repair policy:[/] enabled={rp.enabled}, max_rounds={rp.max_rounds}")
 
     # Phase 21.1: surface repair_target_map so users can see which
     # stage each verifier will replay when repair fires. Without this,
@@ -2454,8 +2448,7 @@ def cmd_pack_suggest(
     best = router.best_match(user_goal=goal, snapshot=snapshot)
     if best is None:
         console.print(
-            "\n[yellow]No recipe scored above zero. "
-            "Pick one manually: `localflow pack list`.[/]"
+            "\n[yellow]No recipe scored above zero. Pick one manually: `localflow pack list`.[/]"
         )
     else:
         console.print(
@@ -2520,21 +2513,13 @@ def cmd_pack_run(
 
     if enable_repair:
         recipe = recipe.model_copy(
-            update={
-                "repair_policy": recipe.repair_policy.model_copy(
-                    update={"enabled": True}
-                )
-            }
+            update={"repair_policy": recipe.repair_policy.model_copy(update={"enabled": True})}
         )
 
     if locale not in ("zh-CN", "en-US"):
-        console.print(
-            f"[red]Unknown locale {locale!r};[/] expected zh-CN or en-US."
-        )
+        console.print(f"[red]Unknown locale {locale!r};[/] expected zh-CN or en-US.")
         raise typer.Exit(code=2)
-    tg = recipe.compile_to_taskgraph(
-        workspace_root=str(workspace.resolve()), locale=locale
-    )
+    tg = recipe.compile_to_taskgraph(workspace_root=str(workspace.resolve()), locale=locale)
 
     console.print(
         Panel.fit(
@@ -2579,9 +2564,7 @@ def cmd_pack_run(
             if s.verifier_passed is None
             else ("[green]ok[/]" if s.verifier_passed else "[red]fail[/]")
         )
-        table.add_row(
-            s.stage_id, badge, str(s.action_count), verifier, f"{s.duration_ms} ms"
-        )
+        table.add_row(s.stage_id, badge, str(s.action_count), verifier, f"{s.duration_ms} ms")
     console.print(table)
 
     # Phase 19 — run recipe-level verifiers if the recipe declares any.
@@ -2700,8 +2683,7 @@ def _render_recipe_repair(repair_result) -> None:
     # what the planner LLM saw).
     for a in repair_result.attempts:
         console.print(
-            f"  [dim]Hint for round {a.attempt} → `{a.target_stage}`:[/] "
-            f"{a.suggested_hint}"
+            f"  [dim]Hint for round {a.attempt} → `{a.target_stage}`:[/] {a.suggested_hint}"
         )
 
 
@@ -2745,11 +2727,7 @@ def _run_recipe_verifiers(
         try:
             manifest = store.read_model(store.rollback_path, RollbackManifest)
             for entry in manifest.entries:
-                if (
-                    entry.op is RollbackOpType.MOVE_BACK
-                    and entry.source_path
-                    and entry.target_path
-                ):
+                if entry.op is RollbackOpType.MOVE_BACK and entry.source_path and entry.target_path:
                     moves[entry.target_path] = entry.source_path
         except Exception:  # noqa: BLE001 — verifier should never crash on a manifest issue
             moves = {}
@@ -2759,9 +2737,7 @@ def _run_recipe_verifiers(
     # scanning the workspace directory.
     inputs: list[str] = []
     if store.stages_root.exists():
-        stage_dirs = sorted(
-            d for d in store.stages_root.iterdir() if d.is_dir()
-        )
+        stage_dirs = sorted(d for d in store.stages_root.iterdir() if d.is_dir())
         if stage_dirs:
             snap_path = stage_dirs[0] / "workspace_snapshot.json"
             if snap_path.exists():
@@ -2827,9 +2803,7 @@ def _render_recipe_verification(verification) -> None:
         console.print()
         for v in failed:
             if v.suggested_hint:
-                console.print(
-                    f"  [yellow]Hint for `{v.name}`:[/] {v.suggested_hint}"
-                )
+                console.print(f"  [yellow]Hint for `{v.name}`:[/] {v.suggested_hint}")
 
 
 # --------------------------------------------------------------------- trace (Phase 25.2)
@@ -2894,10 +2868,7 @@ def cmd_trace_show(
     store = RunStore(task_id=task_id)
     trace_path = store.trace_path
     if not trace_path.exists():
-        console.print(
-            f"[yellow]No trace.jsonl for task {task_id!r}.[/] "
-            f"(Looked at {trace_path})"
-        )
+        console.print(f"[yellow]No trace.jsonl for task {task_id!r}.[/] (Looked at {trace_path})")
         raise typer.Exit(code=1)
 
     rows: list[dict] = []
@@ -2985,10 +2956,7 @@ def cmd_trace_summary(
     store = RunStore(task_id=task_id)
     trace_path = store.trace_path
     if not trace_path.exists():
-        console.print(
-            f"[yellow]No trace.jsonl for task {task_id!r}.[/] "
-            f"(Looked at {trace_path})"
-        )
+        console.print(f"[yellow]No trace.jsonl for task {task_id!r}.[/] (Looked at {trace_path})")
         raise typer.Exit(code=1)
 
     by_event: Counter = Counter()
@@ -3030,9 +2998,7 @@ def cmd_trace_summary(
 
     console.print()
     console.print(f"Total rows:           [bold]{sum(by_event.values())}[/]")
-    console.print(
-        f"ActionTraceEvent rows (Phase 25.1 shape): [bold]{rich_rows}[/]"
-    )
+    console.print(f"ActionTraceEvent rows (Phase 25.1 shape): [bold]{rich_rows}[/]")
     console.print(f"Failed / blocked rows: [bold]{failures}[/]")
 
 
@@ -3092,9 +3058,7 @@ def cmd_goal(
         raise typer.Exit(code=2)
 
     if locale not in ("zh-CN", "en-US"):
-        console.print(
-            f"[red]Unknown locale {locale!r};[/] expected zh-CN or en-US."
-        )
+        console.print(f"[red]Unknown locale {locale!r};[/] expected zh-CN or en-US.")
         raise typer.Exit(code=2)
 
     with console.status("Scanning workspace…"):
@@ -3127,8 +3091,7 @@ def cmd_goal(
                 "[bold]Decision:[/] [yellow]clarify[/]\n\n"
                 "[bold]I need a bit more context:[/]\n"
                 + "\n".join(
-                    f"  {i + 1}. {q}"
-                    for i, q in enumerate(interpretation.clarifying_questions)
+                    f"  {i + 1}. {q}" for i, q in enumerate(interpretation.clarifying_questions)
                 )
                 + f"\n\n[dim]Rationale: {interpretation.rationale}[/]",
                 title=f"Clarifying — round {round_idx + 1}/{max_rounds}",
@@ -3159,8 +3122,7 @@ def cmd_goal(
     # Recipe: pair so scripts + humans can grep the output without
     # parsing the prose rationale.
     score_lines = "\n".join(
-        f"  {s['recipe']:25} score {s['score']:+d}  ·  "
-        + ("; ".join(s["why"]) or "(no signals)")
+        f"  {s['recipe']:25} score {s['score']:+d}  ·  " + ("; ".join(s["why"]) or "(no signals)")
         for s in interpretation.router_scores
     )
     console.print(

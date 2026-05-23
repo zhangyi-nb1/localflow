@@ -151,11 +151,7 @@ def evaluate_action(
                     _abs_violation = "empty path"
                 elif _path_str.startswith(("/", "\\", "~")):
                     _abs_violation = "absolute or home-shorthand path"
-                elif (
-                    len(_path_str) >= 2
-                    and _path_str[0].isalpha()
-                    and _path_str[1] == ":"
-                ):
+                elif len(_path_str) >= 2 and _path_str[0].isalpha() and _path_str[1] == ":":
                     # Windows drive-letter prefix (C:foo, C:/foo, C:\foo).
                     _abs_violation = "Windows drive-letter absolute path"
                 if _abs_violation is not None:
@@ -168,9 +164,7 @@ def evaluate_action(
                 try:
                     src_abs = resolve_inside(workspace_root, ref.rel_path)
                 except PolicyViolation as exc:
-                    reasons.append(
-                        f"PYTHON_COMPUTE input {ref.rel_path!r}: {exc}"
-                    )
+                    reasons.append(f"PYTHON_COMPUTE input {ref.rel_path!r}: {exc}")
                 else:
                     hit = _is_under_forbidden(workspace_root, src_abs, forbidden_paths)
                     if hit is not None:

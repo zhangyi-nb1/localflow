@@ -123,11 +123,7 @@ def _aggregate_moves(run_store: "RunStore") -> dict[str, str]:
     except Exception:
         return moves
     for entry in manifest.entries:
-        if (
-            entry.op is RollbackOpType.MOVE_BACK
-            and entry.source_path
-            and entry.target_path
-        ):
+        if entry.op is RollbackOpType.MOVE_BACK and entry.source_path and entry.target_path:
             moves[entry.target_path] = entry.source_path
     return moves
 
@@ -137,9 +133,7 @@ def _aggregate_snapshot_inputs(run_store: "RunStore") -> list[str]:
     source the CLI uses for ``snapshot_inputs`` on first run)."""
     if not run_store.stages_root.exists():
         return []
-    stage_dirs = sorted(
-        d for d in run_store.stages_root.iterdir() if d.is_dir()
-    )
+    stage_dirs = sorted(d for d in run_store.stages_root.iterdir() if d.is_dir())
     if not stage_dirs:
         return []
     snap_path = stage_dirs[0] / "workspace_snapshot.json"
@@ -347,9 +341,7 @@ def run_recipe_repair(
             return result
 
         # Re-run verifiers against the post-replay state.
-        post_ctx = _build_context(
-            recipe=recipe, graph=hinted_graph, run_store=run_store
-        )
+        post_ctx = _build_context(recipe=recipe, graph=hinted_graph, run_store=run_store)
         post_verdicts = run_all(list(recipe.verifiers), post_ctx)
         current_verification = RecipeVerification.from_verdicts(
             run_id=run_store.task_id,
@@ -359,9 +351,7 @@ def run_recipe_repair(
 
         attempt.post_attempt_passed = current_verification.passed
         attempt.failed_after_attempt = [
-            v.name
-            for v in current_verification.verdicts
-            if not v.passed and not v.skipped
+            v.name for v in current_verification.verdicts if not v.passed and not v.skipped
         ]
         attempt.duration_ms = int(
             (datetime.now(timezone.utc) - round_started).total_seconds() * 1000

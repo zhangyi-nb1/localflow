@@ -181,9 +181,7 @@ class Verifier:
             outcome = (entry.metadata or {}).get("outcome", {})
             status = outcome.get("status") if isinstance(outcome, dict) else None
             if entry.action_id in executed_action_ids and status != "ok":
-                bad_compute.append(
-                    f"{entry.action_id}: outcome.status={status!r}"
-                )
+                bad_compute.append(f"{entry.action_id}: outcome.status={status!r}")
         _record(
             VerificationCheck(
                 name="compute_outcomes_ok",

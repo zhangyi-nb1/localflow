@@ -25,9 +25,7 @@ def _recipe(*, name: str = "demo", expected_outputs: list[str] | None = None, **
             "name": name,
             "title": name,
             "description": "test",
-            "stages": [
-                {"stage_id": "s1", "title": "s1", "skill": "folder_organizer"}
-            ],
+            "stages": [{"stage_id": "s1", "title": "s1", "skill": "folder_organizer"}],
             "expected_outputs": expected_outputs or [],
             **kw,
         }
@@ -112,9 +110,7 @@ def test_source_ledger_skips_when_no_file(tmp_path: Path) -> None:
 def test_source_ledger_passes_when_citations_resolve(tmp_path: Path) -> None:
     (tmp_path / "papers").mkdir()
     (tmp_path / "papers" / "a.pdf").write_bytes(b"%PDF")
-    (tmp_path / "SOURCES.md").write_text(
-        "## Sources\n\n- `papers/a.pdf` — main paper\n"
-    )
+    (tmp_path / "SOURCES.md").write_text("## Sources\n\n- `papers/a.pdf` — main paper\n")
     v = get("source_ledger_verifier")(_ctx(workspace=tmp_path))
     assert v.passed
     assert v.score == 1.0
@@ -137,9 +133,7 @@ def test_source_ledger_skips_when_no_citations(tmp_path: Path) -> None:
 
 
 def test_review_queue_skips_when_all_known_ext(tmp_path: Path) -> None:
-    v = get("review_queue_verifier")(
-        _ctx(workspace=tmp_path, inputs=["a.pdf", "b.csv"])
-    )
+    v = get("review_queue_verifier")(_ctx(workspace=tmp_path, inputs=["a.pdf", "b.csv"]))
     assert v.passed and v.skipped
 
 
@@ -185,21 +179,15 @@ def test_deliverable_completeness_passes_when_all_present(tmp_path: Path) -> Non
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "index.md").write_text("x")
     recipe = _recipe(expected_outputs=["README.md", "data/index.md"])
-    v = get("deliverable_completeness_verifier")(
-        _ctx(workspace=tmp_path, recipe=recipe)
-    )
+    v = get("deliverable_completeness_verifier")(_ctx(workspace=tmp_path, recipe=recipe))
     assert v.passed
     assert v.score == 1.0
 
 
 def test_deliverable_completeness_fails_when_missing(tmp_path: Path) -> None:
     (tmp_path / "README.md").write_text("x")
-    recipe = _recipe(
-        expected_outputs=["README.md", "data/index.md", "missing.md"]
-    )
-    v = get("deliverable_completeness_verifier")(
-        _ctx(workspace=tmp_path, recipe=recipe)
-    )
+    recipe = _recipe(expected_outputs=["README.md", "data/index.md", "missing.md"])
+    v = get("deliverable_completeness_verifier")(_ctx(workspace=tmp_path, recipe=recipe))
     assert not v.passed
     assert "data/index.md" in v.detail
     assert "missing.md" in v.detail
@@ -212,9 +200,7 @@ def test_deliverable_completeness_fails_when_missing(tmp_path: Path) -> None:
 def test_run_all_handles_unknown_verifier_gracefully(tmp_path: Path) -> None:
     from app.eval.recipe_verifiers import run_all
 
-    verdicts = run_all(
-        ["coverage_verifier", "no_such_verifier"], _ctx(workspace=tmp_path)
-    )
+    verdicts = run_all(["coverage_verifier", "no_such_verifier"], _ctx(workspace=tmp_path))
     assert len(verdicts) == 2
     assert verdicts[0].name == "coverage_verifier"
     assert verdicts[1].name == "no_such_verifier"
@@ -233,9 +219,7 @@ def test_recipe_verification_from_verdicts_aggregates() -> None:
         RecipeVerifierVerdict(name="b", passed=True, skipped=True),
         RecipeVerifierVerdict(name="c", passed=False),
     ]
-    rv = RecipeVerification.from_verdicts(
-        run_id="r1", recipe_name="demo", verdicts=verdicts
-    )
+    rv = RecipeVerification.from_verdicts(run_id="r1", recipe_name="demo", verdicts=verdicts)
     assert rv.passed is False
     assert rv.failed_count == 1
     assert rv.skipped_count == 1

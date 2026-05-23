@@ -245,9 +245,7 @@ def chart_data_consistency_verifier(
             ),
             skipped=True,
         )
-    charts = [
-        p for p in analysis_dir.rglob("*") if p.is_file() and _CHART_PNG_RX.search(p.name)
-    ]
+    charts = [p for p in analysis_dir.rglob("*") if p.is_file() and _CHART_PNG_RX.search(p.name)]
     if not charts:
         return RecipeVerifierVerdict(
             name=name,
@@ -371,7 +369,7 @@ def topic_coherence_verifier(
     for p in sorted(ws.iterdir() if ws.exists() else []):
         if not p.is_dir():
             continue
-        if p.name.startswith(("."  , "_")):
+        if p.name.startswith((".", "_")):
             continue
         # Count direct file children to filter trivial dirs.
         try:
@@ -404,9 +402,9 @@ def topic_coherence_verifier(
     target = candidate_dirs[0]
     index_md = target / "index.md"
     index_text = _read_text_capped(index_md) if index_md.exists() else ""
-    file_names = sorted(
-        c.name for c in target.iterdir() if c.is_file() and c.name != "index.md"
-    )[:15]
+    file_names = sorted(c.name for c in target.iterdir() if c.is_file() and c.name != "index.md")[
+        :15
+    ]
 
     user_prompt = (
         f"The agent grouped files into a topic/category directory named "
@@ -429,7 +427,8 @@ def topic_coherence_verifier(
         name=name,
         passed=result.verdict,
         detail=(
-            f"`{target.name}/`: " + (result.reason or ("coherent" if result.verdict else "incoherent"))
+            f"`{target.name}/`: "
+            + (result.reason or ("coherent" if result.verdict else "incoherent"))
         ),
         suggested_hint=result.suggested_hint if not result.verdict else None,
     )
