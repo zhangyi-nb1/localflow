@@ -54,6 +54,17 @@ class TraceEventType(str, Enum):
     # Phase 11 — user-initiated plan refinement loop. Emitted by
     # control_loop.run_revise once per accepted revision turn.
     PLAN_REVISED = "plan.revised"
+    # Phase 23 — Sandboxed ComputeAction lifecycle. Part of the §10.7
+    # 3rd deliberate exception alongside ActionType.PYTHON_COMPUTE.
+    # Status semantics:
+    #   COMPUTE_ACTION_START — status=ok; payload carries script_summary
+    #   COMPUTE_ACTION_END   — status=ok|fail; payload carries outcome.status
+    #   SANDBOX_TIMEOUT      — status=fail; payload carries timeout_sec
+    #   COMPUTE_OUTPUT_VERIFIED — status=ok|fail; payload carries artifact list
+    COMPUTE_ACTION_START = "compute.action.start"
+    COMPUTE_ACTION_END = "compute.action.end"
+    SANDBOX_TIMEOUT = "compute.sandbox.timeout"
+    COMPUTE_OUTPUT_VERIFIED = "compute.output.verified"
 
 
 class FailureType(str, Enum):

@@ -36,6 +36,14 @@ def test_every_event_type_used_in_kernel_pinned() -> None:
         # Phase 11 — emitted by control_loop.run_revise when the user
         # supplies a refinement hint and the planner returns a new plan.
         "plan.revised",
+        # Phase 23 — ComputeAction sandbox lifecycle. The compute path
+        # is the 3rd §10.7 kernel exception; every kernel-touch step
+        # below earns a dedicated trace event so audits can grep the
+        # ledger from script-emit through sandbox-timeout.
+        "compute.action.start",
+        "compute.action.end",
+        "compute.output.verified",
+        "compute.sandbox.timeout",
     }
     actual = {e.value for e in TraceEventType}
     assert actual == expected, f"unexpected drift: {actual ^ expected}"

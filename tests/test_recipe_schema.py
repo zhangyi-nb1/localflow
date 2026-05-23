@@ -120,7 +120,10 @@ def test_compile_accepts_overrides() -> None:
         preferences={"naming_style": "snake_case"},
     )
     assert tg.user_goal == "Custom override"
-    assert tg.forbidden_actions == ["shell"]
+    # User-supplied "shell" is preserved; Phase 24 auto-appends
+    # python_compute because the recipe didn't opt into ComputeAction.
+    assert "shell" in tg.forbidden_actions
+    assert "python_compute" in tg.forbidden_actions
     assert tg.forbidden_paths == ["secrets/"]
     assert tg.preferences == {"naming_style": "snake_case"}
 
@@ -188,3 +191,85 @@ def test_user_preferences_win_over_auto_propagated() -> None:
         preferences={"route_low_confidence_to_review": False},
     )
     assert tg.preferences["route_low_confidence_to_review"] is False
+
+
+# v0.23 — Phase 24 — capability-first ComputeAction opt-in
+
+
+def test_recipe_default_forbids_python_compute_in_taskgraph() -> None:
+    """A vanilla recipe must compile a TaskGraph whose forbidden_actions
+    includes ``python_compute`` so accidental emission gets blocked at
+    the policy guard layer."""
+    recipe = RecipeSpec.model_validate(_minimal_recipe())
+    assert recipe.allow_compute_action is False
+    tg = recipe.compile_to_taskgraph(workspace_root="/tmp/x")
+    assert "python_compute" in tg.forbidden_actions
+
+
+def test_recipe_rejects_python_compute_in_stage_allowed_actions_when_not_opt_in() -> None:
+    """Declaring ``python_compute`` in a stage's allowed_actions without
+    opting in at the recipe level is a schema-level error."""
+    with pytest.raises(ValidationError) as exc:
+        RecipeSpec.model_validate(
+            _minimal_recipe(
+                stages=[
+                    {
+                        "stage_id": "s1",
+                        "title": "x",
+                        "skill": "agent",
+                        "allowed_actions": ["python_compute"],
+                    }
+                ],
+            )
+        )
+    msg = str(exc.value)
+    assert "allow_compute_action" in msg
+    assert "python_compute" in msg
+
+
+def test_recipe_opt_in_allows_python_compute_stage_declaration() -> None:
+    """When ``allow_compute_action=True``, a stage may declare
+    ``python_compute`` in its allowed_actions."""
+    recipe = RecipeSpec.model_validate(
+        _minimal_recipe(
+            allow_compute_action=True,
+            stages=[
+                {
+                    "stage_id": "s1",
+                    "title": "compute",
+                    "skill": "agent",
+                    "allowed_actions": ["python_compute", "move"],
+                }
+            ],
+        )
+    )
+    assert recipe.allow_compute_action is True
+    tg = recipe.compile_to_taskgraph(workspace_root="/tmp/x")
+    # When opted in, python_compute is NOT in the graph-level forbidden_actions.
+    assert "python_compute" not in tg.forbidden_actions
+    # Stage-level allowed_actions carry through.
+    assert "python_compute" in (tg.stages[0].allowed_actions or [])
+
+
+def test_user_supplied_forbidden_actions_still_get_compute_appended() -> None:
+    """An explicit CLI ``--forbidden-actions shell`` must still get
+    python_compute added when the recipe didn't opt in, otherwise the
+    user override would silently widen the surface area."""
+    recipe = RecipeSpec.model_validate(_minimal_recipe())
+    tg = recipe.compile_to_taskgraph(
+        workspace_root="/tmp/x",
+        forbidden_actions=["shell"],
+    )
+    assert "python_compute" in tg.forbidden_actions
+    assert "shell" in tg.forbidden_actions
+
+
+def test_user_forbidden_actions_already_listing_compute_does_not_dup() -> None:
+    """Idempotency — if the user passed python_compute manually, the
+    auto-append must not duplicate it."""
+    recipe = RecipeSpec.model_validate(_minimal_recipe())
+    tg = recipe.compile_to_taskgraph(
+        workspace_root="/tmp/x",
+        forbidden_actions=["python_compute", "shell"],
+    )
+    assert tg.forbidden_actions.count("python_compute") == 1

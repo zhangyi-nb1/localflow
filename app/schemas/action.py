@@ -20,6 +20,17 @@ class ActionType(str, Enum):
     # executor + policy_guard learn about this action type; rollback
     # uses the same DELETE_CREATED_FILE op as INDEX.
     FETCH = "fetch"
+    # v0.23 — third deliberate §10.7 exception (after Phase 5's
+    # forbidden_paths and Phase 16's FETCH). PYTHON_COMPUTE actions
+    # carry a typed ``ComputeAction`` payload (see
+    # ``app/schemas/compute.py``) inside ``metadata``; the executor
+    # dispatches them to ``SandboxRuntime`` which runs the script in
+    # an isolated scratch workspace (``.localflow/scratch/<task_id>/
+    # <action_id>/``). Outputs never land in the user workspace
+    # directly — a subsequent pack stage (MOVE / COPY) is required to
+    # promote artefacts. This is *isolation*, not a security sandbox;
+    # see docs/COMPUTE_ACTION.md for the honesty discipline.
+    PYTHON_COMPUTE = "python_compute"
 
 
 class RiskLevel(str, Enum):

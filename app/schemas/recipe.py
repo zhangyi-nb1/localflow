@@ -203,6 +203,19 @@ class RecipeSpec(BaseModel):
         default_factory=list,
         description="Free-form tags ('research', 'data', 'handoff') for UI grouping.",
     )
+    allow_compute_action: bool = Field(
+        default=False,
+        description=(
+            "Phase 24 — capability-first escape hatch. When False (default), "
+            "no stage of this recipe may declare ``python_compute`` in its "
+            "``allowed_actions``; ``compile_to_taskgraph()`` raises ValueError "
+            "if a stage tries to. When True, the recipe AUTHOR has explicitly "
+            "opted into the third §10.7 kernel exception — every approval "
+            "prompt for a PYTHON_COMPUTE action will still surface the script "
+            "and warnings. This flag is the audit-trail anchor: it makes "
+            "every recipe that touches the compute path grep-able."
+        ),
+    )
 
     @model_validator(mode="after")
     def _unique_stage_ids(self) -> "RecipeSpec":
@@ -211,6 +224,30 @@ class RecipeSpec(BaseModel):
             if s.stage_id in seen:
                 raise ValueError(f"duplicate stage_id in recipe: {s.stage_id!r}")
             seen.add(s.stage_id)
+        return self
+
+    @model_validator(mode="after")
+    def _check_compute_capability_opt_in(self) -> "RecipeSpec":
+        """Phase 24 — enforce the capability-first contract.
+
+        When ``allow_compute_action`` is False (default), no stage may
+        list ``python_compute`` in its ``allowed_actions``. This makes
+        the third §10.7 kernel exception (PYTHON_COMPUTE) discoverable:
+        every recipe that opts in flips one explicit bit, and grepping
+        ``allow_compute_action: true`` lists the entire surface area.
+        """
+        if self.allow_compute_action:
+            return self
+        for stage in self.stages:
+            allowed = stage.allowed_actions or []
+            if "python_compute" in allowed:
+                raise ValueError(
+                    f"stage {stage.stage_id!r} declares 'python_compute' in "
+                    f"allowed_actions but recipe {self.name!r} has "
+                    f"allow_compute_action=False. Set allow_compute_action=True "
+                    f"on the recipe to opt into the §10.7 ComputeAction "
+                    f"capability (see docs/COMPUTE_ACTION.md)."
+                )
         return self
 
     def resolve_repair_target(self, verifier_name: str) -> str | None:
@@ -279,15 +316,25 @@ class RecipeSpec(BaseModel):
         if preferences:
             merged_prefs.update(preferences)
 
+        # Phase 24 — when the recipe didn't opt into ComputeAction, add
+        # ``python_compute`` to the graph-level forbidden_actions so the
+        # policy guard rejects any stage-level skill that tries to emit
+        # one anyway (e.g. an LLM-planned agent stage hallucinates a
+        # PYTHON_COMPUTE action). This is belt-and-braces: the schema
+        # validator already rejected recipes that DECLARE python_compute
+        # in allowed_actions; this catches accidental emission.
+        if forbidden_actions is not None:
+            graph_forbidden = list(forbidden_actions)
+        else:
+            graph_forbidden = ["delete", "overwrite", "shell"]
+        if not self.allow_compute_action and "python_compute" not in graph_forbidden:
+            graph_forbidden.append("python_compute")
+
         return TaskGraph(
             user_goal=user_goal or self.description,
             workspace_root=workspace_root,
             stages=stages,
-            forbidden_actions=(
-                list(forbidden_actions)
-                if forbidden_actions is not None
-                else ["delete", "overwrite", "shell"]
-            ),
+            forbidden_actions=graph_forbidden,
             forbidden_paths=list(forbidden_paths) if forbidden_paths else [],
             preferences=merged_prefs,
             locale=locale if locale is not None else DEFAULT_LOCALE,  # type: ignore[arg-type]

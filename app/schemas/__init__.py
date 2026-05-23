@@ -1,4 +1,13 @@
 from app.schemas.action import Action, ActionType, RiskLevel
+from app.schemas.compute import (
+    ArtifactSpec,
+    ComputeAction,
+    ComputeInputRef,
+    ComputeOutcome,
+    ComputeOutcomeStatus,
+    ProducedArtifact,
+    SandboxPolicy,
+)
 from app.schemas.execution import ExecutionRecord, ExecutionStatus
 from app.schemas.plan import ActionPlan
 from app.schemas.recipe import (
@@ -33,11 +42,17 @@ __all__ = [
     "Action",
     "ActionPlan",
     "ActionType",
+    "ArtifactSpec",
+    "ComputeAction",
+    "ComputeInputRef",
+    "ComputeOutcome",
+    "ComputeOutcomeStatus",
     "ExecutionRecord",
     "ExecutionStatus",
     "FailureType",
     "FileMeta",
     "InputExpectation",
+    "ProducedArtifact",
     "RecipeSpec",
     "RecipeStage",
     "RepairPolicy",
@@ -46,6 +61,7 @@ __all__ = [
     "RiskVerdict",
     "RollbackEntry",
     "RollbackManifest",
+    "SandboxPolicy",
     "SemanticVerdict",
     "SemanticVerificationResult",
     "SkillManifest",

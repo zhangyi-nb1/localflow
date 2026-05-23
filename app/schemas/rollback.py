@@ -15,6 +15,12 @@ class RollbackOpType(str, Enum):
     DELETE_CREATED_FILE = "delete_created_file"
     DELETE_CREATED_DIR = "delete_created_dir"
     RESTORE_FROM_BACKUP = "restore_from_backup"
+    # v0.23 — part of the 3rd §10.7 deliberate exception
+    # (PYTHON_COMPUTE). Cleans the scratch dir for one ComputeAction.
+    # The target is OUTSIDE the user workspace (under <home>/scratch/),
+    # so the apply path uses ScratchWorkspace.cleanup_action rather
+    # than workspace-relative resolve_inside.
+    DELETE_SCRATCH_DIR = "delete_scratch_dir"
 
 
 class RollbackEntry(BaseModel):
