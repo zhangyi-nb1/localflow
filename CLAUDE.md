@@ -154,3 +154,18 @@ Phase 23 已经定下命名纪律，扩展到全项目：
 - 任何"加新 skill"提议 = 先问"能不能让 ActionEvent + react loop 自然处理"
 - 任何"动 harness kernel"提议 = §10.7 ledger 登记 + 用户确认
 - 任何"丢 dry-run / rollback / verifier"提议 = **直接拒绝**，这是项目身份
+
+### Pre-push 防呆（v0.23.x 起强制）
+
+`.githooks/pre-push` 在每次 `git push` 前跑三条检查（顺序 fail-fast）：
+1. `ruff check app/ tests/` ← 镜像 CI step 5
+2. `ruff format --check app/ tests/ examples/` ← 镜像 CI step 6
+3. `pytest --tb=no -q` ← 镜像 CI step 7
+
+新 clone 仓库时**必须**一次性激活：
+
+```bash
+git config core.hooksPath .githooks
+```
+
+紧急 push 跳过用 `git push --no-verify`（仅在确认 CI 修复 PR 时使用）。**任何"local 全过、CI 红"的情况都是 hook 没装或被绕过的信号**。
