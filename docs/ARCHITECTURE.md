@@ -5,6 +5,22 @@ in the middle is the only piece allowed to perform IO. Everything else
 either produces typed plans (skills, agent), classifies / transforms
 in-memory (tools, memory), or wraps the existing surface (CLI, MCP).
 
+## Eight iron rules
+
+The whole design hangs off these. Every layer below assumes they hold.
+
+1. **The model does not execute side effects** — it only emits `TaskSpec` / `ActionPlan` / `Action`.
+2. **Every action is structured** (Pydantic), never free-form natural language.
+3. **Every write action goes through dry-run** before approval.
+4. **`delete` is disabled by default** — duplicates are reported, not removed.
+5. **Every path must resolve inside the workspace root** + must not intersect `forbidden_paths`.
+6. **Existing target files are not overwritten by default** — auto-suffix or explicit `overwrite_existing` flag + backup.
+7. **Every write is fully traceable** — action_id, timestamps, hashes, rollback record.
+8. **The verifier is independent of the model** — completion is determined by rules, not self-assessment.
+
+Rule ② / ③ in particular define the "Skills produce Actions; Executor
+performs IO" boundary referenced in *Layer 3 — Tool Registry* below.
+
 ```
 ┌────────────────────────────────────────────────────────────────────┐
 │  DRIVER LAYER                                                      │

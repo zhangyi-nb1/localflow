@@ -422,6 +422,134 @@ reason line so users know exactly what's being chosen.
 
 ---
 
+## Phase 23 — Sandboxed ComputeAction Engine + Recipe escape hatch (v0.23.0)
+
+**Trigger**: through Phase 22 the harness's intelligence ceiling was
+capped by its eight typed actions (`MKDIR / MOVE / RENAME / COPY /
+INDEX / SUMMARIZE / CONVERT / FETCH`). Any task that needed to
+*transform* file content — clean a messy CSV, derive a statistic, plot
+a chart from raw data — had to be hard-coded as a new skill. That
+does not scale. The Phase 23 deliverable is the third deliberate
+§10.7 kernel exception (after Phase 5 `forbidden_paths` and Phase 16
+`FETCH`): a `PYTHON_COMPUTE` action that lets the planner emit a
+hand-written Python script, run it in an *isolated scratch
+workspace* outside the user's data, and surface declared artefacts to
+a follow-up pack stage. The honesty discipline — pinned in
+`docs/COMPUTE_ACTION.md` — is that this is **isolation, not security
+sandbox**: it stops accidental workspace mutation and casual leakage,
+not a determined attacker. Hosts that want hard isolation run
+LocalFlow inside Docker or a firewall-segregated account.
+
+**Goal**: ship ComputeAction as a full kernel primitive — schema +
+runtime + policy guard + verifier + rollback + trace + dry-run +
+TaskGraph + Recipe — without sacrificing the iron-rule guarantees that
+the workspace stays untouched until a separate pack stage.
+
+**Three sub-phases shipped**:
+
+- **Phase 23.0 — Skeleton + end-to-end demo.** New schemas
+  (`app/schemas/compute.py`): `ComputeAction` (the typed payload —
+  `script`, `script_summary`, `inputs`, `expected_outputs`,
+  `sandbox_policy`, `requires_approval=True` by default),
+  `ComputeInputRef`, `ArtifactSpec`, `SandboxPolicy`, `ComputeOutcome`,
+  `ComputeOutcomeStatus`. New `ActionType.PYTHON_COMPUTE` enum value.
+  New `RollbackOpType.DELETE_SCRATCH_DIR` rollback op. Runtime:
+  `app/tools/scratch.py::ScratchWorkspace` (per-action layout under
+  `<home>/scratch/<task>/<action>/` with `inputs/` + `outputs/` +
+  `script.py` + `stdout.log` + `stderr.log`) and
+  `app/harness/sandbox.py::SandboxRuntime` (subprocess + cwd
+  confinement + 300s timeout cap + env scrub for proxy + AI provider
+  keys; Unix-only `RLIMIT_AS` memory cap; Job Objects deferred). The
+  executor dispatches `PYTHON_COMPUTE` through `_do_compute` which
+  ALWAYS appends a `DELETE_SCRATCH_DIR` rollback entry (even on
+  failure) so scratch never leaks. End-to-end demo:
+  `examples/compute_action_pack/workspace/sales_dirty.csv` (50-row CSV
+  with case inconsistency / mixed currency / duplicates / mixed date
+  formats / outliers) + `tests/test_compute_demo_end_to_end.py` —
+  three integration tests covering the cleaning script flow, full
+  rollback restoring the workspace bit-for-bit, and the 4-event trace
+  (`COMPUTE_ACTION_START` / `COMPUTE_ACTION_END` /
+  `COMPUTE_OUTPUT_VERIFIED` / `SANDBOX_TIMEOUT` on timeout).
+
+- **Phase 23.1 — Approval UX + trace + verifier integration.**
+  Policy guard learns `PYTHON_COMPUTE` (`app/harness/policy_guard.py`):
+  every declared input path resolves through `resolve_inside` and is
+  matched against `forbidden_paths`; invalid `ComputeAction` metadata
+  is rejected. The structural verifier gained
+  `compute_outcomes_ok` — scans the manifest's `DELETE_SCRATCH_DIR`
+  entries and fails the check if any compute action's
+  `outcome.status != "ok"`, with the failure classified under the
+  existing `FailureType.MISSING_OUTPUT` bucket so eval graders pick it
+  up. CLI dry-run (`app/harness/dry_run.py`) renders the
+  `script_summary` in the actions table's reason column (with
+  `scratch/outputs/` as the target since outputs land outside the
+  workspace) and adds a dedicated `## Compute scripts` section below
+  the table with the full Python source rendered as a `python` fenced
+  code block, capped at 4 KiB for malformed plans (full source lives
+  in scratch `script.py` at execute time).
+
+- **Phase 23.2 — TaskGraph integration.** `app/harness/taskgraph_runner.py`
+  threads optional `scratch_workspace` + `sandbox_runtime` kwargs
+  through `run_taskgraph` and forwards them to every stage's
+  `Executor`. When omitted the runner constructs defaults rooted at
+  `<home>/scratch/` so a recipe that uses a single compute stage works
+  out of the box. The aggregated rollback manifest gains the
+  `DELETE_SCRATCH_DIR` entry with stage-prefixed action_ids so
+  `localflow rollback --run-id` wipes scratch alongside any other
+  stage's workspace edits. New `registry` kwarg makes it easy to
+  inject test-only stub skills without polluting the process-wide
+  default.
+
+**Phase 24 — Capability-first Recipe escape hatch (same delivery)**:
+new `RecipeSpec.allow_compute_action: bool = False` field
+(`app/schemas/recipe.py`). When False (default), the schema validator
+refuses any stage that lists `python_compute` in `allowed_actions`,
+AND `compile_to_taskgraph()` auto-appends `python_compute` to the
+graph-level `forbidden_actions` so an LLM-planned agent stage cannot
+hallucinate a ComputeAction even if it tries — belt-and-braces. When
+True, the recipe AUTHOR has explicitly opted into the third §10.7
+exception; the compile step then leaves `python_compute` out of the
+forbidden list. This is the audit-trail anchor — grepping
+`allow_compute_action: true` lists every recipe in the org that
+touches the compute path.
+
+**Files**:
+- `app/schemas/compute.py` (new) — typed ComputeAction payload + outcome
+- `app/schemas/action.py` — `PYTHON_COMPUTE` ActionType
+- `app/schemas/rollback.py` — `DELETE_SCRATCH_DIR` RollbackOpType
+- `app/schemas/trace.py` — `COMPUTE_ACTION_START/END/OUTPUT_VERIFIED/SANDBOX_TIMEOUT`
+- `app/schemas/recipe.py` — `allow_compute_action` field + validator
+- `app/tools/scratch.py` (new) — `ScratchWorkspace` layout helper
+- `app/harness/sandbox.py` (new) — `SandboxRuntime`
+- `app/harness/executor.py` — `_do_compute` dispatch + scratch_workspace/sandbox_runtime kwargs
+- `app/harness/rollback.py` — `DELETE_SCRATCH_DIR` branch + scratch_workspace kwarg
+- `app/harness/policy_guard.py` — `PYTHON_COMPUTE` block
+- `app/harness/verifier.py` — `compute_outcomes_ok` check
+- `app/harness/dry_run.py` — compute summary + scripts section
+- `app/harness/taskgraph_runner.py` — scratch+sandbox+registry kwargs
+- `docs/COMPUTE_ACTION.md` (new) — honesty discipline + 10 design principles
+- `examples/compute_action_pack/` (new) — sales_dirty.csv fixture + README
+
+**Tests added**: ~25 new (executor compute dispatch + scratch +
+sandbox + policy guard + verifier + dry-run + TaskGraph compute stage
++ recipe opt-in + end-to-end demo). Full suite expected to pass with
+no regressions.
+
+**Kernel touch**: **YES (3rd exception)**. The kernel itself now
+knows how to dispatch one new action type (`PYTHON_COMPUTE`), undo one
+new rollback op (`DELETE_SCRATCH_DIR`), enforce one new policy
+(input-only path check on ComputeActions), and verify one new outcome
+shape (`ComputeOutcome.status`). This is the third deliberate §10.7
+exception in 30 delivered phases — the surface area added is bounded
+by the ten design principles in `docs/COMPUTE_ACTION.md` (output-to-
+scratch, no source delete, declared-inputs-only, declared-outputs-
+only, approval-mandatory, wall-clock-capped, env-scrub, network-best-
+effort, always-rollback-cleans, scratch-outside-workspace).
+
+**§10.7 ledger row 29 + 30** added below.
+
+---
+
 ## Phase 22 — UI productisation + bilingual substrate (v0.22.0)
 
 **Trigger**: the v0.21 product-arc ledger called out two outstanding
@@ -1726,8 +1854,10 @@ post-nav persistence, fresh-session reset). Total 318 → 319.
 | **20 (v0.20.0)** | NO | Flagship packs formalised + product-led README + Phase 19 bug fixes — three deliverable packs each ship with `examples/<pack>/seed.py` + workspace + README + eval task; `route_low_confidence_to_review` auto-propagates when recipe declares `review_queue_verifier`; agent meta-skill now receives `task.expected_outputs` (generates README + SOURCES, not just README); `chart_data_consistency_verifier` scoped to `analysis_charts/` only. +4 tests (642 → 646, after Phase 19 absorbed +5 unrelated). |
 | **21 (v0.21.0)** | NO | Recipe Auto-Repair Loop — `app/harness/recipe_repair.py` orchestrates verifier-hint → `plan_with_llm(user_hint=...)` → `replay_from_stage` → re-verify, capped at `repair_policy.max_rounds`; new `TaskGraph.stage_hints` + `RecipeSpec.repair_target_map` schema fields; 6-line `_run_one_stage` edit threads stage_hints into `plan_with_llm`. All 3 flagship recipes ship with `repair_policy.enabled=true, max_rounds=2`. +12 tests (646 → 658). |
 | **22 (v0.22.0)** | NO | UI productisation + bilingual substrate — (1) **Lane B2** locale plumbing: `--locale {zh-CN,en-US}` flag on `taskgraph run` + `pack run`, new `app/agent/locale_prompts.py::locale_instruction()` injected into LLM system prompts, `TaskGraph.locale` schema field; (2) **Lane D** 6 bilingual Jinja templates under `app/templates/reports/*.j2` (agent / folder_organizer / pdf_indexer / data_reporter / data_analyzer / workspace_visualizer), each reporter rewired to render the template; (3) **Lane A-copy** UI terminology softened (Skill → 能力 / Capability; Approval Token → 确认授权 / Approve; Verifier → 校验 / Check; Dry-run → 预览 / Preview); (4) **Lane A-home** product landing page (hero + 3 featured pack cards + state-handoff to Pack page); (5) **Lane C-nav** new `🗂️ Workspace` + `📊 Runs` pages, `Memory` → `⚙ Settings` rename, Pack title → `Create Pack`, Plan/Execute/Rollback pushed to `5_*` / `6_*` / `7_*` prefixes. Full `st.navigation` collapse deferred. +23 tests (658 → 681). |
+| **23 (v0.23.0)** | **YES** (3rd exception) | **Sandboxed ComputeAction Engine** — third deliberate §10.7 kernel exception after Phase 5 (`forbidden_paths`) and Phase 16 (`FETCH`). (1) **Schemas**: new `app/schemas/compute.py` (`ComputeAction` typed payload + `ComputeInputRef` + `ArtifactSpec` + `SandboxPolicy` + `ComputeOutcome` + `ComputeOutcomeStatus`); new `ActionType.PYTHON_COMPUTE`; new `RollbackOpType.DELETE_SCRATCH_DIR`; 4 new `TraceEventType` members. (2) **Runtime**: `app/tools/scratch.py::ScratchWorkspace` (per-action layout `<home>/scratch/<task>/<action>/{inputs,outputs,script.py,stdout.log,stderr.log}`) + `app/harness/sandbox.py::SandboxRuntime` (subprocess + cwd confinement + 300s timeout cap + env scrub for proxy + AI provider keys; Unix-only `RLIMIT_AS` memory cap). (3) **Kernel dispatch**: `Executor._do_compute` ALWAYS appends `DELETE_SCRATCH_DIR` rollback entry (even on failure); `Rollback._apply` learns the inverse; policy_guard input-only path check; verifier `compute_outcomes_ok` check classified under `FailureType.MISSING_OUTPUT`; CLI dry-run renders `script_summary` + dedicated `## Compute scripts` section. (4) **TaskGraph integration**: `run_taskgraph` accepts `scratch_workspace` + `sandbox_runtime` + `registry` kwargs with sensible defaults; stage-prefixed `DELETE_SCRATCH_DIR` entries land in the aggregated manifest. (5) **End-to-end demo**: `examples/compute_action_pack/workspace/sales_dirty.csv` (50-row deliberately messy CSV) + `tests/test_compute_demo_end_to_end.py` proves the cleaning script flow + bit-for-bit rollback. **Honesty discipline** pinned in `docs/COMPUTE_ACTION.md`: isolation, **not** security sandbox — prevents accidental workspace mutation and casual leakage, not a determined attacker. +25 tests (681 → ~706). |
+| **24 (v0.23.0)** | NO | **Recipe capability-first escape hatch** — companion to Phase 23. New `RecipeSpec.allow_compute_action: bool = False` field. When False (default), schema validator refuses any stage declaring `python_compute` in `allowed_actions`, AND `compile_to_taskgraph()` auto-appends `python_compute` to graph-level `forbidden_actions` (belt-and-braces against LLM hallucination). When True, the recipe AUTHOR has opted in — grepping `allow_compute_action: true` lists the entire surface area. Pure schema change; no kernel touch. +6 tests in `test_recipe_schema.py`. |
 
-**Score**: 2 deliberate exceptions across 28 deliveries (rows 17–21 backfilled retroactively in v0.22). 26/28 zero-kernel-touch.
+**Score**: 3 deliberate exceptions across 30 deliveries (rows 17–21 backfilled retroactively in v0.22). 27/30 zero-kernel-touch.
 
 ---
 
