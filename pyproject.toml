@@ -49,6 +49,14 @@ dev = [
     "openpyxl>=3.1",
     "matplotlib>=3.7",
     "pypdf>=4.0",
+    # v0.23.x — app/templates/__init__.py imports jinja2 at module load
+    # for the bilingual report templates (Phase 22 Lane D). jinja2 was
+    # previously only pulled in via `[ui]` (streamlit), so a `[dev]`
+    # install on CI hit ModuleNotFoundError when pytest collected any
+    # test that imports app.skills (and therefore app.templates). Add
+    # jinja2 directly to dev so the CI matrix `[dev,mcp]` invocation
+    # stays self-sufficient.
+    "jinja2>=3.1",
 ]
 openai = [
     "openai>=1.50",
