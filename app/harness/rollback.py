@@ -12,6 +12,7 @@ from app.storage.jsonl_logger import JsonlLogger
 from app.storage.run_store import RunStore
 from app.tools import file_ops
 from app.tools.hash_ops import sha256_file
+from app.tools.scratch import ScratchWorkspace
 
 
 class RollbackConflict(Exception):
@@ -113,6 +114,7 @@ class Rollback:
         run_store: RunStore,
         *,
         trace: TraceLogger | None = None,
+        scratch_workspace: ScratchWorkspace | None = None,
     ) -> None:
         self.workspace_root = workspace_root.resolve()
         self.run_store = run_store
@@ -120,6 +122,11 @@ class Rollback:
         self.audit = AuditLogger(run_store.audit_log_path)
         # Phase 9 — optional trace stream.
         self.trace = trace
+        # Phase 23 — needed only to undo PYTHON_COMPUTE actions
+        # (DELETE_SCRATCH_DIR). None is fine for the 697 existing
+        # tests; missing it during a real PYTHON_COMPUTE rollback
+        # raises a clear error at the _apply site.
+        self.scratch_workspace = scratch_workspace
 
     def run(self, manifest: RollbackManifest, *, force: bool = False) -> RollbackOutcome:
         """Replay ``manifest`` in reverse to restore the workspace.
@@ -317,6 +324,26 @@ class Rollback:
             _sweep_empty_subdirs(tgt)
             if not file_ops.remove_empty_dir(tgt):
                 raise OSError(f"created dir is not empty, refusing to remove: {entry.target_path}")
+        elif entry.op == RollbackOpType.DELETE_SCRATCH_DIR:
+            # v0.23 — wipes the scratch subtree owned by one
+            # PYTHON_COMPUTE action. Target lives OUTSIDE the user
+            # workspace (under <home>/scratch/), so resolve_inside
+            # does not apply; we use the ScratchWorkspace helper
+            # which already guards its own root.
+            if self.scratch_workspace is None:
+                raise RuntimeError(
+                    "DELETE_SCRATCH_DIR rollback requires "
+                    "Rollback(scratch_workspace=...); none supplied"
+                )
+            md = entry.metadata or {}
+            task_id = md.get("task_id")
+            action_id = md.get("action_id")
+            if not task_id or not action_id:
+                raise ValueError(
+                    "DELETE_SCRATCH_DIR requires metadata.task_id + action_id; "
+                    f"got task_id={task_id!r} action_id={action_id!r}"
+                )
+            self.scratch_workspace.cleanup_action(task_id, action_id)
         elif entry.op == RollbackOpType.RESTORE_FROM_BACKUP:
             # Restore a file that was overwritten during this run. The
             # backup lives under the run dir (NOT inside workspace_root)

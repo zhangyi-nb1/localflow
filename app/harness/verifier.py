@@ -15,6 +15,7 @@ from app.schemas import (
     WorkspaceSnapshot,
 )
 from app.schemas.action import ActionType
+from app.schemas.rollback import RollbackOpType
 
 
 class Verifier:
@@ -165,6 +166,31 @@ class Verifier:
                 detail=f"{len(lost)} hash(es) missing" if lost else "ok",
             ),
             failure_type=FailureType.MISSING_OUTPUT if lost else None,
+        )
+
+        # Phase 23 — PYTHON_COMPUTE action outcomes must be OK for the
+        # corresponding action to count as a real success. The executor
+        # raises on non-OK outcomes (marking the action FAILED), so the
+        # only entries we see here for a successful run are OK ones —
+        # but we double-check the recorded outcome to catch any future
+        # path that bypasses the executor's raise.
+        bad_compute: list[str] = []
+        for entry in manifest.entries:
+            if entry.op is not RollbackOpType.DELETE_SCRATCH_DIR:
+                continue
+            outcome = (entry.metadata or {}).get("outcome", {})
+            status = outcome.get("status") if isinstance(outcome, dict) else None
+            if entry.action_id in executed_action_ids and status != "ok":
+                bad_compute.append(
+                    f"{entry.action_id}: outcome.status={status!r}"
+                )
+        _record(
+            VerificationCheck(
+                name="compute_outcomes_ok",
+                passed=not bad_compute,
+                detail="; ".join(bad_compute) or "ok",
+            ),
+            failure_type=FailureType.MISSING_OUTPUT if bad_compute else None,
         )
 
         # Generated files exist (e.g. index.md).

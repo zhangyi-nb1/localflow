@@ -175,3 +175,108 @@ def test_assess_plan_propagates_forbidden_paths(workspace: Path) -> None:
     assessment = assess_plan(workspace, plan, forbidden_paths=("secrets",))
     assert not assessment.passed
     assert "x-1" in assessment.blocked_actions
+
+
+# --------------------------------------------------------------- Phase 23 ---
+
+
+def _compute_metadata(inputs: list[str] | None = None) -> dict:
+    from app.schemas.compute import (
+        ArtifactSpec,
+        ComputeAction,
+        ComputeInputRef,
+        SandboxPolicy,
+    )
+
+    return ComputeAction(
+        script="print('hi')",
+        script_summary="test",
+        inputs=[ComputeInputRef(rel_path=p, size_bytes=1) for p in (inputs or [])],
+        expected_outputs=[ArtifactSpec(relative_path="outputs/out.txt", description="x")],
+        sandbox_policy=SandboxPolicy(timeout_sec=5),
+    ).model_dump(mode="json")
+
+
+def test_python_compute_no_source_no_target_is_ok(workspace: Path) -> None:
+    """PYTHON_COMPUTE is the only action type that legitimately has
+    no source_path AND no target_path — outputs land in scratch, not
+    in the workspace. Policy_guard must not flag this as missing."""
+    action = Action(
+        action_id="c-1",
+        action_type=ActionType.PYTHON_COMPUTE,
+        reason="run a script",
+        risk_level=RiskLevel.MEDIUM,
+        reversible=True,
+        requires_approval=True,
+        metadata=_compute_metadata(),
+    )
+    decision = evaluate_action(workspace, action)
+    assert decision.allowed, decision.reasons
+
+
+def test_python_compute_bad_metadata_rejected(workspace: Path) -> None:
+    action = Action(
+        action_id="c-2",
+        action_type=ActionType.PYTHON_COMPUTE,
+        reason="bad",
+        risk_level=RiskLevel.MEDIUM,
+        reversible=True,
+        requires_approval=True,
+        metadata={"missing_required_fields": True},
+    )
+    decision = evaluate_action(workspace, action)
+    assert not decision.allowed
+    assert any("PYTHON_COMPUTE metadata" in r for r in decision.reasons)
+
+
+def test_python_compute_input_escape_rejected(workspace: Path) -> None:
+    """A ComputeAction declaring an input path that resolves outside
+    the workspace must be blocked at policy time — even though the
+    typed ComputeInputRef already rejects '..', a hostile planner
+    could still try absolute / drive-letter paths."""
+    action = Action(
+        action_id="c-3",
+        action_type=ActionType.PYTHON_COMPUTE,
+        reason="escape attempt",
+        risk_level=RiskLevel.MEDIUM,
+        reversible=True,
+        requires_approval=True,
+        # ComputeInputRef itself rejects ..; this attempts an absolute
+        # path embedded in metadata, which we hand-craft to bypass
+        # ComputeInputRef validation. The policy_guard layer is the
+        # last line of defence.
+        metadata={
+            "script": "print('hi')",
+            "script_summary": "x",
+            "inputs": [{"rel_path": "C:/Windows/System32/cmd.exe", "size_bytes": 1}],
+            "expected_outputs": [
+                {"relative_path": "outputs/out.txt", "description": "x"}
+            ],
+            "sandbox_policy": {"timeout_sec": 5},
+        },
+    )
+    decision = evaluate_action(workspace, action)
+    assert not decision.allowed
+    # Either ComputeAction itself rejects it (rel_path validation), or
+    # the policy guard catches the abs path at resolve_inside.
+    joined = " ".join(decision.reasons)
+    assert "PYTHON_COMPUTE" in joined
+
+
+def test_python_compute_forbidden_input_blocked(workspace: Path) -> None:
+    """An input inside forbidden_paths is blocked."""
+    # Put a secret file into the workspace.
+    (workspace / "secrets").mkdir(exist_ok=True)
+    (workspace / "secrets" / "creds.txt").write_text("nope", encoding="utf-8")
+    action = Action(
+        action_id="c-4",
+        action_type=ActionType.PYTHON_COMPUTE,
+        reason="reads forbidden",
+        risk_level=RiskLevel.MEDIUM,
+        reversible=True,
+        requires_approval=True,
+        metadata=_compute_metadata(inputs=["secrets/creds.txt"]),
+    )
+    decision = evaluate_action(workspace, action, forbidden_paths=("secrets",))
+    assert not decision.allowed
+    assert any("forbidden_paths" in r for r in decision.reasons)

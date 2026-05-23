@@ -8,6 +8,7 @@ from pathlib import Path
 from app.harness.audit import AuditLogger
 from app.harness.checkpoint import completed_action_ids
 from app.harness.policy_guard import PolicyViolation, evaluate_action, resolve_inside
+from app.harness.sandbox import SandboxRuntime
 from app.harness.trace import TraceLogger
 from app.schemas import (
     ActionPlan,
@@ -20,11 +21,13 @@ from app.schemas import (
     TraceEventType,
 )
 from app.schemas.action import Action, ActionType
+from app.schemas.compute import ComputeAction, ComputeOutcomeStatus
 from app.schemas.rollback import RollbackOpType
 from app.storage.jsonl_logger import JsonlLogger
 from app.storage.run_store import RunStore
 from app.tools import file_ops
 from app.tools.hash_ops import sha256_file
+from app.tools.scratch import ScratchWorkspace
 
 
 def _utcnow() -> datetime:
@@ -58,6 +61,8 @@ class Executor:
         forbidden_paths: tuple[str, ...] = (),
         *,
         trace: TraceLogger | None = None,
+        scratch_workspace: ScratchWorkspace | None = None,
+        sandbox_runtime: SandboxRuntime | None = None,
     ) -> None:
         self.workspace_root = workspace_root.resolve()
         self.run_store = run_store
@@ -69,6 +74,12 @@ class Executor:
         # with v0.9.1 callers; library tests that don't care about
         # trace see identical behaviour).
         self.trace = trace
+        # Phase 23 — both must be present to dispatch PYTHON_COMPUTE.
+        # Missing them is fine for the 697 existing tests; the dispatch
+        # site raises a clear error if a PYTHON_COMPUTE action shows up
+        # without them.
+        self.scratch_workspace = scratch_workspace
+        self.sandbox_runtime = sandbox_runtime
 
     def execute(
         self,
@@ -271,6 +282,11 @@ class Executor:
         # into target_path. Reuses INDEX's DELETE_CREATED_FILE rollback.
         if atype == ActionType.FETCH:
             return self._do_fetch(action, manifest)
+        # v0.23 — third §10.7 exception. PYTHON_COMPUTE runs an
+        # isolated script inside scratch; rollback wipes that scratch
+        # subtree via DELETE_SCRATCH_DIR (no workspace mutation).
+        if atype == ActionType.PYTHON_COMPUTE:
+            return self._do_compute(action, manifest)
         # CONVERT / ANALYZE not supported in Phase 0.
         raise NotImplementedError(f"action_type {atype.value} not implemented in Phase 0")
 
@@ -431,6 +447,140 @@ class Executor:
             ),
         )
 
+    def _do_compute(
+        self, action: Action, manifest: RollbackManifest
+    ) -> tuple[None, str | None, RollbackEntry]:
+        """v0.23 — execute one PYTHON_COMPUTE action inside the sandbox.
+
+        The host ``action.metadata`` carries the typed ComputeAction;
+        we parse it, create the scratch dir, copy declared inputs in,
+        delegate the script run to ``SandboxRuntime``, and record a
+        DELETE_SCRATCH_DIR rollback entry so rollback can wipe the
+        scratch subtree.
+
+        IMPORTANT: this method NEVER mutates the user workspace. Outputs
+        live in scratch only; a subsequent MOVE/COPY pack stage is
+        required to promote any artifact into the workspace.
+        """
+        if self.scratch_workspace is None or self.sandbox_runtime is None:
+            raise RuntimeError(
+                f"action {action.action_id}: PYTHON_COMPUTE requires "
+                f"Executor(scratch_workspace=..., sandbox_runtime=...); "
+                f"neither was supplied"
+            )
+        try:
+            compute = ComputeAction.model_validate(action.metadata or {})
+        except Exception as exc:
+            raise ValueError(
+                f"action {action.action_id}: PYTHON_COMPUTE metadata is not "
+                f"a valid ComputeAction: {exc}"
+            ) from exc
+
+        task_id = self.run_store.task_id
+        self._emit_trace(
+            TraceEventType.COMPUTE_ACTION_START,
+            action_id=action.action_id,
+            detail=compute.script_summary[:200],
+            payload={
+                "script_summary": compute.script_summary,
+                "input_count": len(compute.inputs),
+                "expected_output_count": len(compute.expected_outputs),
+                "timeout_sec": compute.sandbox_policy.timeout_sec,
+            },
+        )
+
+        layout = self.scratch_workspace.create_for_action(task_id, action.action_id)
+        try:
+            self.scratch_workspace.copy_inputs(
+                layout, self.workspace_root, compute.inputs
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            # Inputs missing or escape attempt — surface as execution
+            # error, still record rollback entry so the scratch dir is
+            # cleaned. Re-raise to land in the standard error path.
+            self._emit_trace(
+                TraceEventType.COMPUTE_ACTION_END,
+                status="fail",
+                action_id=action.action_id,
+                failure_type=FailureType.MISSING_OUTPUT,
+                detail=f"input setup failed: {exc}",
+            )
+            # Best-effort cleanup before re-raising so the scratch dir
+            # doesn't leak when no RollbackEntry was returned.
+            self.scratch_workspace.cleanup_action(task_id, action.action_id)
+            raise
+
+        outcome = self.sandbox_runtime.execute(compute, layout)
+
+        # Record the rollback entry BEFORE any failure-path returns so
+        # rollback always cleans up the scratch dir regardless of how
+        # the action concluded.
+        rb = RollbackEntry(
+            action_id=action.action_id,
+            op=RollbackOpType.DELETE_SCRATCH_DIR,
+            target_path=None,
+            metadata={
+                "task_id": task_id,
+                "action_id": action.action_id,
+                "outcome": outcome.model_dump(mode="json"),
+            },
+        )
+
+        if outcome.status is ComputeOutcomeStatus.SANDBOX_TIMEOUT:
+            self._emit_trace(
+                TraceEventType.SANDBOX_TIMEOUT,
+                status="fail",
+                action_id=action.action_id,
+                failure_type=FailureType.UNKNOWN,
+                detail=outcome.error or "sandbox killed",
+                payload={"timeout_sec": compute.sandbox_policy.timeout_sec},
+            )
+
+        end_status = "ok" if outcome.status is ComputeOutcomeStatus.OK else "fail"
+        self._emit_trace(
+            TraceEventType.COMPUTE_ACTION_END,
+            status=end_status,
+            action_id=action.action_id,
+            duration_ms=int(outcome.duration_sec * 1000),
+            failure_type=_classify_compute_outcome(outcome.status),
+            detail=outcome.error or "",
+            payload={
+                "outcome_status": outcome.status.value,
+                "exit_code": outcome.exit_code,
+                "produced_count": len(outcome.produced_artifacts),
+                "missing_count": len(outcome.missing_artifacts),
+            },
+        )
+        self._emit_trace(
+            TraceEventType.COMPUTE_OUTPUT_VERIFIED,
+            status=end_status,
+            action_id=action.action_id,
+            failure_type=(
+                None
+                if outcome.status is ComputeOutcomeStatus.OK
+                else _classify_compute_outcome(outcome.status)
+            ),
+            detail=", ".join(a.relative_path for a in outcome.produced_artifacts)[:300],
+            payload={
+                "produced": [a.relative_path for a in outcome.produced_artifacts],
+                "missing": list(outcome.missing_artifacts),
+            },
+        )
+
+        if outcome.status is not ComputeOutcomeStatus.OK:
+            # Append the rollback entry directly to the manifest so the
+            # scratch dir is cleaned on rollback, then signal failure to
+            # the caller via raise. The caller writes a FAILED record but
+            # rollback still works.
+            manifest.entries.append(rb)
+            raise RuntimeError(
+                f"compute action failed: status={outcome.status.value}"
+                + (f" — {outcome.error}" if outcome.error else "")
+            )
+
+        # OK path — let the standard _run_one append the rollback entry.
+        return None, None, rb
+
     def _do_fetch(
         self, action: Action, manifest: RollbackManifest
     ) -> tuple[None, str | None, RollbackEntry]:
@@ -584,3 +734,16 @@ def _classify_policy_reason(reasons: list[str]) -> FailureType:
     if "forbidden_path" in joined or "forbidden path" in joined:
         return FailureType.PATH_FORBIDDEN
     return FailureType.POLICY_BLOCKED
+
+
+def _classify_compute_outcome(status: ComputeOutcomeStatus) -> FailureType | None:
+    """Map ComputeOutcomeStatus onto the trace FailureType taxonomy so
+    the eval histogram can count compute failures alongside the other
+    failure modes. ``OK`` returns None (no failure attribution)."""
+    if status is ComputeOutcomeStatus.OK:
+        return None
+    if status is ComputeOutcomeStatus.OUTPUT_MISSING:
+        return FailureType.MISSING_OUTPUT
+    if status is ComputeOutcomeStatus.OUTPUT_OVER_SIZE:
+        return FailureType.MISSING_OUTPUT
+    return FailureType.UNKNOWN

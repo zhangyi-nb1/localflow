@@ -122,6 +122,34 @@ def evaluate_action(
     _check_required_fields(action, reasons)
     _check_path_fields(workspace_root, action, reasons, forbidden_paths=forbidden_paths)
 
+    # v0.23 — third §10.7 exception. PYTHON_COMPUTE carries a typed
+    # ComputeAction in metadata. Validate it parses + every declared
+    # input path stays inside the workspace and is not under any
+    # forbidden_paths entry. Outputs live in scratch (outside the
+    # workspace) so they don't go through path checks here.
+    if action.action_type == ActionType.PYTHON_COMPUTE:
+        from app.schemas.compute import ComputeAction
+
+        try:
+            compute = ComputeAction.model_validate(action.metadata or {})
+        except Exception as exc:
+            reasons.append(f"PYTHON_COMPUTE metadata is not a valid ComputeAction: {exc}")
+        else:
+            for ref in compute.inputs:
+                try:
+                    src_abs = resolve_inside(workspace_root, ref.rel_path)
+                except PolicyViolation as exc:
+                    reasons.append(
+                        f"PYTHON_COMPUTE input {ref.rel_path!r}: {exc}"
+                    )
+                else:
+                    hit = _is_under_forbidden(workspace_root, src_abs, forbidden_paths)
+                    if hit is not None:
+                        reasons.append(
+                            f"PYTHON_COMPUTE input {ref.rel_path!r}: "
+                            f"blocked by forbidden_paths ({hit!r})"
+                        )
+
     # v0.16 — second §10.7 exception. FETCH must declare metadata.url
     # over HTTPS to a host on the task's allowlist. Empty allowlist =
     # no fetches permitted (fail-closed).
