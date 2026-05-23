@@ -214,3 +214,121 @@ def test_trace_logger_constructor_smoke(tmp_path: Path) -> None:
     sv = SemanticVerifier(tmp_path, trace=trace)
     assert sv.workspace_root == tmp_path.resolve()
     assert sv.trace is trace
+
+
+# ─────────────────────────── Phase 25.3 — trace emission
+
+import pytest
+
+
+@pytest.fixture
+def _isolated_grader_registry(monkeypatch):
+    """Stub graders without polluting the global registry."""
+    import app.eval.graders as _g
+
+    saved = dict(_g._REGISTRY)
+    try:
+        yield _g._REGISTRY
+    finally:
+        _g._REGISTRY.clear()
+        _g._REGISTRY.update(saved)
+
+
+def test_semantic_verifier_emits_verifier_check_per_verdict(
+    tmp_path: Path, _isolated_grader_registry
+) -> None:
+    """Phase 25.3 — every semantic verdict (pass or fail) must land
+    in trace.jsonl as a VERIFIER_CHECK row, matching the structural
+    Verifier's behaviour. Without this, ``trace summary`` reports
+    only structural checks; the repair-loop attribution histogram
+    is half-blind to semantic failures."""
+    import json as _json
+
+    _isolated_grader_registry["ph25_3_fail"] = lambda ctx: GraderVerdict(
+        name="ph25_3_fail",
+        passed=False,
+        detail="seeded failure -- add a summary",
+    )
+    _isolated_grader_registry["ph25_3_pass"] = lambda ctx: GraderVerdict(
+        name="ph25_3_pass",
+        passed=True,
+        detail="seeded success",
+    )
+
+    trace_path = tmp_path / "trace.jsonl"
+    trace = TraceLogger(trace_path)
+    sv = SemanticVerifier(
+        tmp_path,
+        graders=["ph25_3_pass", "ph25_3_fail"],
+        trace=trace,
+    )
+    sv.verify(
+        task=_task(tmp_path),
+        plan=_plan(),
+        execution_records=[],
+        manifest=_empty_manifest(),
+        snapshot_before=_snapshot(tmp_path),
+        snapshot_after=None,
+        structural=_verify_ok(),
+    )
+
+    # The on-disk JSONL wraps each TraceEvent: {ts, event, payload}.
+    # The TraceEvent's own ``payload`` dict (the per-verdict context
+    # we set in _emit_verdict_trace) is nested as payload.payload.
+    def flat(row: dict) -> dict:
+        outer = row.get("payload") or {}
+        inner = outer.get("payload") or {}
+        return {
+            "event": row.get("event"),
+            "status": outer.get("status"),
+            "failure_type": outer.get("failure_type"),
+            **inner,
+        }
+
+    rows = [
+        _json.loads(line)
+        for line in trace_path.read_text().splitlines()
+        if line.strip()
+    ]
+    verifier_rows = [
+        flat(r) for r in rows if r.get("event") == "verifier.check"
+    ]
+    assert len(verifier_rows) == 2, (
+        f"expected 2 verifier.check rows (one per grader), got {len(verifier_rows)}"
+    )
+
+    fail_row = next(r for r in verifier_rows if r.get("grader") == "ph25_3_fail")
+    pass_row = next(r for r in verifier_rows if r.get("grader") == "ph25_3_pass")
+
+    assert fail_row["passed"] is False
+    assert fail_row["status"] == "fail"
+    # The detail string is lifted into SemanticVerdict.suggested_hint
+    # when passed=False (see _run_one), then surfaced in the trace
+    # payload.
+    assert "add a summary" in (fail_row.get("suggested_hint") or "")
+
+    assert pass_row["passed"] is True
+    assert pass_row["status"] == "ok"
+    # No suggested_hint on a passing verdict.
+    assert "suggested_hint" not in pass_row
+
+
+def test_semantic_verifier_without_trace_is_silent(
+    tmp_path: Path, _isolated_grader_registry
+) -> None:
+    """Constructing SemanticVerifier without trace must not raise on
+    verify; the trace emission path is a strict additive option."""
+    _isolated_grader_registry["ph25_3_silent"] = lambda ctx: GraderVerdict(
+        name="ph25_3_silent", passed=True, detail="ok"
+    )
+    sv = SemanticVerifier(tmp_path, graders=["ph25_3_silent"], trace=None)
+    result = sv.verify(
+        task=_task(tmp_path),
+        plan=_plan(),
+        execution_records=[],
+        manifest=_empty_manifest(),
+        snapshot_before=_snapshot(tmp_path),
+        snapshot_after=None,
+        structural=_verify_ok(),
+    )
+    assert result.passed is True

@@ -36,7 +36,7 @@ from app.schemas import (
 )
 from app.schemas.execution import ExecutionRecord
 from app.schemas.rollback import RollbackManifest
-from app.schemas.trace import TraceEvent
+from app.schemas.trace import FailureType, TraceEvent, TraceEventType
 
 # Graders considered "semantic" — they live alongside structural
 # graders in the same registry. We discriminate by name so the
@@ -105,7 +105,16 @@ class SemanticVerifier:
                     )
                 )
                 continue
-            verdicts.append(_run_one(name, ctx))
+            verdict = _run_one(name, ctx)
+            verdicts.append(verdict)
+            # Phase 25.3 — mirror the structural verifier's
+            # VERIFIER_CHECK trace emission so eval graders and the
+            # repair loop can see per-semantic-verdict outcomes in
+            # trace.jsonl. Plan-level (NOT per-action), so this is
+            # plain TraceEvent — the OpenHands-style per-action
+            # critic_result on ActionTraceEvent is reserved for
+            # future per-step graders (Phase 26+).
+            self._emit_verdict_trace(verdict, task=task, run_id=run_id)
 
         failed = [v for v in verdicts if not v.passed]
         passed_all = not failed
@@ -121,6 +130,49 @@ class SemanticVerifier:
             created_at=datetime.now(timezone.utc),
             auto_repair_eligible=(not passed_all) and eligible,
         )
+
+    def _emit_verdict_trace(
+        self,
+        verdict: SemanticVerdict,
+        *,
+        task: TaskSpec,
+        run_id: str | None,
+    ) -> None:
+        """No-op when self.trace is None; otherwise emit one
+        VERIFIER_CHECK row per semantic verdict.
+
+        The structural Verifier emits one VERIFIER_CHECK per check
+        (``app/harness/verifier.py``); without this mirror, the
+        repair loop / grader histograms only see structural failures.
+        ``trace summary`` ends up under-counting verifier activity by
+        the semantic count (currently 3 graders per run).
+        """
+        if self.trace is None:
+            return
+        try:
+            payload: dict = {
+                "grader": verdict.grader,
+                "passed": verdict.passed,
+                "reason": verdict.reason[:300],
+            }
+            if verdict.suggested_hint:
+                payload["suggested_hint"] = verdict.suggested_hint[:300]
+            self.trace.emit(
+                TraceEvent(
+                    task_id=task.task_id,
+                    run_id=run_id or task.task_id,
+                    event_type=TraceEventType.VERIFIER_CHECK,
+                    status="ok" if verdict.passed else "fail",
+                    failure_type=(
+                        None if verdict.passed else FailureType.SEMANTIC_MISMATCH
+                    ),
+                    detail=f"{verdict.grader}: {verdict.reason[:160]}",
+                    payload=payload,
+                )
+            )
+        except Exception:
+            # Trace must never break the verify path.
+            pass
 
 
 # ──────────────────────────────────── internals
