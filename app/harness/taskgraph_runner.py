@@ -36,6 +36,7 @@ from pathlib import Path
 
 from app.harness import control_loop
 from app.harness.executor import Executor
+from app.harness.sandbox import SandboxRuntime
 from app.harness.trace import TraceLogger
 from app.schemas import (
     ActionPlan,
@@ -52,8 +53,9 @@ from app.schemas import (
     VerificationResult,
     WorkspaceSnapshot,
 )
-from app.skills import SkillError, get_default_registry
+from app.skills import SkillError, SkillRegistry, get_default_registry
 from app.storage.run_store import RunStore
+from app.tools.scratch import ScratchWorkspace
 
 
 class StageRunStore(RunStore):
@@ -97,6 +99,10 @@ def run_taskgraph(
     trace: TraceLogger | None = None,
     approved: bool = False,
     persist_graph: bool = True,
+    persist_result: bool = True,
+    scratch_workspace: ScratchWorkspace | None = None,
+    sandbox_runtime: SandboxRuntime | None = None,
+    registry: SkillRegistry | None = None,
 ) -> TaskGraphResult:
     """Walk ``graph.stages`` sequentially. Returns a structured
     :class:`TaskGraphResult` regardless of success / failure.
@@ -109,6 +115,19 @@ def run_taskgraph(
     ``taskgraph.json``. Used by :func:`replay_from_stage` so the
     truncated sub-graph it constructs doesn't overwrite the original
     (full) graph spec already on disk — preserves audit trail.
+
+    ``persist_result`` (v0.22.1): when False, skip writing
+    ``taskgraph_result.json``. Used by :func:`replay_from_stage` so
+    the partial sub-result doesn't replace the merged result on disk;
+    the caller writes the merged record itself afterwards.
+
+    ``scratch_workspace`` + ``sandbox_runtime`` (Phase 23): required
+    when any stage's plan contains ``PYTHON_COMPUTE`` actions. When
+    omitted the runner constructs the default ScratchWorkspace
+    (rooted at ``<home>/scratch/``) and a default SandboxRuntime so
+    the recipe builder doesn't have to plumb them in for the common
+    case. Pass explicit instances when the host wants to override
+    env-scrub denylist or scratch root.
     """
     started = time.perf_counter()
     if not approved:
@@ -123,10 +142,19 @@ def run_taskgraph(
     if persist_graph:
         run_store.write_json(run_store.taskgraph_path, graph.model_dump(mode="json"))
 
-    registry = get_default_registry()
+    if registry is None:
+        registry = get_default_registry()
     aggregated = RollbackManifest(
         run_id=run_store.task_id, task_id=graph.task_id or run_store.task_id
     )
+
+    # Phase 23 — default scratch + sandbox so a recipe that uses a
+    # PYTHON_COMPUTE stage works out of the box. Hosts that need to
+    # tune env-scrub denylist or scratch root pass in instances.
+    if scratch_workspace is None:
+        scratch_workspace = ScratchWorkspace(home=run_store.home)
+    if sandbox_runtime is None:
+        sandbox_runtime = SandboxRuntime()
 
     stage_results: list[StageResult] = []
     abort_remaining = False
@@ -146,6 +174,8 @@ def run_taskgraph(
                 registry=registry,
                 trace=trace,
                 aggregated=aggregated,
+                scratch_workspace=scratch_workspace,
+                sandbox_runtime=sandbox_runtime,
             )
         result.duration_ms = int((time.perf_counter() - stage_started) * 1000)
         stage_results.append(result)
@@ -154,9 +184,31 @@ def run_taskgraph(
             if stage.failure_policy == StageFailurePolicy.ABORT:
                 abort_remaining = True
             elif stage.failure_policy == StageFailurePolicy.SKIP:
-                # Downgrade to SKIPPED in the report — same execution
-                # behaviour as CONTINUE.
-                result.status = StageStatus.SKIPPED
+                # Downgrade semantics — v0.22.x refinement of Bug E.
+                #
+                # Original behaviour blindly downgraded every FAILED →
+                # SKIPPED so failure_policy=skip meant "don't abort, just
+                # report as skipped". That worked when failure meant
+                # "couldn't run" (no LLM key → empty plan → 0 actions).
+                # It misleads when the stage DID run and all actions
+                # succeeded — only the structural verifier flagged
+                # something (e.g. ``no_file_loss`` flagging a hash drift
+                # caused by overwriting a pre-existing file). The user
+                # sees SKIPPED but the deliverables are on disk.
+                #
+                # Refinement: only downgrade to SKIPPED when no actions
+                # actually succeeded (action_count==0, or success_count
+                # < action_count). When every action succeeded, keep
+                # status=PASSED and rely on ``verifier_passed=False``
+                # + ``failed_checks`` to surface the warning so the
+                # report doesn't lie about what happened.
+                if (
+                    result.action_count
+                    and result.success_count >= result.action_count
+                ):
+                    result.status = StageStatus.PASSED
+                else:
+                    result.status = StageStatus.SKIPPED
 
     # Persist the aggregated manifest at the parent run_store level so
     # `localflow rollback --run-id` undoes the whole graph.
@@ -169,7 +221,10 @@ def run_taskgraph(
         aggregated_manifest_path=str(run_store.rollback_path),
         duration_ms=duration_ms,
     )
-    run_store.write_json(run_store.taskgraph_result_path, tg_result.model_dump(mode="json"))
+    if persist_result:
+        run_store.write_json(
+            run_store.taskgraph_result_path, tg_result.model_dump(mode="json")
+        )
     return tg_result
 
 
@@ -195,6 +250,8 @@ def _run_one_stage(
     registry,
     trace: TraceLogger | None,
     aggregated: RollbackManifest,
+    scratch_workspace: ScratchWorkspace | None = None,
+    sandbox_runtime: SandboxRuntime | None = None,
 ) -> StageResult:
     """Drive one stage through the standard control_loop pipeline.
 
@@ -253,6 +310,16 @@ def _run_one_stage(
             hint = graph.stage_hints.get(stage.stage_id)
             if hint:
                 llm_kwargs["user_hint"] = hint
+                # v0.22.x — when replaying with a hint, load the prior
+                # plan from disk so the LLM's refinement message fires
+                # (planner.py gates it on prior_plan_actions + user_hint
+                # BOTH being set). Without this, recipe-level repair
+                # threaded the hint but the LLM never saw it.
+                prior_actions = _load_prior_actions_unprefixed(
+                    stage_store, stage.stage_id
+                )
+                if prior_actions:
+                    llm_kwargs["prior_plan_actions"] = prior_actions
             plan = skill.plan_with_llm(sub_task, snapshot, **llm_kwargs)
         else:
             plan = skill.plan(sub_task, snapshot)
@@ -291,6 +358,8 @@ def _run_one_stage(
             forbidden_actions=tuple(sub_task.forbidden_actions),
             forbidden_paths=tuple(sub_task.forbidden_paths),
             trace=trace,
+            scratch_workspace=scratch_workspace,
+            sandbox_runtime=sandbox_runtime,
         )
         outcome = executor.execute(plan, approved=True)
         # Merge the stage's manifest into the graph-level one.
@@ -411,6 +480,19 @@ def replay_from_stage(
             f"{[c['action_id'] for c in rb_outcome.conflicts]}"
         )
 
+    # v0.22.1 — load the previous TaskGraphResult BEFORE running the
+    # replay so we can re-stitch upstream stages into the merged record
+    # below. Without this, the replay's sub-result overwrites the disk
+    # record and the upstream stages disappear from `localflow status`.
+    prior_result: TaskGraphResult | None = None
+    if run_store.exists(run_store.TASKGRAPH_RESULT_JSON):
+        try:
+            prior_result = run_store.read_model(
+                run_store.taskgraph_result_path, TaskGraphResult
+            )
+        except Exception:
+            prior_result = None
+
     # Replay just the affected slice as a fresh sub-graph. Each replayed
     # stage's action_ids get re-prefixed as usual, so the new manifest's
     # entries don't collide with kept upstream entries (different stage
@@ -418,12 +500,15 @@ def replay_from_stage(
     sub_graph = graph.model_copy(update={"stages": graph.stages[pivot:]})
     # Phase 21.1: persist_graph=False — the truncated sub_graph must not
     # overwrite the original taskgraph.json on disk (audit trail).
+    # v0.22.1: persist_result=False — partial sub-result mustn't replace
+    # the prior result; we write the merged record below.
     sub_result = run_taskgraph(
         sub_graph,
         run_store=run_store,
         trace=trace,
         approved=True,
         persist_graph=False,
+        persist_result=False,
     )
 
     # Re-stitch the manifest: upstream entries + the new affected entries.
@@ -431,6 +516,26 @@ def replay_from_stage(
     merged_entries = upstream_entries + list(new_aggregated.entries)
     merged = new_aggregated.model_copy(update={"entries": merged_entries})
     run_store.save_rollback(merged)
+
+    # Re-stitch the TaskGraphResult: kept upstream stages from the prior
+    # record + freshly-replayed stages from sub_result. Falls back to
+    # writing just the sub-result when there's no prior on disk (first
+    # run that immediately replayed, or read failure above).
+    if prior_result is not None:
+        affected_ids = set(affected)
+        kept_stages = [s for s in prior_result.stages if s.stage_id not in affected_ids]
+        merged_stages = kept_stages + list(sub_result.stages)
+        merged_result = TaskGraphResult.from_stages(
+            task_id=run_store.task_id,
+            stages=merged_stages,
+            aggregated_manifest_path=str(run_store.rollback_path),
+            duration_ms=prior_result.duration_ms + sub_result.duration_ms,
+        )
+    else:
+        merged_result = sub_result
+    run_store.write_json(
+        run_store.taskgraph_result_path, merged_result.model_dump(mode="json")
+    )
     return sub_result
 
 
@@ -503,6 +608,38 @@ def _prefix_action_ids(plan: ActionPlan, stage_id: str) -> ActionPlan:
     prefix = f"{stage_id}."
     new_actions = [a.model_copy(update={"action_id": prefix + a.action_id}) for a in plan.actions]
     return plan.model_copy(update={"actions": new_actions})
+
+
+def _load_prior_actions_unprefixed(
+    stage_store: "StageRunStore", stage_id: str
+) -> list | None:
+    """v0.22.x — load ``plan.json`` for a stage and strip the stage-id
+    prefix from each action_id so the LLM's refinement message echoes
+    them in their original form (re-prefixing happens later anyway).
+
+    Returns None when no prior plan exists (first run, never replayed).
+    Errors silently swallowed — a stale/corrupt plan should NOT block
+    the replay; the LLM just runs without the refinement turn.
+    """
+    plan_path = stage_store.plan_path
+    if not plan_path.exists():
+        return None
+    try:
+        prior_plan = stage_store.read_model(plan_path, ActionPlan)
+    except Exception:
+        return None
+    prefix = f"{stage_id}."
+    unprefixed = []
+    for action in prior_plan.actions:
+        if action.action_id.startswith(prefix):
+            unprefixed.append(
+                action.model_copy(
+                    update={"action_id": action.action_id[len(prefix) :]}
+                )
+            )
+        else:
+            unprefixed.append(action)
+    return unprefixed
 
 
 def _merge_manifest(into: RollbackManifest, src: RollbackManifest) -> None:

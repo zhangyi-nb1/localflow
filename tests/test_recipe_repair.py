@@ -146,12 +146,15 @@ def test_halts_when_only_skipped_or_hintless_failures(tmp_path: Path) -> None:
     )
     assert result.repaired is False
     assert result.rounds_used == 0
-    assert result.halt_reason == "no_repairable_failures"
+    # v0.22.1 — finer-grained halt_reason: this case (one skipped + one
+    # hint-less fail) is "no_hint_or_target", distinct from the
+    # all-attempted case below.
+    assert result.halt_reason == "no_hint_or_target"
 
 
 def test_halts_when_no_target_stage_resolvable(tmp_path: Path) -> None:
     """Recipe has zero LLM stages → resolve_repair_target returns
-    None → loop halts with no_repairable_failures."""
+    None → loop halts with no_hint_or_target (v0.22.1 split)."""
     recipe = _recipe(
         verifiers=["v1"],
         stages=[
@@ -166,7 +169,7 @@ def test_halts_when_no_target_stage_resolvable(tmp_path: Path) -> None:
         initial_verification=verification,
     )
     assert result.repaired is False
-    assert result.halt_reason == "no_repairable_failures"
+    assert result.halt_reason == "no_hint_or_target"
 
 
 # ───────────────────────────────────── happy path: replay heals on round 1
@@ -301,10 +304,11 @@ def test_repair_skips_already_attempted_verifier(tmp_path: Path) -> None:
             initial_verification=initial,
         )
 
-    # 2 rounds executed (one per distinct verifier), then no more
-    # repairable failures → halt.
+    # 2 rounds executed (one per distinct verifier), then every failing
+    # verifier had been tried once → halt. v0.22.1 split this from the
+    # plain hint-less case so the user knows it ran out of fresh angles.
     assert result.rounds_used == 2
-    assert result.halt_reason == "no_repairable_failures"
+    assert result.halt_reason == "all_attempted_without_repair"
     triggers = [a.triggered_by_verifier for a in result.attempts]
     assert triggers == ["sticky_failure", "fixable"]
 

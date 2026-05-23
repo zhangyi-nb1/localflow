@@ -1,15 +1,10 @@
-"""Streamlit entry point — product landing page.
+"""Streamlit entry point for the harness-first landing page.
 
-v0.22 (Lane A-home): landing page lead with a hero + three featured
-deliverable packs (research / data report / project handoff). The
-existing Plan / Execute / Rollback / Memory pages still live under
-``pages/`` and the user can drop into the manual lifecycle from the
-"Or take manual control" section below the pack chooser.
-
-Why packs-first: the productisation guide §5.1 says new users land on
-"pick a deliverable" rather than "pick a skill". The Pack page is
-where the full chooser lives; this Home is the front door that
-points the eye at the three flagship outcomes.
+The home page leads with LocalFlow's execution lifecycle: plan, preview,
+approval, controlled execution, verification, and rollback. The three
+featured deliverable packs remain the quickest demos, but the product
+story should keep the harness visible instead of reducing the app to a
+file-organization workflow.
 """
 
 from __future__ import annotations
@@ -95,7 +90,7 @@ def _render_pack_card(recipe: RecipeSpec, *, workspace_ready: bool) -> None:
         )
         if clicked:
             st.session_state[_PACK_SELECT_KEY] = recipe.name
-            st.switch_page("pages/0_Pack.py")
+            st.switch_page("pages/0_Create_Pack.py")
 
 
 def _render_workspace_summary(workspace) -> None:

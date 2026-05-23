@@ -98,6 +98,17 @@ class RecipeVerifierVerdict(BaseModel):
             "why coverage is incomplete."
         ),
     )
+    repair_target_stage: str | None = Field(
+        default=None,
+        description=(
+            "v0.22.x — optional override for ``RecipeSpec.resolve_repair_target``. "
+            "A verifier that can identify the exact stage responsible for the "
+            "failure (e.g. ``deliverable_completeness_verifier`` knows which "
+            "stage owns the missing path) sets this so the recipe repair loop "
+            "doesn't fall back to the last-LLM-stage default. Leave None to "
+            "use the recipe's ``repair_target_map`` lookup."
+        ),
+    )
 
 
 class RecipeVerification(BaseModel):

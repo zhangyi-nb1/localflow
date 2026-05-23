@@ -94,6 +94,7 @@ def plan_data_analysis(
         results=results,
         input_file_count=len(data_files),
         output_path=output_path,
+        locale=str(task.locale),
     )
 
 
@@ -105,6 +106,7 @@ def build_plan_from_results(
     results: list[AnalysisResult],
     input_file_count: int,
     output_path: str = DEFAULT_REPORT_PATH,
+    locale: str | None = None,
 ) -> ActionPlan:
     """Phase 3.3b: package a list of ``AnalysisResult`` into an ``ActionPlan``.
 
@@ -135,7 +137,9 @@ def build_plan_from_results(
         chart_actions.append(_chart_action(action_id, chart_rel, b64, result))
         chart_paths_by_result_idx[idx] = chart_rel
 
-    report_md = _render_report_md(workspace_root, results, chart_paths_by_result_idx)
+    report_md = _render_report_md(
+        workspace_root, results, chart_paths_by_result_idx, locale=locale or str(task.locale)
+    )
     report_action = Action(
         action_id="a-001",
         action_type=ActionType.INDEX,
@@ -345,21 +349,63 @@ def _chart_action(action_id: str, target_rel: str, png_b64: str, result: Analysi
     )
 
 
+# v0.22.1 — analysis_report.md is the workspace artifact built by the
+# rule planner (not the i18n Jinja template that produces final_report.md).
+# Tiny inline label table keeps the planner zero-dependency on app.templates.
+_REPORT_LABELS_EN: dict[str, str] = {
+    "title": "Data Analysis Report",
+    "workspace": "Workspace",
+    "analyses_run": "{n} analyses run.",
+    "succeeded": "Succeeded: {ok}/{total}.",
+    "contents": "## Contents",
+    "outcome": "Outcome",
+    "error": "Error",
+    "summary": "Summary",
+    "chart_alt": "chart for {source}",
+    "result_header": "#### Result",
+    "more_rows": "({n} more row(s) not shown)",
+    "empty_result": "(empty result)",
+}
+_REPORT_LABELS_ZH: dict[str, str] = {
+    "title": "数据分析报告",
+    "workspace": "工作区",
+    "analyses_run": "共运行 {n} 个分析。",
+    "succeeded": "成功：{ok}/{total}。",
+    "contents": "## 目录",
+    "outcome": "结果",
+    "error": "错误",
+    "summary": "摘要",
+    "chart_alt": "{source} 的图表",
+    "result_header": "#### 结果数据",
+    "more_rows": "（另有 {n} 行未展示）",
+    "empty_result": "（空结果）",
+}
+
+
+def _report_labels(locale: str | None) -> dict[str, str]:
+    if locale and locale.startswith("en"):
+        return _REPORT_LABELS_EN
+    return _REPORT_LABELS_ZH
+
+
 def _render_report_md(
     workspace_root: Path,
     results: list[AnalysisResult],
     chart_paths_by_idx: dict[int, str],
+    *,
+    locale: str | None = None,
 ) -> str:
+    L = _report_labels(locale)
     lines: list[str] = []
-    lines.append("# Data Analysis Report")
+    lines.append(f"# {L['title']}")
     lines.append("")
-    lines.append(f"_Workspace: `{workspace_root}`_")
-    lines.append(f"_{len(results)} analyses run._")
+    lines.append(f"_{L['workspace']}: `{workspace_root}`_")
+    lines.append(f"_{L['analyses_run'].format(n=len(results))}_")
     succeeded = sum(1 for r in results if r.outcome.value == "ok")
-    lines.append(f"_Succeeded: {succeeded}/{len(results)}._")
+    lines.append(f"_{L['succeeded'].format(ok=succeeded, total=len(results))}_")
     lines.append("")
 
-    lines.append("## Contents")
+    lines.append(L["contents"])
     lines.append("")
     for i, r in enumerate(results, start=1):
         anchor = _anchor_for(r.spec.source_file, i)
@@ -371,21 +417,24 @@ def _render_report_md(
         anchor = _anchor_for(r.spec.source_file, idx + 1)
         lines.append(f'### `{r.spec.source_file}` <a id="{anchor}"></a>')
         lines.append("")
-        lines.append(f"**Outcome**: `{r.outcome.value}`")
+        lines.append(f"**{L['outcome']}**: `{r.outcome.value}`")
         if r.error and r.outcome.value not in ("ok",):
             lines.append("")
-            lines.append(f"**Error**: {r.error}")
+            lines.append(f"**{L['error']}**: {r.error}")
         if r.summary:
             lines.append("")
-            lines.append(f"**Summary**: {r.summary}")
+            lines.append(f"**{L['summary']}**: {r.summary}")
         if idx in chart_paths_by_idx:
             lines.append("")
-            lines.append(f"![chart for {r.spec.source_file}]({chart_paths_by_idx[idx]})")
+            lines.append(
+                f"![{L['chart_alt'].format(source=r.spec.source_file)}]"
+                f"({chart_paths_by_idx[idx]})"
+            )
         lines.append("")
 
         if r.rows:
             cols = r.columns or list(r.rows[0].keys())
-            lines.append("#### Result")
+            lines.append(L["result_header"])
             lines.append("")
             lines.append("| " + " | ".join(f"`{c}`" for c in cols) + " |")
             lines.append("|" + "|".join(["---"] * len(cols)) + "|")
@@ -394,11 +443,11 @@ def _render_report_md(
                 lines.append("| " + " | ".join(cells) + " |")
             if r.row_count > len(r.rows):
                 lines.append("")
-                lines.append(f"_({r.row_count - len(r.rows)} more row(s) not shown)_")
+                lines.append(f"_{L['more_rows'].format(n=r.row_count - len(r.rows))}_")
             lines.append("")
         elif r.outcome.value == "ok":
             lines.append("")
-            lines.append("_(empty result)_")
+            lines.append(f"_{L['empty_result']}_")
             lines.append("")
 
     return "\n".join(lines)

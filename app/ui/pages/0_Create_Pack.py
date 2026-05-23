@@ -3,9 +3,9 @@
 Product-level entry point for the Recipe / Pack System.
 
 The page name has prefix `0_` so Streamlit places it FIRST in the
-sidebar — ahead of Plan / Execute / Rollback / Memory. Phase 17's
-core productisation move (per §5.1 of the productisation guide):
-users land on "pick a deliverable pack" instead of "pick a skill".
+sidebar — ahead of Plan / Execute / Rollback / Memory. Packs are now
+framed as the demo/application layer on top of the harness, not the
+whole product identity.
 
 Three sub-flows on this one page:
   1. **Browse** — every loaded recipe listed as a card with its

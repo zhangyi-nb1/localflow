@@ -137,6 +137,33 @@ def run_repair_loop(
             v for v in state.semantic.failed_verdicts if v.suggested_hint
         )
         hint = first_failed.suggested_hint or ""
+
+        # v0.22.x — gate the rollback on revisability. Rule-only skills
+        # (workspace_visualizer, folder_organizer, …) cannot honour a
+        # free-form natural-language hint. Rolling back first and only
+        # then discovering "revise rejected" leaves the workspace
+        # empty AND offers no repair path — the worst of both worlds
+        # observed in run 2026-05-22-085. Halt cleanly with the files
+        # still on disk so the structural pass survives and the
+        # recipe-level verifier sees the real output.
+        if not skill.supports_revise():
+            outcome.halt_reason = "not_revisable"
+            _journal(
+                run_store,
+                attempt_idx,
+                first_failed,
+                hint,
+                plan_version=None,
+                structural=False,
+                semantic=False,
+                note=(
+                    f"skill {skill.manifest.name!r} is rule-only and cannot "
+                    f"honour a natural-language hint — skipping rollback to "
+                    f"preserve the workspace state"
+                ),
+            )
+            break
+
         if trace is not None:
             try:
                 trace.emit_repair_triggered(

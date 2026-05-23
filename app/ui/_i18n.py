@@ -34,8 +34,8 @@ _DICT: dict[str, dict[Lang, str]] = {
         "zh": "LocalFlow",
     },
     "app.subtitle.home": {
-        "en": "Safe execution harness for LLM agents on local workspaces.",
-        "zh": "面向本地工作区的 LLM 智能体安全执行框架。",
+        "en": "Local-first Agent Execution Harness for safe, reviewable, rollback-ready workspace work.",
+        "zh": "面向本地工作区的 Agent Execution Harness：安全、可预览、可回退、可验证。",
     },
     "app.page_title.home": {"en": "Home", "zh": "首页"},
     "app.page_title.pack": {"en": "Create Pack", "zh": "新建成果包"},
@@ -233,16 +233,16 @@ _DICT: dict[str, dict[Lang, str]] = {
     },
     # ───────────────────────── home page ─────────────────────────
     "home.hero.tagline": {
-        "en": "Turn a messy workspace into a deliverable pack — with preview, approval, and one-click undo.",
-        "zh": "把杂乱的工作区，一键变成可交付的成果包 — 全程可预览、可授权、可撤销。",
+        "en": "Let agents act locally through typed plans, preview, approval, checks, trace, repair, and rollback.",
+        "zh": "让智能体通过结构化计划、预览、确认、校验、追踪、修复和回退来安全操作本地工作区。",
     },
     "home.packs.heading": {
-        "en": "### Pick a pack to run",
-        "zh": "### 挑一个成果包",
+        "en": "### Run a harness-backed demo pack",
+        "zh": "### 运行一个由 Harness 托管的示例成果包",
     },
     "home.packs.subheading": {
-        "en": "Each pack runs end-to-end on your workspace, shows a preview, and stays one click away from undo.",
-        "zh": "每个成果包都会在你的工作区里端到端跑完一遍，先预览、再执行，随时可一键撤销。",
+        "en": "Packs are ready-made workflows that exercise the same plan, preview, execute, verify, repair, and rollback path.",
+        "zh": "成果包只是现成工作流，会走同一套规划、预览、执行、校验、修复和回退链路。",
     },
     "home.packs.try_button": {
         "en": "Try {title} →",
@@ -257,18 +257,18 @@ _DICT: dict[str, dict[Lang, str]] = {
         "zh": "_未在 recipe 注册表中找到 `{name}` 成果包。_",
     },
     "home.advanced.heading": {
-        "en": "### Or take manual control",
-        "zh": "### 或自己组装",
+        "en": "### Inspect the harness lifecycle directly",
+        "zh": "### 直接查看 Harness 生命周期",
     },
     "home.intro": {
         "en": (
-            "Prefer to write your own goal and pick a capability by hand? "
-            "Walk your workspace through the manual lifecycle:\n\n"
+            "Prefer to inspect the controlled execution path yourself? "
+            "Walk a workspace through the same lifecycle the packs use:\n\n"
             "```\n  Plan  →  Execute  →  Rollback\n"
             "            (preview + approve)            (drift-safe undo)\n```"
         ),
         "zh": (
-            "想自己写目标、自己挑能力？通过下方页面让工作区走完完整生命周期：\n\n"
+            "想直接检查受控执行链路？通过下方页面让工作区走完和成果包相同的生命周期：\n\n"
             "```\n  Plan  →  Execute  →  Rollback\n"
             "            （预览 + 确认授权）        （含漂移保护的撤销）\n```"
         ),
@@ -276,12 +276,12 @@ _DICT: dict[str, dict[Lang, str]] = {
     "home.table.header": {"en": "| Page | What it does |", "zh": "| 页面 | 作用 |"},
     "home.table.divider": {"en": "|---|---|", "zh": "|---|---|"},
     "home.table.plan": {
-        "en": "| **📋 Plan** | Write a goal — LocalFlow picks the right capability + how to plan it. |",
-        "zh": "| **📋 Plan** | 写下你的目标 — LocalFlow 自动挑选合适的能力与规划方式。 |",
+        "en": "| **📋 Plan** | Turn a goal into typed actions with risk assessment before any write. |",
+        "zh": "| **📋 Plan** | 把目标转成结构化 action，并在写入前完成风险评估。 |",
     },
     "home.table.execute": {
-        "en": "| **🔍 Execute** | Preview the change, approve, commit. Checks run automatically. |",
-        "zh": "| **🔍 Execute** | 预览变更、确认授权、提交执行。校验会自动运行。 |",
+        "en": "| **🔍 Execute** | Preview, approve, run through the executor, and verify automatically. |",
+        "zh": "| **🔍 Execute** | 预览、确认、通过 executor 执行，并自动校验结果。 |",
     },
     "home.table.rollback": {
         "en": "| **↺ Rollback** | Preview each reverse op + drift detection. `--force` to override. |",
@@ -333,7 +333,7 @@ _DICT: dict[str, dict[Lang, str]] = {
     },
     "plan.autodetect.label": {
         "en": "ℹ️ **Auto-detected** · skill=`{skill}` · planner=`{planner}`",
-        "zh": "ℹ️ **自动识别** · skill=`{skill}` · planner=`{planner}`",
+        "zh": "ℹ️ **自动识别** · 能力=`{skill}` · 规划方式=`{planner}`",
     },
     "plan.autodetect.reason": {
         "en": "Reason — {skill_reason} · {planner_reason}",
@@ -345,7 +345,7 @@ _DICT: dict[str, dict[Lang, str]] = {
     },
     "plan.gap.suggest_skill": {
         "en": "Suggested skill for the missing part: `{skill}`",
-        "zh": "覆盖剩余部分的建议 skill：`{skill}`",
+        "zh": "覆盖剩余部分的建议能力：`{skill}`",
     },
     "plan.gap.next_steps": {
         "en": (
@@ -361,7 +361,7 @@ _DICT: dict[str, dict[Lang, str]] = {
     },
     "plan.override.expander": {
         "en": "▶ Override (advanced) — pick skill / planner manually",
-        "zh": "▶ 高级覆盖（手动选择 skill / planner）",
+        "zh": "▶ 高级覆盖（手动选择能力 / 规划方式）",
     },
     "plan.override.skill": {"en": "Capability", "zh": "能力"},
     "plan.override.planner": {"en": "How to plan", "zh": "规划方式"},
@@ -375,7 +375,7 @@ _DICT: dict[str, dict[Lang, str]] = {
     },
     "plan.override.skill_help": {
         "en": "Override the auto-detected skill.",
-        "zh": "覆盖自动识别的 skill。",
+        "zh": "覆盖自动识别的能力。",
     },
     "plan.button.create": {"en": "📋 Create plan", "zh": "📋 生成计划"},
     "plan.error.empty_goal": {
@@ -384,7 +384,7 @@ _DICT: dict[str, dict[Lang, str]] = {
     },
     "plan.error.llm_unsupported": {
         "en": "Skill `{skill}` does not support the LLM planner. Use `rule` or pick another skill.",
-        "zh": "Skill `{skill}` 不支持 LLM planner。请改用 `rule`，或换一个 skill。",
+        "zh": "能力 `{skill}` 不支持 LLM 规划方式。请改用 `rule`，或换一个能力。",
     },
     "plan.error.planning_failed": {
         "en": "Planning failed: {err_type}: {err}",
@@ -492,7 +492,7 @@ _DICT: dict[str, dict[Lang, str]] = {
     },
     "plan.refine.error_unsupported": {
         "en": "Skill `{skill}` does not support refinement (no LLM planner).",
-        "zh": "Skill `{skill}` 不支持修正（没有 LLM 规划器）。",
+        "zh": "能力 `{skill}` 不支持修正（没有 LLM 规划方式）。",
     },
     "plan.refine.error_generic": {
         "en": "Refinement failed: {err}",
@@ -971,18 +971,17 @@ _DICT: dict[str, dict[Lang, str]] = {
     "common.status.conflicts": {"en": "CONFLICTS", "zh": "冲突"},
     # ───────────────────────── pack page (Phase 17 + 18 + 19) ─────────────────────────
     "pack.heading": {
-        "en": "📦 Pack — deliverable knowledge packs",
-        "zh": "📦 交付包 — 可交付的知识包",
+        "en": "📦 Harness demo packs",
+        "zh": "📦 Harness 示例成果包",
     },
     "pack.subtitle": {
         "en": (
-            "Pick a deliverable pack instead of an individual skill. Each pack "
-            "compiles to a multi-stage TaskGraph the harness runs end-to-end "
-            "with one approval, one rollback."
+            "Pick a ready-made workflow that exercises the safe TaskGraph path: "
+            "plan, preview, execute, verify, repair, trace, and rollback."
         ),
         "zh": (
-            "选一个交付包，而不是去挑某个 skill。每个交付包都会编译为多阶段 "
-            "TaskGraph，由 Harness 一次审批、一次回滚地端到端执行。"
+            "选择一个现成工作流，完整体验安全 TaskGraph 链路：规划、预览、"
+            "执行、校验、修复、追踪和回退。"
         ),
     },
     "pack.load_errors_title": {

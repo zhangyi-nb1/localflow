@@ -2279,28 +2279,33 @@ def cmd_pack_list() -> None:
             "LOCALFLOW_RECIPES_DIR."
         )
     else:
-        table = Table(title="Recipe catalog")
-        table.add_column("name", style="cyan", no_wrap=True)
-        table.add_column("title", no_wrap=True)
-        # Phase 21.1: description column lets users see what each pack
-        # does without running `pack describe`. Bounded width + wrap so
-        # Rich doesn't shrink the other columns to fit.
-        table.add_column("description", style="dim", max_width=50, overflow="fold")
+        # v0.22.1: a 6-column table at full Rich box-density blew past
+        # 100 cols on a typical Windows terminal, so Rich crushed the
+        # middle columns to zero width and left only top-T separators
+        # (┬┬┬) where text should have been. Slimmer 5-column layout
+        # without no_wrap lets every cell breathe; tags collapse into
+        # the description line so the verb count stays the same.
+        table = Table(title="Recipe catalog", show_lines=False, pad_edge=False)
+        table.add_column("name", style="cyan")
+        table.add_column("title")
+        table.add_column("description", style="dim", overflow="fold", ratio=2)
         table.add_column("stages", justify="right")
         table.add_column("outputs", justify="right")
-        table.add_column("tags", style="dim", no_wrap=True)
         for r in recipes:
             desc_lines = (r.description or "").strip().splitlines()
             desc = desc_lines[0] if desc_lines else ""
-            if len(desc) > 100:
-                desc = desc[:97] + "..."
+            if len(desc) > 90:
+                desc = desc[:87] + "..."
+            if r.tags:
+                desc = (desc + "  " if desc else "") + " ".join(
+                    f"[bold]#{tag}[/]" for tag in r.tags
+                )
             table.add_row(
                 r.name,
                 r.title,
                 desc or "—",
                 str(len(r.stages)),
                 str(len(r.expected_outputs)),
-                ", ".join(r.tags) or "—",
             )
         console.print(table)
 

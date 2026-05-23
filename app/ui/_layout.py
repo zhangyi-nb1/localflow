@@ -106,9 +106,19 @@ def render_sandbox_sidebar() -> Path | None:
     """
     unsafe = _resolve_unsafe()
 
+    # v0.22.x — Streamlit's auto-generated nav reads labels straight
+    # from the page filenames ("0_Create_Pack" → "Create Pack") with
+    # no i18n hook. In zh mode this leaves a row of English page
+    # links visible above our translated controls. Hide it via CSS
+    # and render our own translated nav below.
+    _hide_streamlit_autonav()
+
     with st.sidebar:
         # Language toggle first — affects every label rendered below.
         render_language_toggle()
+        st.divider()
+
+        _render_translated_nav()
         st.divider()
 
         st.header(t("sidebar.workspace.header"))
@@ -143,6 +153,62 @@ def render_sandbox_sidebar() -> Path | None:
     if selected is not None:
         st.session_state[SESSION_WORKSPACE_KEY] = str(selected)
     return selected
+
+
+def _hide_streamlit_autonav() -> None:
+    """Inject CSS that hides Streamlit's auto-generated sidebar page
+    list. Without this, every page (Create Pack / Workspace / Runs /
+    Settings / Plan / Execute / Rollback) is listed by its filename-
+    derived English label even when the user has switched to zh.
+
+    Idempotent — Streamlit re-renders on every interaction and
+    duplicating the ``<style>`` block costs nothing visually.
+    """
+    st.markdown(
+        """
+        <style>
+          /* Streamlit ≥1.36 marks the auto-nav block with this testid. */
+          section[data-testid="stSidebarNav"] { display: none !important; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# Page registry for the translated sidebar nav. Each entry is
+# ``(page_path_relative_to_entrypoint, i18n_label_key, icon)``.
+# The entrypoint is ``app/ui/main.py`` so the home link is
+# ``main.py`` and the rest live under ``pages/``. Order matches the
+# previous Streamlit auto-nav so muscle memory survives the switch.
+_NAV_PAGES: tuple[tuple[str, str, str], ...] = (
+    ("main.py", "app.page_title.home", "🌀"),
+    ("pages/0_Create_Pack.py", "app.page_title.pack", "📦"),
+    ("pages/1_Workspace.py", "app.page_title.workspace", "🗂️"),
+    ("pages/3_Runs.py", "app.page_title.runs", "📋"),
+    ("pages/4_Settings.py", "app.page_title.settings", "⚙️"),
+    ("pages/5_Plan.py", "app.page_title.plan", "🧭"),
+    ("pages/6_Execute.py", "app.page_title.execute", "⚡"),
+    ("pages/7_Rollback.py", "app.page_title.rollback", "↩️"),
+)
+
+
+def _render_translated_nav() -> None:
+    """Render our own sidebar nav using ``st.page_link`` so the labels
+    flow through :func:`t`. Caller must already be inside the
+    ``with st.sidebar:`` context — :func:`render_sandbox_sidebar`
+    invokes this from the top of its sidebar block.
+
+    Falls back to skipping a particular link (sidebar still works) if
+    a page module can't be resolved — e.g. a user vendoring the
+    package and stripping pages.
+    """
+    for path, label_key, icon in _NAV_PAGES:
+        try:
+            st.page_link(path, label=t(label_key), icon=icon)
+        except Exception:
+            # Streamlit raises if the target file is missing; skip
+            # silently so a partial install still renders a sidebar.
+            continue
 
 
 def _render_source_radio(unsafe: bool) -> Path | None:

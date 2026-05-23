@@ -90,8 +90,17 @@ class RecipeRepairResult(BaseModel):
     passed, ≤ ``repair_policy.max_rounds`` otherwise)."""
 
     halt_reason: str
-    """Human-readable: 'passed' / 'exhausted' / 'no_repairable_failures'
-    / 'no_target_stage' / 'replay_error'."""
+    """Human-readable. Values:
+      - 'passed' (verification cleared, repaired=True)
+      - 'exhausted' (max_rounds reached without converging)
+      - 'no_hint_or_target' (fail verdicts emit no suggested_hint, or
+         no LLM stage exists to replay)
+      - 'all_attempted_without_repair' (every unique failing verifier
+         has been tried once and the failure persists — v0.22.1 split
+         from the old catch-all 'no_repairable_failures')
+      - 'no_repairable_failures' (defensive catch-all)
+      - 'replay_error' (a stage replay raised)
+    """
 
     attempts: list[RecipeRepairAttempt] = Field(default_factory=list)
     final_verification: RecipeVerification | None = None
@@ -172,13 +181,13 @@ def _pick_repair_target(
     recipe: "RecipeSpec",
     verification: RecipeVerification,
     attempted_verifiers: set[str] | None = None,
-) -> RecipeVerifierVerdict_TriggerInfo | None:
+) -> tuple["RecipeVerifierVerdict_TriggerInfo | None", str]:
     """Pick the first repairable verdict and resolve its target stage.
 
     'Repairable' = passed=False AND skipped=False AND suggested_hint
     is non-empty AND a target stage can be resolved AND the verifier
-    wasn't already attempted in a prior round. Returns ``None`` when
-    nothing repairable remains — the loop halts cleanly.
+    wasn't already attempted in a prior round. Returns ``(None, reason)``
+    when nothing repairable remains — the loop halts cleanly.
 
     Phase 21.1: ``attempted_verifiers`` tracks verifier names that
     have already triggered a replay. Without this, one persistently
@@ -188,25 +197,53 @@ def _pick_repair_target(
     it, each verifier gets one shot — if its replay didn't clear it,
     the loop moves to the next repairable failure instead of looping
     on the same suggestion.
+
+    v0.22.1: when nothing repairable is found, a categorised reason is
+    returned so the caller can distinguish "verifiers fail but emit no
+    hints / no target stage" (genuinely unactionable) from "every fail
+    verdict has been tried once" (the loop ran out of fresh angles).
     """
     attempted = attempted_verifiers or set()
-    for verdict in verification.verdicts:
-        if verdict.passed or verdict.skipped:
-            continue
+    fail_verdicts = [v for v in verification.verdicts if not v.passed and not v.skipped]
+    if not fail_verdicts:
+        return None, "passed"  # caller short-circuits earlier; defensive.
+    hint_or_target_missing = False
+    all_attempted = True
+    valid_stage_ids = {s.stage_id for s in recipe.stages}
+    for verdict in fail_verdicts:
         if verdict.name in attempted:
             continue
+        all_attempted = False
         hint = (verdict.suggested_hint or "").strip()
         if not hint:
+            hint_or_target_missing = True
             continue
-        target = recipe.resolve_repair_target(verdict.name)
-        if target is None:
-            continue
-        return RecipeVerifierVerdict_TriggerInfo(
-            verifier_name=verdict.name,
-            hint=hint,
-            target_stage=target,
+        # v0.22.x — prefer the verdict's typed ``repair_target_stage``
+        # when the verifier can identify the exact producer of the
+        # failing artefact (e.g. deliverable_completeness_verifier).
+        # Falls back to ``recipe.resolve_repair_target`` (repair_target_map
+        # or last-LLM-stage default) when the verdict doesn't pin a stage.
+        target = (
+            verdict.repair_target_stage
+            if verdict.repair_target_stage in valid_stage_ids
+            else recipe.resolve_repair_target(verdict.name)
         )
-    return None
+        if target is None:
+            hint_or_target_missing = True
+            continue
+        return (
+            RecipeVerifierVerdict_TriggerInfo(
+                verifier_name=verdict.name,
+                hint=hint,
+                target_stage=target,
+            ),
+            "ok",
+        )
+    if all_attempted:
+        return None, "all_attempted_without_repair"
+    if hint_or_target_missing:
+        return None, "no_hint_or_target"
+    return None, "no_repairable_failures"
 
 
 class RecipeVerifierVerdict_TriggerInfo:
@@ -261,11 +298,14 @@ def run_recipe_repair(
     attempted_verifiers: set[str] = set()
 
     for round_idx in range(1, max_rounds + 1):
-        trigger = _pick_repair_target(
+        trigger, no_trigger_reason = _pick_repair_target(
             recipe, current_verification, attempted_verifiers
         )
         if trigger is None:
-            result.halt_reason = "no_repairable_failures"
+            # v0.22.1 — surface a more specific halt_reason so the user
+            # knows whether the verifiers were unactionable, every fix
+            # had been tried, or repair just plain ran out of work.
+            result.halt_reason = no_trigger_reason
             break
 
         attempted_verifiers.add(trigger.verifier_name)

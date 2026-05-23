@@ -300,6 +300,14 @@ def deliverable_completeness_verifier(
     Empty deliverable lists short-circuit to a skipped pass — the
     recipe author can opt out of this check by leaving the field
     empty (though every shipped flagship declares deliverables).
+
+    v0.22.1 — when a recipe stage was SKIPPED at runtime (typically
+    ``failure_policy: skip`` on an LLM stage that lacks an API key),
+    deliverables whose only producing stage was that skipped stage
+    are reported as ``skipped_missing`` and don't fail the verdict.
+    Without this, a no-LLM CI run of ``data_report_pack`` would always
+    fail on README.md / SOURCES.md even though the user explicitly
+    accepted that degradation via ``failure_policy: skip``.
     """
     declared = list(ctx.recipe.expected_outputs)
     if not declared:
@@ -310,16 +318,34 @@ def deliverable_completeness_verifier(
             skipped=True,
         )
 
+    skipped_stages = _skipped_stage_ids(ctx)
+    producer_by_path = _producer_stage_by_deliverable(ctx)
+
     ws = ctx.workspace_path
     missing: list[str] = []
     present: list[str] = []
+    excused: list[str] = []  # missing-but-its-stage-was-skipped — informational
     for rel in declared:
         if (ws / rel).exists():
             present.append(rel)
+            continue
+        producer = producer_by_path.get(rel)
+        if producer is not None and producer in skipped_stages:
+            excused.append(f"{rel} (stage {producer} skipped)")
         else:
             missing.append(rel)
 
     if missing:
+        # v0.22.x — when every missing file points at the SAME producer,
+        # surface that stage_id as a typed repair_target_stage so the
+        # recipe repair loop targets s2_workspace_chart (the actual
+        # producer) instead of falling back to the last LLM stage.
+        missing_producers = {
+            producer_by_path[m] for m in missing if m in producer_by_path
+        }
+        repair_target_stage = (
+            next(iter(missing_producers)) if len(missing_producers) == 1 else None
+        )
         return RecipeVerifierVerdict(
             name="deliverable_completeness_verifier",
             passed=False,
@@ -327,17 +353,47 @@ def deliverable_completeness_verifier(
                 f"{len(present)}/{len(declared)} deliverables present; "
                 f"missing: {', '.join(missing[:8])}"
                 + (f", …(+{len(missing) - 8})" if len(missing) > 8 else "")
+                + (f"; excused: {', '.join(excused)}" if excused else "")
             ),
             score=len(present) / len(declared),
             suggested_hint=(
-                "Re-run the failing stage so the missing deliverables are "
-                "produced, or amend the recipe's expected_outputs to drop "
-                "optional artefacts."
+                "Re-run the stage that owns the missing files "
+                f"({', '.join(sorted({producer_by_path.get(m, '?') for m in missing}))}) "
+                "so each deliverable is produced; if a stage is intentionally "
+                "skipped, mark its outputs as optional in the recipe."
             ),
+            repair_target_stage=repair_target_stage,
         )
+    detail = f"all {len(declared)} declared deliverable(s) present"
+    if excused:
+        detail += f"; excused {len(excused)}: " + ", ".join(excused)
     return RecipeVerifierVerdict(
         name="deliverable_completeness_verifier",
         passed=True,
-        detail=f"all {len(declared)} declared deliverable(s) present",
+        detail=detail,
         score=1.0,
     )
+
+
+def _skipped_stage_ids(ctx: RecipeVerifierContext) -> set[str]:
+    """Stage IDs whose status is SKIPPED or ABORTED in the run result."""
+    from app.schemas import StageStatus  # local to avoid cycle
+
+    tg = ctx.task_graph_result
+    if tg is None:
+        return set()
+    return {
+        s.stage_id
+        for s in tg.stages
+        if s.status in (StageStatus.SKIPPED, StageStatus.ABORTED)
+    }
+
+
+def _producer_stage_by_deliverable(ctx: RecipeVerifierContext) -> dict[str, str]:
+    """Map ``deliverable_path -> stage_id`` using the recipe's per-stage
+    expected_outputs. Unknown paths simply aren't in the map."""
+    producer: dict[str, str] = {}
+    for stage in ctx.recipe.stages:
+        for out in stage.expected_outputs:
+            producer.setdefault(out, stage.stage_id)
+    return producer

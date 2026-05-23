@@ -31,6 +31,25 @@ def simulate_action(workspace_root: Path, action: Action) -> dict:
             info["dir_exists"] = abs_target.exists()
         elif action.action_type == ActionType.INDEX:
             info["index_would_overwrite"] = abs_target.exists()
+    # v0.23 — PYTHON_COMPUTE preview: lift the script summary +
+    # input/output counts up to the row so reviewers can judge the
+    # action without expanding the full script. Full script lives in
+    # the "Compute scripts" section below the actions table.
+    if action.action_type == ActionType.PYTHON_COMPUTE:
+        from app.schemas.compute import ComputeAction
+
+        try:
+            compute = ComputeAction.model_validate(action.metadata or {})
+        except Exception as exc:
+            info["compute_error"] = f"invalid ComputeAction metadata: {exc}"
+        else:
+            info["compute_summary"] = compute.script_summary
+            info["compute_inputs"] = [r.rel_path for r in compute.inputs]
+            info["compute_outputs"] = [
+                spec.relative_path for spec in compute.expected_outputs
+            ]
+            info["compute_timeout_sec"] = compute.sandbox_policy.timeout_sec
+            info["compute_script"] = compute.script
     return info
 
 
@@ -62,6 +81,8 @@ def render_dry_run_markdown(
     lines.append("")
     lines.append("| # | Type | Source | Target | Risk | Approve? | Reason |")
     lines.append("|---|------|--------|--------|------|----------|--------|")
+    # Collect compute action details for the dedicated section below.
+    compute_rows: list[tuple[int, Action, dict]] = []
     for i, action in enumerate(plan.actions, start=1):
         info = simulate_action(workspace_root, action)
         src = info.get("source", "")
@@ -70,14 +91,65 @@ def render_dry_run_markdown(
             tgt += " ⚠ renamed (conflict)"
         if info.get("dir_exists"):
             tgt += " ⚠ already exists"
-        approve = "yes" if action.requires_approval else "no"
-        reason = (action.reason or "").replace("\n", " ")
+        # v0.23 — PYTHON_COMPUTE shows its script_summary in the
+        # reason column so the table conveys what the script does.
+        if action.action_type == ActionType.PYTHON_COMPUTE:
+            summary = info.get("compute_summary") or info.get("compute_error", "")
+            reason = summary
+            tgt = "scratch/outputs/"  # outputs land outside workspace
+            compute_rows.append((i, action, info))
+        else:
+            reason = (action.reason or "").replace("\n", " ")
         if len(reason) > 60:
             reason = reason[:57] + "..."
+        approve = "yes" if action.requires_approval else "no"
         lines.append(
             f"| {i} | {action.action_type.value} | `{src}` | `{tgt}` | {action.risk_level.value} | {approve} | {reason} |"
         )
     lines.append("")
+
+    # v0.23 — dedicated compute-script section so reviewers can read
+    # the actual code being approved. Each entry shows summary, inputs,
+    # declared outputs, timeout, and the full script.
+    if compute_rows:
+        lines.append("## Compute scripts")
+        lines.append("")
+        lines.append(
+            "_ComputeActions run a Python script inside an isolated scratch "
+            "directory (see `docs/COMPUTE_ACTION.md`). Outputs do NOT land "
+            "in the workspace — a follow-up pack stage is required to "
+            "promote artefacts._"
+        )
+        lines.append("")
+        for i, action, info in compute_rows:
+            lines.append(f"### Action #{i} — `{action.action_id}`")
+            if info.get("compute_error"):
+                lines.append(f"- **Error:** {info['compute_error']}")
+                lines.append("")
+                continue
+            lines.append(f"- **Summary:** {info['compute_summary']}")
+            inputs = info.get("compute_inputs") or []
+            outputs = info.get("compute_outputs") or []
+            lines.append(
+                f"- **Inputs ({len(inputs)}):** "
+                + (", ".join(f"`{p}`" for p in inputs) if inputs else "_none_")
+            )
+            lines.append(
+                f"- **Declared outputs ({len(outputs)}):** "
+                + (", ".join(f"`{p}`" for p in outputs) if outputs else "_none_")
+            )
+            lines.append(f"- **Timeout:** {info['compute_timeout_sec']}s")
+            lines.append("")
+            lines.append("```python")
+            script = info.get("compute_script") or ""
+            # Cap the displayed script at ~4 KiB so a malformed plan
+            # can't blow out the dry-run markdown. The full source is
+            # always written to script.py at execute time.
+            if len(script) > 4096:
+                script = script[:4096] + "\n# ... (truncated; full source in scratch script.py)"
+            lines.append(script.rstrip())
+            lines.append("```")
+            lines.append("")
 
     if plan.expected_outputs:
         lines.append("## Expected outputs")

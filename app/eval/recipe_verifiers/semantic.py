@@ -47,6 +47,33 @@ def _read_text_capped(path: Path, *, max_chars: int = MAX_BLOB) -> str:
         return ""
 
 
+def _extract_chart_section(report_path: Path, chart_rel_path: str) -> str:
+    """v0.22.1 — pull just the section of ``analysis_report.md`` that
+    references ``chart_rel_path``. Falls back to the full file when the
+    chart isn't referenced anywhere (the planner always inlines the
+    chart so this is rare). Used by chart_data_consistency_verifier so
+    the LLM judge isn't asked to reconcile every chart in one go.
+    """
+    text = _read_text_capped(report_path, max_chars=64_000)
+    if not text:
+        return ""
+    needle = chart_rel_path
+    chart_idx = text.find(needle)
+    if chart_idx == -1:
+        # Try just the basename — some planners drop the dir prefix.
+        chart_idx = text.find(chart_rel_path.rsplit("/", 1)[-1])
+    if chart_idx == -1:
+        return text[:MAX_BLOB]
+    # Walk back to the nearest preceding markdown header to start the
+    # section. Then walk forward to the next same-or-higher-level header.
+    header_re = re.compile(r"^#{1,6} ", re.MULTILINE)
+    starts = [m.start() for m in header_re.finditer(text) if m.start() <= chart_idx]
+    section_start = starts[-1] if starts else 0
+    after_starts = [m.start() for m in header_re.finditer(text) if m.start() > chart_idx]
+    section_end = after_starts[0] if after_starts else len(text)
+    return text[section_start:section_end][:MAX_BLOB]
+
+
 def _list_workspace_files(workspace: Path, *, limit: int) -> list[str]:
     files: list[str] = []
     for path in sorted(workspace.rglob("*")):
@@ -261,7 +288,18 @@ def chart_data_consistency_verifier(
 
     # 3. LLM-driven check on first pair (token-budget conscious).
     chart_path, caption_path = pairs[0]
-    caption_text = _read_text_capped(caption_path)
+    # v0.22.1 — when caption_path is the canonical analysis_report.md it
+    # contains EVERY chart's section. Feeding the whole file to the judge
+    # diluted the signal: the judge often returned "inconsistent" because
+    # numbers from OTHER charts didn't match the one image. Extract just
+    # the section that references this chart so the judge sees focused
+    # context. Sibling .md / *_summary.md captions are already chart-
+    # specific so they're used verbatim.
+    chart_rel_for_caption = chart_path.relative_to(ws).as_posix()
+    if caption_path.name == "analysis_report.md":
+        caption_text = _extract_chart_section(caption_path, chart_rel_for_caption)
+    else:
+        caption_text = _read_text_capped(caption_path)
     if not caption_text.strip():
         return RecipeVerifierVerdict(
             name=name,
