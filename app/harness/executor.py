@@ -12,6 +12,7 @@ from app.harness.sandbox import SandboxRuntime
 from app.harness.trace import TraceLogger
 from app.schemas import (
     ActionPlan,
+    ActionTraceEvent,
     ExecutionRecord,
     ExecutionStatus,
     FailureType,
@@ -157,7 +158,7 @@ class Executor:
                 all_ok = False
                 continue
 
-            record = self._run_one(action, run_id, manifest)
+            record = self._run_one(action, run_id, manifest, plan=plan)
             records.append(record)
             if record.status == ExecutionStatus.FAILED:
                 all_ok = False
@@ -177,6 +178,8 @@ class Executor:
         action: Action,
         run_id: str,
         manifest: RollbackManifest,
+        *,
+        plan: ActionPlan | None = None,
     ) -> ExecutionRecord:
         started = _utcnow()
         self.exec_log.write(
@@ -189,6 +192,15 @@ class Executor:
                 "started_at": started.isoformat(),
             },
         )
+        # Phase 25.1 — pull LLM provenance off the plan (if present). It
+        # is plan-level, not per-action, so every ActionTraceEvent for
+        # one plan carries the same thought/reasoning. That is the
+        # intended shape: in a plan-once-execute-batch model, the LLM's
+        # reasoning APPLIES to every action it emitted.
+        llm_thought = plan.llm_thought if plan is not None else None
+        llm_reasoning = plan.llm_reasoning if plan is not None else None
+        llm_tool_call_raw = plan.llm_tool_call_raw if plan is not None else None
+
         self._emit_trace(
             TraceEventType.ACTION_START,
             action_id=action.action_id,
@@ -198,6 +210,9 @@ class Executor:
                 "source": action.source_path,
                 "target": action.target_path,
             },
+            thought=llm_thought,
+            reasoning=llm_reasoning,
+            tool_call_raw=llm_tool_call_raw,
         )
         try:
             hash_before, hash_after, rb = self._dispatch(action, manifest)
@@ -219,6 +234,15 @@ class Executor:
                 duration_ms=_duration_ms(started, ended),
                 failure_type=FailureType.UNKNOWN,
                 detail=f"{type(exc).__name__}: {exc}",
+                thought=llm_thought,
+                reasoning=llm_reasoning,
+                tool_call_raw=llm_tool_call_raw,
+                observation={
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "action_type": action.action_type.value,
+                    "source": action.source_path,
+                    "target": action.target_path,
+                },
             )
             return ExecutionRecord(
                 run_id=run_id,
@@ -251,6 +275,17 @@ class Executor:
             payload={
                 "hash_before": hash_before,
                 "hash_after": hash_after,
+            },
+            thought=llm_thought,
+            reasoning=llm_reasoning,
+            tool_call_raw=llm_tool_call_raw,
+            observation={
+                "action_type": action.action_type.value,
+                "source": action.source_path,
+                "target": action.target_path,
+                "hash_before": hash_before,
+                "hash_after": hash_after,
+                "rollback_entry": rb.model_dump(mode="json") if rb is not None else None,
             },
         )
         return ExecutionRecord(
@@ -694,29 +729,65 @@ class Executor:
         duration_ms: int | None = None,
         detail: str = "",
         payload: dict | None = None,
+        # Phase 25.1 — ActionTraceEvent fields. All None-default; when
+        # any are populated (or when event_type is one of the ACTION_*
+        # values), the emitter promotes the row to ActionTraceEvent so
+        # downstream readers can rebuild the full action lifecycle
+        # from a single trace.jsonl line. Plain TraceEvent stays the
+        # default shape for non-action events (LLM_CALL_*, POLICY_CHECK,
+        # ROLLBACK_ENTRY, etc.) so v0.23.x grader code keeps working.
+        thought: str | None = None,
+        reasoning: list[dict] | None = None,
+        tool_call_raw: dict | None = None,
+        observation: dict | None = None,
+        critic_result: dict | None = None,
     ) -> None:
         """No-op when self.trace is None (Phase 9 additive-only rule).
 
         The trace stream must never raise into the executor's hot path —
         a malformed event should drop on the floor rather than fail an
         action. ``run_id`` and ``task_id`` come from run_store.
+
+        Phase 25.1: when any ActionTraceEvent-specific kwarg is set
+        OR the event is an ACTION_START / ACTION_END, the row is
+        upgraded to ActionTraceEvent. The richer shape is a strict
+        superclass of TraceEvent so it is type-safe to pass through
+        the same logger.
         """
         if self.trace is None:
             return
+        is_action_event = event_type in (
+            TraceEventType.ACTION_START,
+            TraceEventType.ACTION_END,
+        )
+        has_rich_field = any(
+            v is not None
+            for v in (thought, reasoning, tool_call_raw, observation, critic_result)
+        )
         try:
-            self.trace.emit(
-                TraceEvent(
-                    task_id=self.run_store.task_id,
-                    run_id=self.run_store.task_id,
-                    event_type=event_type,
-                    status=status,  # type: ignore[arg-type]
-                    failure_type=failure_type,
-                    action_id=action_id,
-                    duration_ms=duration_ms,
-                    detail=detail[:500],  # cap; eval reports don't need full traces
-                    payload=payload or {},
-                )
+            common_kwargs = dict(
+                task_id=self.run_store.task_id,
+                run_id=self.run_store.task_id,
+                event_type=event_type,
+                status=status,  # type: ignore[arg-type]
+                failure_type=failure_type,
+                action_id=action_id,
+                duration_ms=duration_ms,
+                detail=detail[:500],  # cap; eval reports don't need full traces
+                payload=payload or {},
             )
+            if is_action_event or has_rich_field:
+                event = ActionTraceEvent(
+                    **common_kwargs,
+                    thought=thought,
+                    reasoning=reasoning,
+                    tool_call_raw=tool_call_raw,
+                    observation=observation,
+                    critic_result=critic_result,
+                )
+            else:
+                event = TraceEvent(**common_kwargs)
+            self.trace.emit(event)
         except Exception:
             # Defensive — trace emission must never break execution.
             pass

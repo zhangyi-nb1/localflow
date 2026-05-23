@@ -282,6 +282,12 @@ class LLMPlanner:
                         outcome="accepted",
                     )
                 )
+                # Phase 25.1 — fold LLM provenance into the plan so the
+                # executor can emit ActionTraceEvent without any new
+                # call-site argument. ``raw_assistant_content`` may be
+                # empty for stub / fake clients used in tests; helper
+                # tolerates that and leaves fields at None.
+                _attach_llm_provenance(plan_or_errors, response)
                 return plan_or_errors
 
             errors, outcome = plan_or_errors
@@ -612,6 +618,63 @@ def _outcome_to_failure_type(outcome: str) -> FailureType:
     if outcome == "policy_blocked":
         return FailureType.POLICY_BLOCKED
     return FailureType.UNKNOWN
+
+
+# --------------------------------------------------------------------- Phase 25.1
+def _attach_llm_provenance(plan: ActionPlan, response: "StructuredResponse") -> None:
+    """Phase 25.1 — fold the LLM's thought / reasoning / raw tool_use
+    into the ActionPlan so the executor can emit ActionTraceEvent
+    without any new call-site argument.
+
+    Pulls from ``response.raw_assistant_content`` which carries the
+    full ``response.content`` list of blocks (thinking + tool_use)
+    that the Anthropic / OpenAI client returns. Tolerant of:
+
+      * missing ``raw_assistant_content`` (stub clients used in tests)
+      * mixed-shape blocks (different SDK versions / providers)
+      * tool_use blocks with no thinking siblings
+
+    Always sets ``llm_tool_call_raw`` when a tool_use block exists in
+    the response (this is the audit-trail anchor — we want to be able
+    to grep ``llm_tool_call_raw is not null`` to find every LLM-driven
+    plan in the run store). Sets ``llm_thought`` only when at least
+    one thinking block has non-empty text; sets ``llm_reasoning``
+    only when raw thinking blocks are present.
+    """
+    blocks: list[dict[str, Any]] = list(response.raw_assistant_content or [])
+    if not blocks:
+        return
+
+    thinking_blocks: list[dict[str, Any]] = []
+    thoughts: list[str] = []
+    tool_call_raw: dict[str, Any] | None = None
+
+    for block in blocks:
+        btype = block.get("type") if isinstance(block, dict) else None
+        if btype == "thinking":
+            thinking_blocks.append(block)
+            text = block.get("thinking") or block.get("text") or ""
+            if isinstance(text, str) and text.strip():
+                thoughts.append(text.strip())
+        elif btype == "tool_use":
+            # Capture the FIRST tool_use block. The LLM contract is
+            # one forced tool call per turn, so there shouldn't be
+            # more than one anyway — but if there is, the harness
+            # already validated against the named one and we record
+            # what it actually saw.
+            if tool_call_raw is None:
+                tool_call_raw = {
+                    k: block.get(k)
+                    for k in ("id", "name", "input")
+                    if k in block
+                }
+
+    if thinking_blocks:
+        plan.llm_reasoning = thinking_blocks
+    if thoughts:
+        plan.llm_thought = "\n\n".join(thoughts)
+    if tool_call_raw is not None:
+        plan.llm_tool_call_raw = tool_call_raw
 
 
 def _format_pydantic_error(err: dict[str, Any]) -> str:
