@@ -134,6 +134,36 @@ Phase 25 完成后，回答这些问题：
 - ❌ Workspace 抽象升级（Phase 27 候选）
 - ❌ 拆 harness 内核包（Phase 28+ 候选）
 - ❌ goose / Aider / SWE-agent 调研（按需做，不是 Phase 25 阻塞项）
+- ❌ Phase 23 ComputeAction 接线（见下方 v0.23.0 leftover 段——Phase 26 自然修复）
+
+## 7a. v0.23.0 leftover（Phase 26 自然修复）
+
+2026-05-24 UI smoke 发现：v0.23.0 的 `PYTHON_COMPUTE` 内核管线齐全（schema +
+sandbox runtime + executor dispatch + policy_guard + verifier + rollback），但
+**没有 production code 路径会构造 ComputeAction**：
+
+- `app/skills/agent/skill.py` 的 `allowed_actions` 不含 `python_compute`
+- `app/agent/prompts.py` 的 LLM tool schema enum 不含 `python_compute`
+- 没有 skill 的 planner 会发 `ActionType.PYTHON_COMPUTE`
+
+结果：v0.23.0 的 ComputeAction 只能由测试直接构造，端到端用户不可达。
+
+**为什么 Phase 25 不补**：
+
+Phase 26 改造 execute 阶段为 step-by-step LLM-loop。LLM 每步直接面对完整
+`ActionType` 枚举（不是 skill manifest 的子集），自然能选 `PYTHON_COMPUTE`。
+中间打 Phase 23.3 / 23.4 接线补丁 ≈ 2-3h 工作，且 Phase 26 落地后会被替换掉
+——属于"白干"。
+
+**Phase 26 完成后该补的事**（不属于 Phase 25 范畴，仅在此存档）：
+
+1. 写一个真实 LLM-loop demo：用 examples/compute_action_pack/workspace 跑通
+   plan → step1: ComputeAction 清洗 → step2: index 写报告
+2. 把 docs/PHASES.md 的 Phase 23 "Discovered after release" 段标记为已修复
+
+这是 PROJECT_DIRECTION.md 规则 D（证据驱动）的实例：Phase 23 跑出来证明了
+"templated agent" 痛点的具体表现，强化了 Route B 的正确性，并把修复时机推到
+最合理的位置。
 
 ## 8. 立即执行的第一步（待 Phase 23 切片完成后启动）
 

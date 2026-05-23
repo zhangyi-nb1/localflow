@@ -548,6 +548,26 @@ effort, always-rollback-cleans, scratch-outside-workspace).
 
 **§10.7 ledger row 29 + 30** added below.
 
+**Discovered after release (2026-05-24 UI smoke)**: the kernel-side
+plumbing is complete and verified by 25 new tests, but **no production
+code path emits a `PYTHON_COMPUTE` action**. Grep across `app/` for
+`ActionType.PYTHON_COMPUTE` returns only the kernel layers
+(schema / executor / policy_guard / dry_run); inside `app/skills/` no
+skill manifest declares `python_compute` in `allowed_actions`, and the
+agent skill's LLM tool schema (`app/agent/prompts.py`) does not expose
+`python_compute` in its `action_type` enum. End-to-end a user-driven
+goal cannot produce a ComputeAction in v0.23.0 — the cleaning-CSV demo
+in `examples/compute_action_pack/` only works when wired up by hand in
+the integration test. The fix is the **Phase 26 LLM-loop** decision
+already locked in `docs/PROJECT_DIRECTION.md`: once the executor stage
+becomes step-by-step with the LLM choosing each action against the
+full `ActionType` enum (not a per-skill manifest subset), the
+`PYTHON_COMPUTE` path becomes naturally reachable. Intermediate
+patching (Phase 23.3 / 23.4) would be ~2-3 hours of work that the
+Phase 26 refactor would discard. Decision recorded
+[2026-05-24]: ship v0.23.0 as the kernel exception of record, fix
+end-to-end reachability in Phase 26.
+
 ---
 
 ## Phase 22 — UI productisation + bilingual substrate (v0.22.0)
