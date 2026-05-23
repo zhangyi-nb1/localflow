@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TraceEventType(str, Enum):
@@ -132,3 +132,142 @@ class TraceEvent(BaseModel):
         eval grader should count toward the failure histogram. ``ok``
         and ``skipped`` are non-failures; ``fail`` and ``blocked`` are."""
         return self.status in ("fail", "blocked")
+
+
+# ---------------------------------------------------------------------
+# Phase 25.0 — ActionTraceEvent (richer event shape for ACTION_* events)
+# ---------------------------------------------------------------------
+#
+# Background: see ``docs/PHASE_25_PLAN.md`` + ``docs/research/OPENHANDS_HARNESS_STUDY.md``.
+# LocalFlow currently splits the lifecycle of one action across three
+# JSONL streams — ``trace.jsonl`` (kernel events), ``execution_log.jsonl``
+# (executor progress), ``audit.jsonl`` (user-initiated actions). One
+# action ends up as N rows scattered across N files; reconstructing
+# "what the LLM was thinking when it proposed this move" requires
+# stitching ``llm.call.end``-with-payload + ``action.start`` + auxiliary
+# metadata.
+#
+# OpenHands' (``agent-sdk@main``) ``ActionEvent`` is a single
+# self-contained object holding the LLM thought + tool_call + the
+# typed action + the security risk + reasoning_content + critic result.
+# One event = one complete record of one step; trace.jsonl alone
+# becomes enough to drive UI / graders / LLM-history reconstruction.
+#
+# This module ships the SCHEMA only — Phase 25.0 explicitly does not
+# change executor emission (see PHASE_25_PLAN.md §4 "Phase 25.0 step 1
+# — schema-only PR"). Phase 25.1 will rewrite ``executor._run_one`` to
+# emit ``ActionTraceEvent`` and downgrade ``execution_log.jsonl`` +
+# ``audit.jsonl`` to filter views over ``trace.jsonl``.
+#
+# Backward compatibility: ``ActionTraceEvent`` is a subclass of
+# ``TraceEvent``. Code that reads ``trace.jsonl`` as a list of
+# ``TraceEvent`` already accepts the new shape — all new fields are
+# Optional with default ``None`` and never appear in
+# ``model_dump_json(exclude_none=True)`` unless populated. v0.23.x
+# traces remain readable by Phase 25.x readers unchanged.
+
+
+class ActionTraceEvent(TraceEvent):
+    # Strict: Phase 26+ schema additions must land as explicit field
+    # declarations + a ``schema_version`` bump, NOT as free-form
+    # extras smuggled past the validator. The parent ``TraceEvent``
+    # is intentionally left in Pydantic-default ``ignore`` mode so
+    # v0.23.x trace consumers that read TraceEvent rows containing
+    # this subclass' extra fields don't break.
+    model_config = ConfigDict(extra="forbid")
+
+    """A richer ``TraceEvent`` shape for ACTION_* events.
+
+    Carries everything needed to reconstruct, from a single line of
+    ``trace.jsonl``:
+
+      * what the LLM was thinking (``thought``, ``reasoning``)
+      * what tool call it actually emitted (``tool_call_raw``)
+      * what the action observed when it ran (``observation``)
+      * any critic / verifier-side evaluation of the action's quality
+        (``critic_result``)
+
+    Use sites (Phase 25.1+):
+
+      * ``executor._run_one`` emits ONE ``ActionTraceEvent`` per
+        action (replacing the current ``ACTION_START`` +
+        ``ACTION_END`` pair).
+      * ``llm_planner`` passes its ``thought`` / ``reasoning_content``
+        into the executor, which forwards them into the event.
+      * Semantic verifier writes its verdict into ``critic_result``.
+
+    The base ``TraceEvent`` fields (``event_id`` / ``task_id`` /
+    ``event_type`` / ``status`` / etc.) keep their existing semantics
+    — readers that don't care about the new fields are unaffected.
+    """
+
+    # The LLM's free-form chain-of-thought that produced this action.
+    # When the planner is rule-based (not LLM), this stays None.
+    thought: str | None = Field(
+        default=None,
+        description=(
+            "The LLM's reasoning narrative that produced this action. "
+            "Captured from the LLM API's ``thought`` / ``reasoning_content`` "
+            "field. None when the planner is rule-based."
+        ),
+    )
+
+    # The full reasoning_content blocks from the LLM (Anthropic
+    # extended thinking, OpenAI o1, etc.). Distinct from ``thought``
+    # in that this is the structured raw blocks, not a flattened
+    # narrative.
+    reasoning: list[dict[str, Any]] | None = Field(
+        default=None,
+        description=(
+            "Structured ``thinking_blocks`` / ``reasoning_content`` blocks "
+            "from the model. Distinct from ``thought``: this is the raw "
+            "structured trace from the API; ``thought`` is the human-readable "
+            "narrative. None when the model doesn't produce extended "
+            "thinking."
+        ),
+    )
+
+    # The raw tool_call dict as the LLM emitted it, BEFORE the harness
+    # validates / coerces it into a typed Action.
+    tool_call_raw: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Raw ``tool_use`` block as the LLM emitted it (name + input). "
+            "Captured BEFORE the harness validates / coerces into a typed "
+            "Action — preserves the un-normalised intent for debugging."
+        ),
+    )
+
+    # What the action actually OBSERVED when it ran. For MOVE/COPY:
+    # before/after file metadata. For PYTHON_COMPUTE: the
+    # ``ComputeOutcome``. For INDEX: byte count written.
+    observation: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Structured outcome of the action — kept loose-typed (dict) "
+            "so each ActionType can include its own shape "
+            "(``ComputeOutcome`` for PYTHON_COMPUTE; file metadata for "
+            "MOVE/COPY/RENAME; etc.). Phase 25.1 fills this in."
+        ),
+    )
+
+    # The semantic verifier / critic's verdict on the action quality.
+    critic_result: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Critic / semantic-verifier verdict on this action's quality. "
+            "Shape mirrors ``SemanticVerdict`` (passed / reasoning / "
+            "confidence). None when no critic ran."
+        ),
+    )
+
+    # Schema version sentinel for future migrations. Plain int rather
+    # than enum because Phase 26+ may add lifecycle steps inside one
+    # action (LLM-loop sub-steps) and we'll bump this.
+    schema_version: int = Field(
+        default=1,
+        description=(
+            "Schema version. ``1`` = Phase 25.0 initial shape. Bumps when "
+            "the in-event LLM-loop steps land in Phase 26+."
+        ),
+    )

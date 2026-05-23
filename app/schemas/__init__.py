@@ -34,13 +34,20 @@ from app.schemas.taskgraph import (
     TaskGraph,
     TaskGraphResult,
 )
-from app.schemas.trace import FailureType, TraceEvent, TraceEventType, TraceStatus
+from app.schemas.trace import (
+    ActionTraceEvent,
+    FailureType,
+    TraceEvent,
+    TraceEventType,
+    TraceStatus,
+)
 from app.schemas.verification import VerificationCheck, VerificationResult
 from app.schemas.workspace import FileMeta, WorkspaceSnapshot
 
 __all__ = [
     "Action",
     "ActionPlan",
+    "ActionTraceEvent",
     "ActionType",
     "ArtifactSpec",
     "ComputeAction",
