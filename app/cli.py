@@ -2832,6 +2832,210 @@ def _render_recipe_verification(verification) -> None:
                 )
 
 
+# --------------------------------------------------------------------- trace (Phase 25.2)
+
+
+trace_app = typer.Typer(
+    help="Phase 25.2 — inspect the trace.jsonl event stream for a run.",
+    no_args_is_help=True,
+)
+app.add_typer(trace_app, name="trace")
+
+
+@trace_app.command("show")
+def cmd_trace_show(
+    task_id: str = typer.Option(..., "--task-id", help="Task ID to inspect."),
+    event_type: Optional[str] = typer.Option(
+        None,
+        "--event-type",
+        help=(
+            "Filter to one event type (e.g. action.end, llm.call.end, "
+            "compute.action.end). Matches the on-disk ``event`` field."
+        ),
+    ),
+    limit: int = typer.Option(
+        50,
+        "--limit",
+        "-n",
+        help="Show at most this many most-recent rows. Defaults to 50.",
+    ),
+    show_thought: bool = typer.Option(
+        False,
+        "--show-thought",
+        help=(
+            "Print the LLM thought / reasoning for ACTION_* rows when "
+            "present (Phase 25.1 ActionTraceEvent). Off by default to "
+            "keep the summary scannable."
+        ),
+    ),
+    show_observation: bool = typer.Option(
+        False,
+        "--show-observation",
+        help=(
+            "Print the action's observation dict for ACTION_END rows "
+            "(Phase 25.1 ActionTraceEvent). Useful for debugging failed "
+            "actions — the observation includes the error string + paths."
+        ),
+    ),
+) -> None:
+    """Phase 25.2 — pretty-print one run's trace.jsonl.
+
+    Each ACTION_* row produced by v0.23.x+ kernels is an
+    ``ActionTraceEvent`` carrying the LLM's thought / reasoning /
+    raw tool_use plus the action's observation (action_type +
+    source/target + hashes + rollback_entry, or the failure error).
+    This command makes those fields visible without forcing the user
+    to ``cat`` the raw JSONL.
+    """
+    import json as _json
+
+    from app.storage.run_store import RunStore
+
+    store = RunStore(task_id=task_id)
+    trace_path = store.trace_path
+    if not trace_path.exists():
+        console.print(
+            f"[yellow]No trace.jsonl for task {task_id!r}.[/] "
+            f"(Looked at {trace_path})"
+        )
+        raise typer.Exit(code=1)
+
+    rows: list[dict] = []
+    with trace_path.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(_json.loads(line))
+            except _json.JSONDecodeError:
+                continue
+
+    if event_type:
+        rows = [r for r in rows if r.get("event") == event_type]
+    if limit and limit > 0:
+        rows = rows[-limit:]
+
+    if not rows:
+        console.print(f"[dim]No matching rows in {trace_path}.[/]")
+        return
+
+    table = Table(title=f"trace.jsonl  ·  {task_id}  ·  {len(rows)} row(s)")
+    table.add_column("ts", style="dim", no_wrap=True)
+    table.add_column("event", style="cyan", no_wrap=True)
+    table.add_column("action_id", style="green", no_wrap=True)
+    table.add_column("status")
+    table.add_column("detail", overflow="fold")
+    for row in rows:
+        payload = row.get("payload") or {}
+        action_id = payload.get("action_id") or ""
+        status = payload.get("status") or ""
+        status_style = ""
+        if status == "fail" or status == "blocked":
+            status_style = "[red]"
+        elif status == "ok":
+            status_style = "[green]"
+        detail = (payload.get("detail") or "")[:120]
+        ts_short = (row.get("ts") or "")[11:19]  # HH:MM:SS
+        table.add_row(
+            ts_short,
+            row.get("event", ""),
+            action_id,
+            f"{status_style}{status}[/]" if status_style else status,
+            detail,
+        )
+    console.print(table)
+
+    if show_thought or show_observation:
+        for row in rows:
+            payload = row.get("payload") or {}
+            event = row.get("event", "")
+            if not event.startswith("action."):
+                continue
+            action_id = payload.get("action_id") or "?"
+            console.print()
+            console.print(f"[cyan]── {event}  ·  {action_id} ──[/]")
+            if show_thought and payload.get("thought"):
+                console.print(f"[bold]thought[/]:  {payload['thought']}")
+            if show_observation and payload.get("observation"):
+                obs = payload["observation"]
+                console.print(f"[bold]observation[/]:")
+                for k, v in obs.items():
+                    if v is None:
+                        continue
+                    val = _json.dumps(v) if isinstance(v, (dict, list)) else v
+                    console.print(f"  · [dim]{k}[/]: {val}")
+
+
+@trace_app.command("summary")
+def cmd_trace_summary(
+    task_id: str = typer.Option(..., "--task-id", help="Task ID to summarise."),
+) -> None:
+    """Phase 25.2 — one-line-per-event-type histogram for a run.
+
+    Quick sanity check: did the kernel emit what you expected? E.g.
+    if you ran a 5-action plan, you should see action.start = 5,
+    action.end = 5, policy.check = 0 (no rejections).
+    """
+    import json as _json
+    from collections import Counter
+
+    from app.storage.run_store import RunStore
+
+    store = RunStore(task_id=task_id)
+    trace_path = store.trace_path
+    if not trace_path.exists():
+        console.print(
+            f"[yellow]No trace.jsonl for task {task_id!r}.[/] "
+            f"(Looked at {trace_path})"
+        )
+        raise typer.Exit(code=1)
+
+    by_event: Counter = Counter()
+    by_status: Counter = Counter()
+    rich_rows = 0  # ActionTraceEvent shape — rows that carry the new fields
+    failures = 0
+    with trace_path.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = _json.loads(line)
+            except _json.JSONDecodeError:
+                continue
+            event = row.get("event", "")
+            by_event[event] += 1
+            payload = row.get("payload") or {}
+            by_status[payload.get("status") or "(none)"] += 1
+            if (
+                payload.get("thought") is not None
+                or payload.get("observation") is not None
+                or payload.get("tool_call_raw") is not None
+            ):
+                rich_rows += 1
+            if payload.get("status") in ("fail", "blocked"):
+                failures += 1
+
+    if not by_event:
+        console.print(f"[dim]Empty trace at {trace_path}.[/]")
+        return
+
+    table = Table(title=f"trace.jsonl summary  ·  {task_id}")
+    table.add_column("event_type", style="cyan", no_wrap=True)
+    table.add_column("count", justify="right")
+    for event in sorted(by_event):
+        table.add_row(event, str(by_event[event]))
+    console.print(table)
+
+    console.print()
+    console.print(f"Total rows:           [bold]{sum(by_event.values())}[/]")
+    console.print(
+        f"ActionTraceEvent rows (Phase 25.1 shape): [bold]{rich_rows}[/]"
+    )
+    console.print(f"Failed / blocked rows: [bold]{failures}[/]")
+
+
 # --------------------------------------------------------------------- goal (Phase 18)
 
 
