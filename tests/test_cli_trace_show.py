@@ -112,8 +112,8 @@ class TestTraceShow:
         # whole output because the title / footer might mention totals;
         # check the body lines explicitly.)
         body_lines = [
-            l for l in result.output.splitlines()
-            if "action." in l and "│" in l
+            row_line for row_line in result.output.splitlines()
+            if "action." in row_line and "│" in row_line
         ]
         assert body_lines, "expected some action rows after filter"
         for line in body_lines:

@@ -2959,7 +2959,7 @@ def cmd_trace_show(
                 console.print(f"[bold]thought[/]:  {payload['thought']}")
             if show_observation and payload.get("observation"):
                 obs = payload["observation"]
-                console.print(f"[bold]observation[/]:")
+                console.print("[bold]observation[/]:")
                 for k, v in obs.items():
                     if v is None:
                         continue

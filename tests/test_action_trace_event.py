@@ -9,7 +9,7 @@ written for v0.23.x keep working after the migration.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pytest
 from pydantic import ValidationError
