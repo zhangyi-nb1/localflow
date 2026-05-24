@@ -139,12 +139,17 @@ Phase 23 已经定下命名纪律，扩展到全项目：
 - **改造**：execute 阶段从 batch-顺序 改为 step-by-step LLM-loop（已批 plan 范围内 +/- N 步漂移）
 - **不走** 全面 LLM-loop（会丢掉 LocalFlow 的差异化变成 OpenHands 的弱复制品）
 
-### Phase 顺序（已锁定 Phase 24-25，更远的不锁）
+### Phase 顺序（已锁定 Phase 24-26）
 
-1. 清理当前 Phase 23 未提交工作 → 发 v0.23.0
-2. **Phase 24 = C1 ActionEvent 重构**（三流合一）
-3. Phase 25 = C4 Orphaned-Action 反馈
-4. Phase 26 = 阶段内 react loop 落地
+1. ~~清理当前 Phase 23 未提交工作 → 发 v0.23.0~~ ✅ 2026-05-24
+2. ~~Phase 25.0/25.1/25.2/25.3/25.5/25.6 = ActionEvent + observation + repair feedback~~ ✅ 2026-05-24
+3. **Phase 26 = 阶段内 react loop（v0.24.0）** — 设计见 [docs/PHASE_26_DESIGN.md](docs/PHASE_26_DESIGN.md)
+   - Phase 26.0 schema-only PR（LoopDecision + ReactConfig + 3 trace events）
+   - Phase 26.1 react loop 核心 + demo eval
+   - Phase 26.2 drift budget + failsafes
+   - Phase 26.3 Recipe 集成 + Phase 23 ComputeAction reachability gap 修复
+4. Phase 27（候选）= ConfirmationPolicy + Workspace 抽象
+5. Phase 28+（候选）= harness 内核拆独立包
 
 后续 Phase 在前置 Phase 落地后再写细节计划。
 
