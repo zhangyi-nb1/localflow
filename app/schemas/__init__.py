@@ -1,4 +1,8 @@
 from app.schemas.action import Action, ActionType, RiskLevel
+from app.schemas.approval import (
+    ConfirmationPolicy,
+    ConfirmationPolicyType,
+)
 from app.schemas.compute import (
     ArtifactSpec,
     ComputeAction,
@@ -59,6 +63,8 @@ __all__ = [
     "ComputeInputRef",
     "ComputeOutcome",
     "ComputeOutcomeStatus",
+    "ConfirmationPolicy",
+    "ConfirmationPolicyType",
     "ExecutionRecord",
     "ExecutionStatus",
     "FailureType",

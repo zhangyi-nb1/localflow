@@ -462,6 +462,18 @@ def cmd_execute(
             "latitude to deviate from the approved plan; default 3."
         ),
     ),
+    confirm_policy: Optional[str] = typer.Option(
+        None,
+        "--confirm-policy",
+        help=(
+            "Phase 27 — per-action approval granularity. One of "
+            "``never`` / ``always`` / ``on_high_risk`` / ``on_write``. "
+            "Defaults to ``never`` (= --yes behaviour) when omitted. "
+            "Use ``on_high_risk`` to pause only on HIGH-risk actions, "
+            "``on_write`` to pause on every mkdir / move / copy / "
+            "rename. See docs/PHASE_27_DESIGN.md."
+        ),
+    ),
 ) -> None:
     """Approve and execute the plan. Records every change for rollback."""
     store = RunStore(task_id=task_id)
@@ -499,6 +511,33 @@ def cmd_execute(
     if not decision.approved:
         console.print("[yellow]Execution cancelled.[/]")
         raise typer.Exit(code=1)
+
+    # Phase 27.0 — parse + validate --confirm-policy. The schema is
+    # parsed here for early failure; the policy is logged to audit
+    # so a follow-up Phase 27.1 wiring can pick it up without
+    # ambiguity about which run used which policy.
+    if confirm_policy is not None:
+        from app.schemas import ConfirmationPolicy, ConfirmationPolicyType
+
+        try:
+            _policy_type = ConfirmationPolicyType(confirm_policy)
+        except ValueError as exc:
+            valid = ", ".join(v.value for v in ConfirmationPolicyType)
+            console.print(
+                f"[red]Invalid --confirm-policy {confirm_policy!r}.[/] Choose one of: {valid}."
+            )
+            raise typer.Exit(code=2) from exc
+        confirm_policy_obj = ConfirmationPolicy(policy_type=_policy_type)
+        audit.log(
+            "confirmation_policy.selected",
+            policy_type=confirm_policy_obj.policy_type.value,
+            risk_threshold=confirm_policy_obj.risk_threshold.value,
+        )
+        console.print(
+            f"[cyan]confirm_policy={confirm_policy_obj.policy_type.value}[/]  "
+            "(per-action enforcement lands in Phase 27.1; "
+            "see docs/PHASE_27_DESIGN.md)"
+        )
 
     skill_obj = get_default_registry().require(task.skill)
 

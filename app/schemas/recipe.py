@@ -27,6 +27,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.schemas.approval import ConfirmationPolicy
 from app.schemas.task import DEFAULT_LOCALE, Locale
 from app.schemas.taskgraph import StageFailurePolicy, StageSpec, TaskGraph
 
@@ -229,6 +230,20 @@ class RecipeSpec(BaseModel):
             "docs/PHASE_26_DESIGN.md and docs/REACT_LOOP.md. The flag is "
             "the audit-trail anchor: grepping ``enable_react_mode: true`` "
             "lists every recipe that may run mid-execute LLM decisions."
+        ),
+    )
+    confirmation_policy: ConfirmationPolicy | None = Field(
+        default=None,
+        description=(
+            "Phase 27 — override the default per-recipe approval policy. "
+            "When None (default), the CLI / harness honours the user's "
+            "``--confirm-policy`` flag (or NEVER if not provided). When "
+            "set, this recipe-level policy is the default for runs of "
+            "this recipe and the CLI flag becomes an override knob. "
+            "Useful for recipes whose risk profile differs from the user's "
+            "global preference — e.g. a research_pack that touches lots of "
+            "user files may want ON_WRITE while a one-shot index recipe "
+            "stays NEVER."
         ),
     )
 
