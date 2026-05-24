@@ -4,6 +4,7 @@ import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from app.harness.audit import AuditLogger
 from app.harness.checkpoint import completed_action_ids
@@ -21,6 +22,10 @@ from app.schemas import (
     TraceEvent,
     TraceEventType,
 )
+
+if TYPE_CHECKING:
+    from app.agent.client import LLMClient
+    from app.schemas import ReactConfig
 from app.schemas.action import Action, ActionType
 from app.schemas.compute import ComputeAction, ComputeOutcomeStatus
 from app.schemas.rollback import RollbackOpType
@@ -88,9 +93,33 @@ class Executor:
         *,
         approved: bool,
         resume: bool = False,
+        react_mode: bool = False,
+        react_config: "ReactConfig | None" = None,
+        llm_client: "LLMClient | None" = None,
     ) -> ExecutionOutcome:
         if not approved:
             raise RuntimeError("Executor refused: plan not approved")
+
+        # Phase 26.1 — opt-in react loop dispatch. Default react_mode=False
+        # preserves v0.23.x batch behaviour for all existing callers /
+        # tests. When react_mode=True, ReactConfig.enabled is treated as
+        # the master switch (set internally below so callers can pass
+        # just ``react_mode=True`` without constructing a config).
+        if react_mode:
+            from app.harness.react_loop import run_react_loop
+            from app.schemas import ReactConfig as _ReactConfig
+
+            config = react_config or _ReactConfig(enabled=True)
+            # Honour an explicit ``enabled=False`` by passing through to
+            # the batch path — same shape as react_loop's defensive
+            # fallback, but here it costs no extra import / branch.
+            if config.enabled:
+                # The caller's explicit react_mode=True overrides a
+                # missing ReactConfig.enabled — flip it on so the
+                # inner loop honours the request.
+                if not config.enabled:  # pragma: no cover — defensive
+                    config = config.model_copy(update={"enabled": True})
+                return run_react_loop(self, plan, llm_client=llm_client, config=config)
 
         already_done = completed_action_ids(self.exec_log) if resume else set()
         run_id = self.run_store.task_id
