@@ -144,6 +144,106 @@ class RunStore:
         """Phase 9 — structured kernel-event stream (TraceLogger)."""
         return self.path(self.TRACE_JSONL)
 
+    # -- Phase 25.5 — trace.jsonl view methods ------------------------
+    #
+    # trace.jsonl is now the canonical event stream (Phase 25.0–25.3
+    # write everything interesting into it). audit.jsonl and
+    # execution_log.jsonl are STILL physically written by their
+    # respective loggers — this section just provides the read-side
+    # *views* that filter trace.jsonl into the same shapes consumers
+    # used to get from the physical files. New code should prefer the
+    # view methods; physical file removal is deferred (out of scope
+    # for Phase 25.5 to avoid a multi-site rewriter migration).
+    #
+    # Each view returns ``list[dict]`` of trace.jsonl rows (the on-disk
+    # ``{ts, event, payload}`` wrapper shape), filtered to the event
+    # types that map to the original physical log:
+    #
+    #   execution_log_view  ← action.*, policy.check, rollback.entry
+    #   audit_view          ← llm.*, repair.triggered, plan.revised,
+    #                          compute.*, sandbox.* (= the user-visible
+    #                          orchestration events)
+
+    _EXECUTION_LOG_EVENTS = frozenset(
+        {
+            "action.start",
+            "action.end",
+            "policy.check",
+            "rollback.entry",
+        }
+    )
+    _AUDIT_EVENTS = frozenset(
+        {
+            "llm.call.start",
+            "llm.call.end",
+            "llm.repair",
+            "repair.triggered",
+            "plan.revised",
+            "token.minted",
+            "token.consumed",
+            "token.rejected",
+            "compute.action.start",
+            "compute.action.end",
+            "compute.sandbox.timeout",
+            "compute.output.verified",
+        }
+    )
+
+    def read_trace_events(self) -> list[dict]:
+        """Return every row in trace.jsonl as a dict (canonical reader).
+
+        Returns ``[]`` if the file doesn't exist. Malformed lines are
+        skipped silently so a partial write at process death never
+        breaks a view. Callers that need typed access can re-validate
+        via ``TraceEvent.model_validate(row['payload'] | ...)``.
+        """
+        import json as _json
+
+        path = self.trace_path
+        if not path.exists():
+            return []
+        rows: list[dict] = []
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rows.append(_json.loads(line))
+                except _json.JSONDecodeError:
+                    continue
+        except OSError:
+            return []
+        return rows
+
+    def execution_log_view(self) -> list[dict]:
+        """Filter trace.jsonl to the events that historically lived
+        in execution_log.jsonl: action lifecycle + policy + rollback.
+
+        This is the read-side of the Phase 25.5 collapse. The physical
+        execution_log.jsonl is still written by the kernel — switch
+        consumers to this view to get the same data with the richer
+        Phase 25.1 ``observation`` payload included on action rows.
+        """
+        return [
+            row
+            for row in self.read_trace_events()
+            if row.get("event") in self._EXECUTION_LOG_EVENTS
+        ]
+
+    def audit_view(self) -> list[dict]:
+        """Filter trace.jsonl to user-meaningful orchestration events
+        (LLM calls, repair triggers, plan revisions, ComputeAction
+        lifecycle, MCP token mints).
+
+        Note: ``task.created.ui`` and ``execute.start/end`` are still
+        only in audit.jsonl — they were never routed through the
+        TraceLogger. Until Phase 27 dual-writes those events into the
+        trace stream, prefer ``audit_log_path`` for full audit history
+        and ``audit_view()`` for the trace-aware subset.
+        """
+        return [row for row in self.read_trace_events() if row.get("event") in self._AUDIT_EVENTS]
+
     # -- Phase 10 multi-stage artifacts --------------------------------
 
     @property
