@@ -216,6 +216,21 @@ class RecipeSpec(BaseModel):
             "every recipe that touches the compute path grep-able."
         ),
     )
+    enable_react_mode: bool = Field(
+        default=False,
+        description=(
+            "Phase 26 — opt into the execute-stage react loop. When False "
+            "(default), each stage runs as plan-once-execute-batch — exactly "
+            "v0.23.x behaviour. When True, the runtime consults the LLM "
+            "between actions and may apply REPLACE / INSERT / SKIP decisions "
+            "within a bounded drift budget (default 3 steps per stage). "
+            "Switching this on is the recipe AUTHOR's explicit acceptance "
+            "of the §10.7 4th deliberate exception — see "
+            "docs/PHASE_26_DESIGN.md and docs/REACT_LOOP.md. The flag is "
+            "the audit-trail anchor: grepping ``enable_react_mode: true`` "
+            "lists every recipe that may run mid-execute LLM decisions."
+        ),
+    )
 
     @model_validator(mode="after")
     def _unique_stage_ids(self) -> "RecipeSpec":

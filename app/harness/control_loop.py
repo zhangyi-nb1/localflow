@@ -4,6 +4,11 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.agent.client import LLMClient
+    from app.schemas import ReactConfig
 
 from app.harness.action_validator import validate_plan_structure
 from app.harness.approval import ApprovalDecision, ask_approval
@@ -146,7 +151,13 @@ def run_execute(
     approved: bool,
     resume: bool = False,
     trace: TraceLogger | None = None,
+    react_mode: bool = False,
+    react_config: "ReactConfig | None" = None,
+    llm_client: "LLMClient | None" = None,
 ) -> ExecutionOutcome:
+    """Phase 26.2 — adds opt-in react_mode passthrough. When False
+    (default), executor uses v0.23.x batch path. When True, executor
+    consults the LLM between actions; see docs/REACT_LOOP.md."""
     executor = Executor(
         workspace_root=Path(task.workspace_root),
         run_store=run_store,
@@ -154,7 +165,14 @@ def run_execute(
         forbidden_paths=tuple(task.forbidden_paths),
         trace=trace,
     )
-    return executor.execute(plan, approved=approved, resume=resume)
+    return executor.execute(
+        plan,
+        approved=approved,
+        resume=resume,
+        react_mode=react_mode,
+        react_config=react_config,
+        llm_client=llm_client,
+    )
 
 
 def run_verify(

@@ -441,6 +441,27 @@ def cmd_execute(
             "even when memory pref enable_semantic_verifier is True."
         ),
     ),
+    react: bool = typer.Option(
+        False,
+        "--react",
+        help=(
+            "Phase 26 — opt into the execute-stage react loop. The "
+            "executor consults the LLM between actions and may apply "
+            "REPLACE / INSERT / SKIP within a 3-step drift budget. "
+            "Requires the same Anthropic API key as the llm planner; "
+            "see docs/REACT_LOOP.md for the safety model."
+        ),
+    ),
+    react_max_drift: int = typer.Option(
+        3,
+        "--react-max-drift",
+        min=0,
+        max=20,
+        help=(
+            "Phase 26 — drift budget for --react. Higher = more LLM "
+            "latitude to deviate from the approved plan; default 3."
+        ),
+    ),
 ) -> None:
     """Approve and execute the plan. Records every change for rollback."""
     store = RunStore(task_id=task_id)
@@ -503,8 +524,34 @@ def cmd_execute(
             audit=audit,
         )
     else:
+        # Phase 26 — build optional react inputs. The control_loop
+        # passes them through to executor.execute; when react=False
+        # (the default) the kwargs no-op and the batch path runs.
+        react_cfg = None
+        llm_client = None
+        if react:
+            from app.agent.client import AnthropicClient
+            from app.schemas import ReactConfig
+
+            react_cfg = ReactConfig(enabled=True, max_drift=react_max_drift)
+            try:
+                llm_client = AnthropicClient()
+            except Exception as exc:  # pragma: no cover — env-dependent
+                console.print(f"[red]--react requires a working Anthropic client:[/] {exc}")
+                raise typer.Exit(code=2) from exc
+            console.print(
+                f"[cyan]react_mode=ON[/]  drift_budget={react_max_drift}  (see docs/REACT_LOOP.md)"
+            )
         outcome = control_loop.run_execute(
-            task, plan, store, approved=True, resume=resume, trace=trace
+            task,
+            plan,
+            store,
+            approved=True,
+            resume=resume,
+            trace=trace,
+            react_mode=react,
+            react_config=react_cfg,
+            llm_client=llm_client,
         )
         verification = control_loop.run_verify(task, plan, store, outcome, snapshot, trace=trace)
         semantic = None
