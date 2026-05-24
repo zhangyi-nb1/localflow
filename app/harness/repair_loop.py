@@ -138,6 +138,20 @@ def run_repair_loop(
         )
         hint = first_failed.suggested_hint or ""
 
+        # Phase 25.6 — enrich the verifier's hint with structured
+        # failure observations from the prior execution's trace, so
+        # the LLM revising the plan sees WHY each action failed (not
+        # just the high-level grader hint). The trace was written by
+        # the Phase 25.1 executor with one ``observation`` dict per
+        # ACTION_END row (action_type / source / target / error /
+        # hash_before / hash_after / rollback_entry). When no failed
+        # actions exist (e.g. the semantic grader fired against a
+        # successful execution), the helper returns "" and the hint
+        # is unchanged — matches v0.23.x repair behaviour exactly.
+        failure_ctx = _format_failed_action_context(run_store.trace_path)
+        if failure_ctx:
+            hint = f"{hint}\n\n{failure_ctx}".strip()
+
         # v0.22.x — gate the rollback on revisability. Rule-only skills
         # (workspace_visualizer, folder_organizer, …) cannot honour a
         # free-form natural-language hint. Rolling back first and only
@@ -339,6 +353,83 @@ def run_repair_loop(
 
 
 # ──────────────────────────────────── helpers
+
+
+def _format_failed_action_context(trace_path: Path) -> str:
+    """Phase 25.6 — read trace.jsonl and return a structured summary
+    of failed actions from the most recent execution, formatted as a
+    block the LLM planner can read alongside the verifier hint.
+
+    Each ``action.end`` row written by the Phase 25.1 executor carries
+    an ``observation`` dict with ``action_type`` / ``source`` /
+    ``target`` / ``error`` (on fail) / ``hash_before`` / ``hash_after``
+    / ``rollback_entry``. When ``status="fail"`` we surface the
+    error + paths so the next plan revision can target the root cause
+    rather than guess from the verifier's higher-level hint alone.
+
+    Returns ``""`` when:
+      * the trace file does not exist
+      * no ``action.end`` row has ``status="fail"``
+      * every fail row was emitted by a pre-Phase-25.1 kernel (no
+        ``observation`` field) — in that case the verifier hint is
+        all we have, falling back to v0.23.x behaviour.
+
+    The output is deliberately minimal markdown — bullets one level
+    deep — so it composes cleanly with whatever ``suggested_hint``
+    text the semantic grader produced.
+    """
+    import json as _json
+
+    if not trace_path.exists():
+        return ""
+
+    failures: list[dict] = []
+    try:
+        for line in trace_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                row = _json.loads(line)
+            except _json.JSONDecodeError:
+                continue
+            if row.get("event") != "action.end":
+                continue
+            payload = row.get("payload") or {}
+            if payload.get("status") != "fail":
+                continue
+            obs = payload.get("observation") or {}
+            failures.append(
+                {
+                    "action_id": payload.get("action_id") or "(unknown)",
+                    "action_type": obs.get("action_type"),
+                    "source": obs.get("source"),
+                    "target": obs.get("target"),
+                    "error": obs.get("error"),
+                    "detail": payload.get("detail"),
+                }
+            )
+    except OSError:
+        return ""
+
+    if not failures:
+        return ""
+
+    lines = ["Prior execution had these failed actions — avoid the same shape in the revised plan:"]
+    for f in failures:
+        bullet = f"- action_id={f['action_id']!r}"
+        if f.get("action_type"):
+            bullet += f", type={f['action_type']}"
+        if f.get("source"):
+            bullet += f", source={f['source']!r}"
+        if f.get("target"):
+            bullet += f", target={f['target']!r}"
+        lines.append(bullet)
+        err = f.get("error") or f.get("detail")
+        if err:
+            # Cap each error line so a verbose traceback doesn't
+            # bloat the LLM prompt token budget.
+            lines.append(f"  error: {str(err)[:400]}")
+    return "\n".join(lines)
 
 
 @dataclass
