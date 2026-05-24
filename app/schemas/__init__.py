@@ -10,6 +10,11 @@ from app.schemas.compute import (
 )
 from app.schemas.execution import ExecutionRecord, ExecutionStatus
 from app.schemas.plan import ActionPlan
+from app.schemas.react import (
+    LoopDecision,
+    LoopDecisionType,
+    ReactConfig,
+)
 from app.schemas.recipe import (
     InputExpectation,
     RecipeSpec,
@@ -59,7 +64,10 @@ __all__ = [
     "FailureType",
     "FileMeta",
     "InputExpectation",
+    "LoopDecision",
+    "LoopDecisionType",
     "ProducedArtifact",
+    "ReactConfig",
     "RecipeSpec",
     "RecipeStage",
     "RepairPolicy",

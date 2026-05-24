@@ -44,6 +44,12 @@ def test_every_event_type_used_in_kernel_pinned() -> None:
         "compute.action.end",
         "compute.output.verified",
         "compute.sandbox.timeout",
+        # Phase 26 — execute-stage react loop. Part of the §10.7 4th
+        # deliberate exception alongside Executor.react_mode. Status
+        # semantics live in app/schemas/trace.py + docs/PHASE_26_DESIGN.md §3.5.
+        "loop.decision.requested",
+        "loop.decision.decided",
+        "loop.decision.applied",
     }
     actual = {e.value for e in TraceEventType}
     assert actual == expected, f"unexpected drift: {actual ^ expected}"

@@ -65,6 +65,16 @@ class TraceEventType(str, Enum):
     COMPUTE_ACTION_END = "compute.action.end"
     SANDBOX_TIMEOUT = "compute.sandbox.timeout"
     COMPUTE_OUTPUT_VERIFIED = "compute.output.verified"
+    # Phase 26 — execute-stage react loop. Part of the §10.7 4th
+    # deliberate exception alongside Executor.react_mode. Status
+    # semantics:
+    #   LOOP_DECISION_REQUESTED — status=ok; payload carries observation_action_id
+    #   LOOP_DECISION_DECIDED   — status=ok|fail; payload carries LoopDecision shape
+    #   LOOP_DECISION_APPLIED   — status=ok|fail; payload carries the applied next-action
+    # See docs/PHASE_26_DESIGN.md §3.5.
+    LOOP_DECISION_REQUESTED = "loop.decision.requested"
+    LOOP_DECISION_DECIDED = "loop.decision.decided"
+    LOOP_DECISION_APPLIED = "loop.decision.applied"
 
 
 class FailureType(str, Enum):
