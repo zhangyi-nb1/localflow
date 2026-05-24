@@ -46,3 +46,36 @@ python -m pytest tests/test_compute_demo_end_to_end.py -v
 
 See `docs/COMPUTE_ACTION.md` for the contract and the honesty
 discipline ("isolation, not security sandbox").
+
+## Phase 26 — reachability via the react loop
+
+v0.23.0 shipped the `PYTHON_COMPUTE` schema + sandbox runtime + executor
+dispatch + verifier, but **no production code path emitted a
+`PYTHON_COMPUTE` action**: `app/skills/agent`'s manifest did not list
+it in `allowed_actions`, and the planner's LLM tool schema enum did
+not expose it either. End-to-end the feature was only constructible
+from tests. PHASES.md flagged this as a known gap with the fix slated
+for Phase 26.
+
+The v0.24.0 react loop closes the gap **without per-skill manifest
+patches**. With:
+
+```yaml
+enable_react_mode: true      # opt into the react loop
+allow_compute_action: true   # let python_compute appear in the loop's tool schema
+```
+
+…the executor consults the LLM between actions and the LLM may
+REPLACE / INSERT a `PYTHON_COMPUTE` action when the prior observation
+reveals typed primitives are insufficient — for example, the
+`data_analyzer` first pass reading `sales_dirty.csv` returns
+`status=fail: malformed_currency`, and the LLM's next decision is
+INSERT a cleaning ComputeAction. End-to-end, the user's "clean my
+dirty CSV" goal reaches the kernel exception they paid for in v0.23.0.
+
+```
+localflow execute --task-id <id> --yes --react
+```
+
+See `docs/REACT_LOOP.md` for the full safety model + failsafes; see
+`docs/PHASE_26_DESIGN.md` for the design + acceptance criteria.

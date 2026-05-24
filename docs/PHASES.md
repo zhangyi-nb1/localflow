@@ -568,6 +568,18 @@ Phase 26 refactor would discard. Decision recorded
 [2026-05-24]: ship v0.23.0 as the kernel exception of record, fix
 end-to-end reachability in Phase 26.
 
+**Status update [2026-05-24, v0.24.0]: ✅ FIXED in Phase 26.** The
+react loop landed in v0.24.0 (`docs/PHASE_26_DESIGN.md`,
+`docs/REACT_LOOP.md`). When a recipe sets both
+`enable_react_mode: true` and `allow_compute_action: true`, the
+`react_loop`'s LLM tool schema (`app/agent/react_prompts.py`) exposes
+`python_compute` in its action_type enum; an LLM mid-loop decision
+may REPLACE or INSERT a `PYTHON_COMPUTE` action when prior
+observations reveal typed primitives are insufficient (e.g. the
+sales_dirty.csv test fixture). End-to-end the user-driven goal can
+now reach the kernel exception they paid for in v0.23.0.
+`examples/compute_action_pack/README.md` documents the opt-in.
+
 ---
 
 ## Phase 22 — UI productisation + bilingual substrate (v0.22.0)
