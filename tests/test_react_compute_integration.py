@@ -272,14 +272,16 @@ class TestReachabilityGapDocumentation:
     """Track that the fix is documented in the right spots."""
 
     def test_phases_md_marks_gap_fixed(self):
-        text = (Path(__file__).parent.parent / "docs" / "PHASES.md").read_text()
+        # Explicit UTF-8 encoding — Windows CI's default cp1252 chokes
+        # on the §10.7 § + the curly quotes the doc uses elsewhere.
+        text = (Path(__file__).parent.parent / "docs" / "PHASES.md").read_text(encoding="utf-8")
         assert "Status update" in text
         assert "FIXED in Phase 26" in text
 
     def test_example_pack_readme_points_at_react_mode(self):
         text = (
             Path(__file__).parent.parent / "examples" / "compute_action_pack" / "README.md"
-        ).read_text()
+        ).read_text(encoding="utf-8")
         assert "Phase 26" in text
         assert "react loop" in text.lower()
         assert "enable_react_mode" in text
