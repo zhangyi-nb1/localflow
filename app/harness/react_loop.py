@@ -219,6 +219,42 @@ def _dispatch_one(
             error=f"policy_violation: {err}",
         )
 
+    # Phase 27.2 — apply ConfirmationPolicy inside the react loop.
+    # An LLM-proposed REPLACE / INSERT action is just as eligible
+    # for user approval as a planner-emitted one. ``_policy_check``
+    # returns None when no policy is wired (the v0.24.x path);
+    # otherwise it consults the policy + the optional approver.
+    policy_decision = executor._policy_check(action)
+    if policy_decision is not None and not policy_decision.approved:
+        from datetime import datetime, timezone
+
+        executor.exec_log.write(
+            "action.end",
+            {
+                "action_id": action.action_id,
+                "status": ExecutionStatus.FAILED.value,
+                "error": f"policy_rejected: {policy_decision.reason}",
+            },
+        )
+        executor._emit_trace(
+            TraceEventType.POLICY_CHECK,
+            status="blocked",
+            failure_type=FailureType.POLICY_BLOCKED,
+            action_id=action.action_id,
+            detail=f"react-loop policy rejection: {policy_decision.reason}",
+            payload={
+                "task_id": plan.task_id,
+                "policy_decision": policy_decision.reason,
+            },
+        )
+        return ExecutionRecord(
+            run_id=run_id,
+            action_id=action.action_id,
+            status=ExecutionStatus.FAILED,
+            ended_at=datetime.now(timezone.utc),
+            error=f"user_rejected: {policy_decision.reason}",
+        )
+
     return executor._run_one(action, run_id, manifest, plan=plan)
 
 
