@@ -5,14 +5,17 @@
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/zhangyi-nb1/localflow/blob/main/pyproject.toml)
 [![Release](https://img.shields.io/github/v/tag/zhangyi-nb1/localflow?label=release)](https://github.com/zhangyi-nb1/localflow/releases)
 
-> **Branch status** — `main` is **v0.25.x-dev**. Latest tagged
-> releases: **v0.25.0** (Phase 27 ConfirmationPolicy — 4-tier
-> per-action approval), **v0.24.0** (Phase 26 React Loop — stage-spine
-> + step-by-step LLM mid-execute decisions), **v0.23.0** (Phase 23
-> Sandboxed ComputeAction). The full set installs via
+> **Branch status** — `main` is **v0.26.x-dev**. Latest tagged
+> releases: **v0.26.0** (Phase 28 Workspace abstraction — LocalWorkspace
+> + injection seam ready for Docker / Remote drop-ins), **v0.25.0**
+> (Phase 27 ConfirmationPolicy — 4-tier per-action approval),
+> **v0.24.0** (Phase 26 React Loop — stage-spine + step-by-step LLM
+> mid-execute decisions), **v0.23.0** (Phase 23 Sandboxed
+> ComputeAction). The full set installs via
 > `pip install -e ".[all]"`. See [`docs/PHASES.md`](docs/PHASES.md)
-> for the per-phase ledger and `docs/PHASE_2{3,5,6,7}_DESIGN.md` /
-> `docs/REACT_LOOP.md` for the user-facing surface.
+> for the per-phase ledger and `docs/PHASE_2{3,5,6,7,8}_DESIGN.md` /
+> `docs/REACT_LOOP.md` / `docs/CONFIRMATION_POLICY.md` /
+> `docs/WORKSPACE.md` for the user-facing surface.
 
 **LocalFlow is a local-first Agent Execution Harness.**
 It lets LLM agents work on real local workspaces through typed plans,

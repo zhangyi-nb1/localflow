@@ -35,8 +35,6 @@ from app.schemas.compute import ComputeAction, ComputeOutcomeStatus
 from app.schemas.rollback import RollbackOpType
 from app.storage.jsonl_logger import JsonlLogger
 from app.storage.run_store import RunStore
-from app.tools import file_ops
-from app.tools.hash_ops import sha256_file
 from app.tools.scratch import ScratchWorkspace
 
 
@@ -489,66 +487,63 @@ class Executor:
     def _do_index(
         self, action: Action, manifest: RollbackManifest
     ) -> tuple[None, str | None, RollbackEntry]:
-        target_abs = resolve_inside(self.workspace_root, action.target_path or "")
+        # Phase 28.2 — text + binary writes routed through Workspace.
+        # The OVERWRITE-with-backup path still uses shutil.move directly
+        # because the backup destination (run_store.backups_dir) lives
+        # outside the workspace and isn't a Workspace concern.
+        target_rel = action.target_path or ""
+        target_abs = resolve_inside(self.workspace_root, target_rel)
         overwrite = bool(action.metadata.get("overwrite_existing", False))
 
-        # Phase 3.2: ``index`` actions can carry binary payloads (e.g.
-        # PNG charts from chart_ops). The base64 encoding keeps plan.json
-        # JSON-safe; we decode here and write via write_bytes. The
-        # rollback semantics are identical to text writes — same backup
-        # / restore / delete logic, just bytes instead of text.
+        # Phase 3.2 binary-payload support (base64-encoded PNG charts).
         binary_b64 = action.metadata.get("binary_content_b64")
+        payload_bytes: bytes | None = None
+        content_text: str | None = None
         if binary_b64 is not None:
             import base64
 
             try:
-                payload_bytes: bytes = base64.b64decode(binary_b64)
+                payload_bytes = base64.b64decode(binary_b64)
             except Exception as exc:
                 raise ValueError(
                     f"action {action.action_id}: binary_content_b64 is not valid base64: {exc}"
                 ) from exc
-            writer = lambda p: file_ops.write_bytes(p, payload_bytes)  # noqa: E731
         else:
-            content_text: str = action.metadata.get("content", "")
-            writer = lambda p: file_ops.write_text(p, content_text)  # noqa: E731
+            content_text = action.metadata.get("content", "")
 
-        # Phase 3.2: track parent dirs that *this* action will implicitly
-        # create via write_text/write_bytes's `parents=True` mkdir.
-        # Without this, rollback deletes the file but leaves an empty
-        # parent dir (e.g. ``charts/`` from chart actions) hanging around.
-        # We record entries for each implicitly-created level BEFORE the
-        # file entry so reverse-iteration removes the file first, then
-        # the dir(s) inner-to-outer.
+        def _write_at(rel: str) -> None:
+            """Phase 28.2 closure — write the payload (text or bytes)
+            at ``rel`` through the Workspace facade. Captures the
+            already-decoded payload so the caller only chooses WHERE."""
+            if payload_bytes is not None:
+                self.workspace.write_bytes(rel, payload_bytes)
+            else:
+                self.workspace.write_text(rel, content_text or "")
+
+        # Phase 3.2: record implicit parent dirs the write will create.
         self._record_implicit_parents(target_abs, action.action_id, manifest)
 
         if overwrite and target_abs.is_file():
-            # Outline §13.3 "compensation strategy" for writes that aren't
-            # purely additive: move the existing file into the run's
-            # backups/ directory, then write the new content at the
-            # original path. Rollback's RESTORE_FROM_BACKUP undoes both
-            # steps atomically — even bytewise-identical restoration.
+            # Backup-before-overwrite. The backup directory is OUTSIDE
+            # the user workspace (sibling under run_store.backups_dir),
+            # so the move-to-backup stays on shutil — Workspace's job
+            # is only the workspace-side write that follows.
             backup_filename = f"{action.action_id}__{target_abs.name}"
             backup_abs = self.run_store.backups_dir / backup_filename
             backup_abs.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(target_abs), str(backup_abs))
-            writer(target_abs)
-            hash_after = sha256_file(target_abs) if target_abs.is_file() else None
-            rel = self._rel(target_abs)
-            manifest.generated_files.append(rel)
+            _write_at(target_rel)
+            hash_after = self.workspace.sha256(target_rel)
+            manifest.generated_files.append(target_rel)
             return (
                 None,
                 hash_after,
                 RollbackEntry(
                     action_id=action.action_id,
                     op=RollbackOpType.RESTORE_FROM_BACKUP,
-                    target_path=rel,
-                    # Phase 21.1: relative_to(run_dir) breaks for StageRunStore
-                    # (its backups_dir points to the PARENT run_dir's backups/,
-                    # which isn't a subpath of the stage's run_dir). Compute the
-                    # relative path against backups_dir.parent — that's run_dir
-                    # for a regular RunStore, parent.run_dir for a StageRunStore.
-                    # The rollback consumer always uses the parent RunStore, so
-                    # the resulting "backups/<file>" path resolves correctly.
+                    target_path=target_rel,
+                    # Phase 21.1 relative-path computation unchanged —
+                    # see existing comment for the StageRunStore quirk.
                     backup_path=str(
                         backup_abs.relative_to(self.run_store.backups_dir.parent).as_posix()
                     ),
@@ -556,20 +551,18 @@ class Executor:
                 ),
             )
 
-        # Default (and the path for first-time writes): refuse to clobber.
-        # ``safe_target`` auto-suffixes so we never silently overwrite.
-        chosen = file_ops.safe_target(target_abs)
-        writer(chosen)
-        hash_after = sha256_file(chosen) if chosen.is_file() else None
-        rel = self._rel(chosen)
-        manifest.generated_files.append(rel)
+        # Default path — auto-suffix on collision, write fresh.
+        chosen_rel = self.workspace.safe_target_rel(target_rel)
+        _write_at(chosen_rel)
+        hash_after = self.workspace.sha256(chosen_rel)
+        manifest.generated_files.append(chosen_rel)
         return (
             None,
             hash_after,
             RollbackEntry(
                 action_id=action.action_id,
                 op=RollbackOpType.DELETE_CREATED_FILE,
-                target_path=rel,
+                target_path=chosen_rel,
                 metadata={"after_hash": hash_after} if hash_after else {},
             ),
         )
@@ -728,7 +721,9 @@ class Executor:
                 f"action {action.action_id}: FETCH requires metadata.url "
                 f"starting with 'https://', got {url!r}"
             )
-        target_abs = resolve_inside(self.workspace_root, action.target_path or "")
+        # Phase 28.2 — payload write routes through Workspace.
+        target_rel = action.target_path or ""
+        target_abs = resolve_inside(self.workspace_root, target_rel)
         self._record_implicit_parents(target_abs, action.action_id, manifest)
 
         req = urllib.request.Request(
@@ -744,17 +739,16 @@ class Executor:
                 f"action {action.action_id}: FETCH {url!r} failed: {type(exc).__name__}: {exc}"
             ) from exc
 
-        file_ops.write_bytes(target_abs, payload)
-        hash_after = sha256_file(target_abs) if target_abs.is_file() else None
-        rel = self._rel(target_abs)
-        manifest.generated_files.append(rel)
+        self.workspace.write_bytes(target_rel, payload)
+        hash_after = self.workspace.sha256(target_rel)
+        manifest.generated_files.append(target_rel)
         return (
             None,
             hash_after,
             RollbackEntry(
                 action_id=action.action_id,
                 op=RollbackOpType.DELETE_CREATED_FILE,
-                target_path=rel,
+                target_path=target_rel,
                 metadata={"after_hash": hash_after, "fetch_url": url}
                 if hash_after
                 else {"fetch_url": url},

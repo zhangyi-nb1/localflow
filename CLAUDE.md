@@ -139,17 +139,17 @@ Phase 23 已经定下命名纪律，扩展到全项目：
 - **改造**：execute 阶段从 batch-顺序 改为 step-by-step LLM-loop（已批 plan 范围内 +/- N 步漂移）
 - **不走** 全面 LLM-loop（会丢掉 LocalFlow 的差异化变成 OpenHands 的弱复制品）
 
-### Phase 顺序（已锁定 Phase 24-26）
+### Phase 顺序（已锁定 Phase 24-28）
 
 1. ~~清理当前 Phase 23 未提交工作 → 发 v0.23.0~~ ✅ 2026-05-24
 2. ~~Phase 25.0/25.1/25.2/25.3/25.5/25.6 = ActionEvent + observation + repair feedback~~ ✅ 2026-05-24
-3. **Phase 26 = 阶段内 react loop（v0.24.0）** — 设计见 [docs/PHASE_26_DESIGN.md](docs/PHASE_26_DESIGN.md)
-   - Phase 26.0 schema-only PR（LoopDecision + ReactConfig + 3 trace events）
-   - Phase 26.1 react loop 核心 + demo eval
-   - Phase 26.2 drift budget + failsafes
-   - Phase 26.3 Recipe 集成 + Phase 23 ComputeAction reachability gap 修复
-4. Phase 27（候选）= ConfirmationPolicy + Workspace 抽象
-5. Phase 28+（候选）= harness 内核拆独立包
+3. ~~Phase 26 = 阶段内 react loop（v0.24.0）~~ ✅ 2026-05-24
+4. ~~Phase 27 = ConfirmationPolicy 4-tier 审批（v0.25.0）~~ ✅ 2026-05-24
+5. ~~Phase 28 = Workspace 抽象（v0.26.0）~~ ✅ 2026-05-25 —
+   `LocalWorkspace` + injection seam；executor 全部 fs 写入走 facade
+6. **Phase 29 = DockerWorkspace（候选 v0.27.0）** — Docker 容器隔离运行；
+   复用 Phase 28 的 Workspace Protocol 作为 drop-in
+7. Phase 30+（候选）= RemoteWorkspace / harness 内核拆独立包
 
 后续 Phase 在前置 Phase 落地后再写细节计划。
 
