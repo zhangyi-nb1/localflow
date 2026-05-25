@@ -17,9 +17,8 @@ optional — they only help YOU stay organized.
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
 
-from app.schemas import ActionPlan, SkillManifest, TaskSpec, WorkspaceSnapshot, VerificationResult
+from app.schemas import ActionPlan, SkillManifest, TaskSpec, VerificationResult, WorkspaceSnapshot
 from app.schemas.action import Action, ActionType, RiskLevel
 from app.skills._base import Skill
 

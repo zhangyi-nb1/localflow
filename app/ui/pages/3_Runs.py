@@ -60,7 +60,7 @@ def main() -> None:
                     t("runs.status.executed") if r["has_manifest"] else t("runs.status.planned")
                 ),
                 t("runs.table.col.verify"): _verify_label(r["verify_passed"]),
-                t("runs.table.col.trace"): r["trace_count"] or "—",
+                t("runs.table.col.trace"): str(r["trace_count"]) if r["trace_count"] else "—",
                 t("runs.table.col.rollback"): (
                     t("runs.rollback.available") if r["has_manifest"] else t("runs.rollback.none")
                 ),

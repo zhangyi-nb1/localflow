@@ -186,3 +186,76 @@ class TestViewsArePartitionsNotOverlapping:
         assert len(store.audit_view()) == 0
         # But the raw reader sees it.
         assert len(store.read_trace_events()) == 1
+
+
+class TestAuditViewMergesAuditJsonl:
+    """Phase 25.5 + 27 follow-up — audit_view() returns the union of
+    trace.jsonl orchestration rows AND audit.jsonl entries, sorted by
+    timestamp. This closes the previous gap where ``task.created.ui``
+    / ``execute.start/end`` were invisible to audit_view consumers."""
+
+    def test_audit_jsonl_rows_appear_in_view(self, store: RunStore):
+        store.audit_log_path.parent.mkdir(parents=True, exist_ok=True)
+        _seed_trace(
+            store.audit_log_path,
+            [
+                {
+                    "ts": "2026-05-25T00:00:01Z",
+                    "event": "task.created.ui",
+                    "payload": {"task_id": "t-1", "goal": "demo"},
+                },
+                {
+                    "ts": "2026-05-25T00:00:02Z",
+                    "event": "execute.start",
+                    "payload": {"task_id": "t-1"},
+                },
+            ],
+        )
+        rows = store.audit_view()
+        events = [r["event"] for r in rows]
+        assert "task.created.ui" in events
+        assert "execute.start" in events
+
+    def test_merged_rows_sorted_by_timestamp(self, store: RunStore):
+        store.audit_log_path.parent.mkdir(parents=True, exist_ok=True)
+        _seed_trace(
+            store.trace_path,
+            [
+                {
+                    "ts": "2026-05-25T00:00:03Z",
+                    "event": "llm.call.start",
+                    "payload": {},
+                }
+            ],
+        )
+        _seed_trace(
+            store.audit_log_path,
+            [
+                {
+                    "ts": "2026-05-25T00:00:01Z",
+                    "event": "task.created.ui",
+                    "payload": {},
+                },
+                {
+                    "ts": "2026-05-25T00:00:05Z",
+                    "event": "execute.end",
+                    "payload": {},
+                },
+            ],
+        )
+        rows = store.audit_view()
+        events = [r["event"] for r in rows]
+        # Sorted chronologically across both sources.
+        assert events == ["task.created.ui", "llm.call.start", "execute.end"]
+
+    def test_audit_view_handles_missing_audit_file(self, store: RunStore):
+        """If audit.jsonl doesn't exist, the merger falls back to
+        the trace-only subset (current behaviour)."""
+        _seed_trace(
+            store.trace_path,
+            [{"ts": "t", "event": "llm.call.end", "payload": {}}],
+        )
+        # audit_log_path does NOT exist.
+        rows = store.audit_view()
+        assert len(rows) == 1
+        assert rows[0]["event"] == "llm.call.end"

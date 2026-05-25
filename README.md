@@ -5,11 +5,14 @@
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/zhangyi-nb1/localflow/blob/main/pyproject.toml)
 [![Release](https://img.shields.io/github/v/tag/zhangyi-nb1/localflow?label=release)](https://github.com/zhangyi-nb1/localflow/releases)
 
-> **Branch status** — `main` is **v0.22.0-dev** (Phases 17–22
-> productisation arc merged but not yet tagged). Latest tagged release:
-> **v0.16.1**. To run the v0.22 feature set today, install from source
-> (`pip install -e ".[all]"`). The next tag will cut the Phase 17–22
-> work as v0.22.0.
+> **Branch status** — `main` is **v0.25.x-dev**. Latest tagged
+> releases: **v0.25.0** (Phase 27 ConfirmationPolicy — 4-tier
+> per-action approval), **v0.24.0** (Phase 26 React Loop — stage-spine
+> + step-by-step LLM mid-execute decisions), **v0.23.0** (Phase 23
+> Sandboxed ComputeAction). The full set installs via
+> `pip install -e ".[all]"`. See [`docs/PHASES.md`](docs/PHASES.md)
+> for the per-phase ledger and `docs/PHASE_2{3,5,6,7}_DESIGN.md` /
+> `docs/REACT_LOOP.md` for the user-facing surface.
 
 **LocalFlow is a local-first Agent Execution Harness.**
 It lets LLM agents work on real local workspaces through typed plans,

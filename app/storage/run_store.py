@@ -232,17 +232,37 @@ class RunStore:
         ]
 
     def audit_view(self) -> list[dict]:
-        """Filter trace.jsonl to user-meaningful orchestration events
-        (LLM calls, repair triggers, plan revisions, ComputeAction
-        lifecycle, MCP token mints).
+        """Phase 25.5 + 27 follow-up — merge trace.jsonl orchestration
+        rows and audit.jsonl entries into a single timestamp-sorted
+        history. Both files use the same ``{ts, event, payload}``
+        on-disk shape, so the merger is a concat + sort.
 
-        Note: ``task.created.ui`` and ``execute.start/end`` are still
-        only in audit.jsonl — they were never routed through the
-        TraceLogger. Until Phase 27 dual-writes those events into the
-        trace stream, prefer ``audit_log_path`` for full audit history
-        and ``audit_view()`` for the trace-aware subset.
+        Sources:
+          - trace.jsonl rows whose ``event`` is in ``_AUDIT_EVENTS``
+            (LLM calls / repair triggers / plan revisions /
+            ComputeAction lifecycle / MCP token mints).
+          - Every audit.jsonl entry (`task.created.ui`,
+            `execute.start/end`, `approval.decision`,
+            `confirmation_policy.selected`, etc.).
         """
-        return [row for row in self.read_trace_events() if row.get("event") in self._AUDIT_EVENTS]
+        rows = [row for row in self.read_trace_events() if row.get("event") in self._AUDIT_EVENTS]
+        audit_path = self.audit_log_path
+        if audit_path.exists():
+            import json as _json
+
+            try:
+                for line in audit_path.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rows.append(_json.loads(line))
+                    except _json.JSONDecodeError:
+                        continue
+            except OSError:
+                pass
+        rows.sort(key=lambda r: r.get("ts") or "")
+        return rows
 
     # -- Phase 10 multi-stage artifacts --------------------------------
 

@@ -79,9 +79,9 @@ def test_workspace_stats_plan_summarizes_categories(tmp_path: Path) -> None:
     pattern for "deep" tests: contract handles lifecycle conformance, your
     own tests inspect skill-specific shape.
     """
-    from app.schemas import TaskSpec, WorkspaceSnapshot
-    from app.tools.file_scan import scan_workspace
+    from app.schemas import TaskSpec
     from app.storage.run_store import RunStore
+    from app.tools.file_scan import scan_workspace
 
     ws = tmp_path / "ws"
     ws.mkdir()
