@@ -37,6 +37,16 @@ SESSION_TOKEN_KEY = "last_minted_token"
 SESSION_DRY_RUN_KEY = "dry_run_markdown"
 SESSION_WS_SOURCE_KEY = "ws_source_mode"  # "sandbox" | "custom"
 SESSION_UNSAFE_KEY = "unsafe_mode_enabled"  # sticky across page navigations
+WORKSPACE_SCOPED_SESSION_KEYS = (
+    SESSION_TASK_KEY,
+    SESSION_TOKEN_KEY,
+    SESSION_DRY_RUN_KEY,
+    "_last_dry_assessment",
+    "_rb_preview",
+    "approval_checkbox",
+    "exec_task_select",
+    "rb_task_select",
+)
 
 
 def _resolve_unsafe() -> bool:
@@ -124,14 +134,10 @@ def render_sandbox_sidebar() -> Path | None:
 
         st.header(t("sidebar.workspace.header"))
 
-        # Active-workspace badge: always visible, computed from session.
-        active_raw = st.session_state.get(SESSION_WORKSPACE_KEY)
-        if active_raw:
-            st.markdown(f"{t('sidebar.workspace.active_label')} `{active_raw}`")
-        else:
-            st.markdown(
-                f"{t('sidebar.workspace.active_label')} {t('sidebar.workspace.none_active')}"
-            )
+        # Fill this placeholder after the picker has had a chance to
+        # update session_state, while keeping the badge visually above
+        # the picker.
+        active_badge = st.empty()
         st.caption(
             t(
                 "sidebar.workspace.sandbox_root_caption",
@@ -141,6 +147,8 @@ def render_sandbox_sidebar() -> Path | None:
 
         # Source radio — sandbox vs custom path.
         selected = _render_source_radio(unsafe)
+        selected = _sync_workspace_selection(selected)
+        _render_active_workspace_badge(active_badge)
 
         if st.button(t("sidebar.refresh"), help=t("sidebar.refresh_help")):
             st.rerun()
@@ -148,12 +156,35 @@ def render_sandbox_sidebar() -> Path | None:
         st.divider()
         _render_memory_summary()
 
-    # Persist the choice. Only overwrite when the radio produced a
-    # value — otherwise leave the prior selection so a page change
-    # doesn't blow it away.
-    if selected is not None:
-        st.session_state[SESSION_WORKSPACE_KEY] = str(selected)
     return selected
+
+
+def _sync_workspace_selection(selected: Path | None) -> Path | None:
+    """Persist the selected workspace and clear stale task-scoped UI state.
+
+    Plan / Execute / Rollback share ``current_task_id`` and preview
+    state. If the workspace changes without clearing those keys, the UI
+    can show a prior task from another workspace until a later rerun.
+    """
+    if selected is None:
+        return None
+
+    selected_raw = str(selected)
+    previous_raw = st.session_state.get(SESSION_WORKSPACE_KEY)
+    if previous_raw != selected_raw:
+        for key in WORKSPACE_SCOPED_SESSION_KEYS:
+            st.session_state.pop(key, None)
+    st.session_state[SESSION_WORKSPACE_KEY] = selected_raw
+    return selected
+
+
+def _render_active_workspace_badge(target) -> None:
+    """Render the active workspace label into a Streamlit placeholder."""
+    active_raw = st.session_state.get(SESSION_WORKSPACE_KEY)
+    if active_raw:
+        target.markdown(f"{t('sidebar.workspace.active_label')} `{active_raw}`")
+        return
+    target.markdown(f"{t('sidebar.workspace.active_label')} {t('sidebar.workspace.none_active')}")
 
 
 def _preseed_default_workspace() -> None:
