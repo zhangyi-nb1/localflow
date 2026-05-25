@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from app.agent.client import LLMClient
     from app.harness.approval import ApprovalDecision
     from app.schemas import ConfirmationPolicy, ReactConfig
+    from app.tools.workspace import Workspace
 from app.schemas.action import Action, ActionType
 from app.schemas.compute import ComputeAction, ComputeOutcomeStatus
 from app.schemas.rollback import RollbackOpType
@@ -72,6 +73,7 @@ class Executor:
         trace: TraceLogger | None = None,
         scratch_workspace: ScratchWorkspace | None = None,
         sandbox_runtime: SandboxRuntime | None = None,
+        workspace: "Workspace | None" = None,
     ) -> None:
         self.workspace_root = workspace_root.resolve()
         self.run_store = run_store
@@ -79,6 +81,17 @@ class Executor:
         self.forbidden_paths = forbidden_paths
         self.exec_log = JsonlLogger(run_store.execution_log_path)
         self.audit = AuditLogger(run_store.audit_log_path)
+        # Phase 28.1 — Workspace facade for all user-side filesystem
+        # mutations. Default = LocalWorkspace pointed at workspace_root
+        # (preserves v0.25.x behaviour exactly); callers can inject a
+        # different implementation (Phase 29 DockerWorkspace, tests'
+        # spy workspaces, etc.).
+        if workspace is None:
+            from app.tools.workspace import LocalWorkspace
+
+            self.workspace = LocalWorkspace(self.workspace_root)
+        else:
+            self.workspace = workspace
         # Phase 9 — optional trace stream. None = no-op (back-compat
         # with v0.9.1 callers; library tests that don't care about
         # trace see identical behaviour).
@@ -406,42 +419,45 @@ class Executor:
     def _do_mkdir(
         self, action: Action, manifest: RollbackManifest
     ) -> tuple[None, None, RollbackEntry | None]:
-        target_abs = resolve_inside(self.workspace_root, action.target_path or "")
-        created = file_ops.mkdir(target_abs)
+        # Phase 28.1 — routed through Workspace facade. The rel_path
+        # is what plan/policy_guard already validated; LocalWorkspace
+        # re-validates via resolve_inside before touching disk.
+        target_rel = action.target_path or ""
+        created = self.workspace.mkdir(target_rel)
         if not created:
             return None, None, None
-        rel = self._rel(target_abs)
-        manifest.created_dirs.append(rel)
+        manifest.created_dirs.append(target_rel)
         return (
             None,
             None,
             RollbackEntry(
                 action_id=action.action_id,
                 op=RollbackOpType.DELETE_CREATED_DIR,
-                target_path=rel,
+                target_path=target_rel,
             ),
         )
 
     def _do_move(
         self, action: Action, manifest: RollbackManifest
     ) -> tuple[str | None, str | None, RollbackEntry]:
-        source_abs = resolve_inside(self.workspace_root, action.source_path or "")
-        if not source_abs.exists():
+        # Phase 28.1 — same flow as before, routed through Workspace.
+        source_rel = action.source_path or ""
+        target_rel = action.target_path or ""
+        if not self.workspace.exists(source_rel):
             raise FileNotFoundError(f"source missing: {action.source_path}")
-        target_abs = resolve_inside(self.workspace_root, action.target_path or "")
-        chosen = file_ops.safe_target(target_abs)
-        hash_before = sha256_file(source_abs) if source_abs.is_file() else None
-        manifest.file_hashes_before[self._rel(source_abs)] = hash_before or ""
-        final = file_ops.move(source_abs, chosen)
-        hash_after = sha256_file(final) if final.is_file() else None
+        chosen_rel = self.workspace.safe_target_rel(target_rel)
+        hash_before = self.workspace.sha256(source_rel)
+        manifest.file_hashes_before[source_rel] = hash_before or ""
+        self.workspace.move(source_rel, chosen_rel)
+        hash_after = self.workspace.sha256(chosen_rel)
         return (
             hash_before,
             hash_after,
             RollbackEntry(
                 action_id=action.action_id,
                 op=RollbackOpType.MOVE_BACK,
-                source_path=self._rel(final),
-                target_path=self._rel(source_abs),
+                source_path=chosen_rel,
+                target_path=source_rel,
                 metadata={"after_hash": hash_after} if hash_after else {},
             ),
         )
@@ -449,23 +465,23 @@ class Executor:
     def _do_copy(
         self, action: Action, manifest: RollbackManifest
     ) -> tuple[str | None, str | None, RollbackEntry]:
-        source_abs = resolve_inside(self.workspace_root, action.source_path or "")
-        if not source_abs.exists():
+        # Phase 28.1 — same flow, routed through Workspace.
+        source_rel = action.source_path or ""
+        target_rel = action.target_path or ""
+        if not self.workspace.exists(source_rel):
             raise FileNotFoundError(f"source missing: {action.source_path}")
-        target_abs = resolve_inside(self.workspace_root, action.target_path or "")
-        chosen = file_ops.safe_target(target_abs)
-        hash_before = sha256_file(source_abs) if source_abs.is_file() else None
-        final = file_ops.copy(source_abs, chosen)
-        hash_after = sha256_file(final) if final.is_file() else None
-        rel = self._rel(final)
-        manifest.generated_files.append(rel)
+        chosen_rel = self.workspace.safe_target_rel(target_rel)
+        hash_before = self.workspace.sha256(source_rel)
+        self.workspace.copy(source_rel, chosen_rel)
+        hash_after = self.workspace.sha256(chosen_rel)
+        manifest.generated_files.append(chosen_rel)
         return (
             hash_before,
             hash_after,
             RollbackEntry(
                 action_id=action.action_id,
                 op=RollbackOpType.DELETE_CREATED_FILE,
-                target_path=rel,
+                target_path=chosen_rel,
                 metadata={"after_hash": hash_after} if hash_after else {},
             ),
         )

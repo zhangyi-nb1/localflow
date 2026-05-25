@@ -110,6 +110,15 @@ class Workspace(Protocol):
 
     def write_bytes(self, rel_path: str, content: bytes) -> Path: ...
 
+    def safe_target_rel(self, rel_path: str) -> str:
+        """Return a workspace-relative path that does NOT collide with
+        an existing file. ``foo.txt`` → ``foo.txt`` if free, else
+        ``foo (1).txt`` / ``foo (2).txt`` / ...
+
+        Used by the executor's MOVE / COPY dispatch to auto-suffix
+        instead of silently overwriting. Implementations MAY scope the
+        existence check to a remote runtime."""
+
 
 # --------------------------------------------------------------------- LocalWorkspace
 
@@ -207,3 +216,18 @@ class LocalWorkspace:
 
     def write_bytes(self, rel_path: str, content: bytes) -> Path:
         return file_ops.write_bytes(self._abs(rel_path), content)
+
+    def safe_target_rel(self, rel_path: str) -> str:
+        """Auto-suffix a colliding rel_path. Delegates to
+        ``file_ops.safe_target`` for the actual name logic, then
+        converts the absolute result back to a workspace-relative
+        path string. The relpath conversion is best-effort — if the
+        result somehow falls outside the workspace (shouldn't happen
+        on LocalWorkspace), the original ``rel_path`` is returned to
+        let downstream validation reject it cleanly."""
+        abs_path = self._abs(rel_path)
+        chosen = file_ops.safe_target(abs_path)
+        try:
+            return chosen.relative_to(self._root).as_posix()
+        except ValueError:
+            return rel_path
