@@ -105,6 +105,7 @@ def render_sandbox_sidebar() -> Path | None:
         across page switches.
     """
     unsafe = _resolve_unsafe()
+    _preseed_default_workspace()
 
     # v0.22.x — Streamlit's auto-generated nav reads labels straight
     # from the page filenames ("0_Create_Pack" → "Create Pack") with
@@ -155,6 +156,25 @@ def render_sandbox_sidebar() -> Path | None:
     return selected
 
 
+def _preseed_default_workspace() -> None:
+    """Make the first sidebar render agree with the picker default.
+
+    Streamlit renders top-to-bottom. Without this seed, the active
+    workspace badge can say "none selected" on first load while the
+    selectbox below has already defaulted to a sandbox workspace.
+    """
+    if st.session_state.get(SESSION_WORKSPACE_KEY):
+        return
+    if st.session_state.get(SESSION_WS_SOURCE_KEY, "sandbox") != "sandbox":
+        return
+    try:
+        first = next(iter(find_eligible_workspace_choices(unsafe_mode=False)), None)
+    except Exception:
+        first = None
+    if first is not None:
+        st.session_state[SESSION_WORKSPACE_KEY] = str(first)
+
+
 def _hide_streamlit_autonav() -> None:
     """Inject CSS that hides Streamlit's auto-generated sidebar page
     list. Without this, every page (Create Pack / Workspace / Runs /
@@ -167,8 +187,21 @@ def _hide_streamlit_autonav() -> None:
     st.markdown(
         """
         <style>
-          /* Streamlit ≥1.36 marks the auto-nav block with this testid. */
-          section[data-testid="stSidebarNav"] { display: none !important; }
+          /* Streamlit has moved the auto-nav between section/div/nav
+             wrappers across releases; hide every known wrapper/item
+             shape so only LocalFlow's translated nav remains. */
+          section[data-testid="stSidebarNav"],
+          div[data-testid="stSidebarNav"],
+          nav[data-testid="stSidebarNav"],
+          [data-testid="stSidebarNav"],
+          ul[data-testid="stSidebarNavItems"],
+          div[data-testid="stSidebarNavItems"],
+          [data-testid="stSidebarNavItems"] {
+            display: none !important;
+            height: 0 !important;
+            overflow: hidden !important;
+            visibility: hidden !important;
+          }
         </style>
         """,
         unsafe_allow_html=True,

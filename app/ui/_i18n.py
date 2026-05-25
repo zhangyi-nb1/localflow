@@ -215,8 +215,13 @@ _DICT: dict[str, dict[Lang, str]] = {
     "runs.table.col.workspace": {"en": "Workspace", "zh": "工作区"},
     "runs.table.col.status": {"en": "Status", "zh": "状态"},
     "runs.table.col.rollback": {"en": "Rollback", "zh": "撤销"},
+    "runs.table.col.trace": {"en": "Trace", "zh": "Trace"},
+    "runs.table.col.verify": {"en": "Verify", "zh": "校验"},
     "runs.status.executed": {"en": "✅ Executed", "zh": "✅ 已执行"},
     "runs.status.planned": {"en": "📋 Planned only", "zh": "📋 仅规划"},
+    "runs.status.verified": {"en": "✅ passed", "zh": "✅ 通过"},
+    "runs.status.failed": {"en": "❌ failed", "zh": "❌ 未通过"},
+    "runs.status.unverified": {"en": "—", "zh": "—"},
     "runs.rollback.available": {"en": "available", "zh": "可撤销"},
     "runs.rollback.none": {"en": "—", "zh": "—"},
     "runs.action.open_rollback": {
@@ -231,6 +236,26 @@ _DICT: dict[str, dict[Lang, str]] = {
         "en": "_(no final report on disk for this task)_",
         "zh": "_(该任务没有最终报告文件)_",
     },
+    "runs.detail.heading": {
+        "en": "### Run evidence: `{task_id}`",
+        "zh": "### 运行证据：`{task_id}`",
+    },
+    "runs.detail.run_dir": {
+        "en": "Run directory: `{path}`",
+        "zh": "运行目录：`{path}`",
+    },
+    "runs.detail.trace_events": {"en": "Trace events", "zh": "Trace 事件"},
+    "runs.detail.artifact_count": {"en": "Artifacts", "zh": "产物文件"},
+    "runs.detail.rollback_entries": {"en": "Rollback entries", "zh": "回滚条目"},
+    "runs.detail.dry_run": {"en": "Dry-run preview", "zh": "Dry-run 预览"},
+    "runs.detail.verify_report": {"en": "Verify report", "zh": "校验报告"},
+    "runs.detail.trace": {"en": "Trace tail ({n} events)", "zh": "Trace 末尾（{n} 条事件）"},
+    "runs.detail.rollback": {"en": "Rollback manifest", "zh": "回滚清单"},
+    "runs.detail.artifacts": {"en": "Artifacts on disk", "zh": "磁盘产物"},
+    "runs.detail.missing": {"en": "_Not recorded for this run._", "zh": "_本次运行未记录。_"},
+    "runs.detail.trace_missing": {"en": "_No trace events found._", "zh": "_未找到 trace 事件。_"},
+    "runs.detail.verify_passed": {"en": "Check: ✅ PASSED", "zh": "校验：✅ 通过"},
+    "runs.detail.verify_failed": {"en": "Check: ❌ FAILED", "zh": "校验：❌ 未通过"},
     # ───────────────────────── home page ─────────────────────────
     "home.hero.tagline": {
         "en": "Let agents act locally through typed plans, preview, approval, checks, trace, repair, and rollback.",
@@ -434,10 +459,13 @@ _DICT: dict[str, dict[Lang, str]] = {
     "plan.summary.col.type": {"en": "type", "zh": "类型"},
     "plan.summary.col.path": {"en": "source → target", "zh": "源 → 目标"},
     "plan.summary.col.risk": {"en": "risk", "zh": "风险"},
-    "plan.summary.col.approve": {"en": "approve?", "zh": "需审批？"},
+    "plan.summary.col.will_run": {"en": "will run?", "zh": "会执行？"},
+    "plan.summary.col.approval": {"en": "approval gate", "zh": "审批门槛"},
     "plan.summary.col.reason": {"en": "reason", "zh": "原因"},
     "plan.summary.approve.yes": {"en": "yes", "zh": "是"},
     "plan.summary.approve.no": {"en": "no", "zh": "否"},
+    "plan.summary.gate.required": {"en": "required", "zh": "需要"},
+    "plan.summary.gate.none": {"en": "no extra gate", "zh": "无额外门槛"},
     "plan.last_plan.expander": {
         "en": "Last plan: {task_id}",
         "zh": "上一次规划：{task_id}",
@@ -564,6 +592,22 @@ _DICT: dict[str, dict[Lang, str]] = {
         "en": "To re-run on a fresh state, create a new task from the **📋 Plan** page.",
         "zh": "如要在干净的状态下重新跑，请回到 **📋 Plan** 新建一个 task。",
     },
+    "execute.done.goto_rollback": {
+        "en": "↺ Open Rollback",
+        "zh": "↺ 打开回滚",
+    },
+    "execute.done.artifacts": {
+        "en": "Run artifacts",
+        "zh": "运行产物",
+    },
+    "execute.done.trace": {
+        "en": "Trace ({n} events)",
+        "zh": "Trace（{n} 条事件）",
+    },
+    "execute.done.trace_missing": {
+        "en": "No `trace.jsonl` found for this run.",
+        "zh": "本次运行没有找到 `trace.jsonl`。",
+    },
     "execute.stage1.header": {"en": "Stage 1 — Preview", "zh": "阶段 1 — 预览"},
     "execute.stage1.button": {"en": "🔍 Show preview", "zh": "🔍 生成预览"},
     "execute.stage1.spinner": {
@@ -597,8 +641,8 @@ _DICT: dict[str, dict[Lang, str]] = {
         "zh": "Policy guard 拦住了一个或多个动作（见上方警告）。Execute 会拒绝运行。",
     },
     "execute.stage2.checkbox": {
-        "en": "✅ I've reviewed every action above and consent to commit them.",
-        "zh": "✅ 我已审阅上述每个动作并同意提交。",
+        "en": "I reviewed every action above and consent to commit them.",
+        "zh": "我已审阅上述每个动作并同意提交。",
     },
     "execute.stage3.header": {
         "en": "Stage 3 — Execute + Verify",
@@ -1105,6 +1149,42 @@ _DICT: dict[str, dict[Lang, str]] = {
         ),
     },
     "pack.cards.run_button": {"en": "▶ Run {title}", "zh": "▶ 运行 {title}"},
+    # ── Pack preview + approval
+    "pack.preview.heading": {
+        "en": "### Preview pack: {title}",
+        "zh": "### 预览交付包：{title}",
+    },
+    "pack.preview.caption": {
+        "en": "Review the TaskGraph contract before LocalFlow writes to the workspace.",
+        "zh": "在 LocalFlow 写入工作区前，先审阅 TaskGraph 合约。",
+    },
+    "pack.preview.failed": {
+        "en": "Pack preview failed: {err_type}: {err}",
+        "zh": "交付包预览失败：{err_type}：{err}",
+    },
+    "pack.preview.col_stage": {"en": "stage", "zh": "阶段"},
+    "pack.preview.col_title": {"en": "title", "zh": "标题"},
+    "pack.preview.col_skill": {"en": "capability", "zh": "能力"},
+    "pack.preview.col_planner": {"en": "planner", "zh": "规划器"},
+    "pack.preview.col_failure": {"en": "failure policy", "zh": "失败策略"},
+    "pack.preview.col_outputs": {"en": "outputs", "zh": "产物数"},
+    "pack.preview.outputs": {
+        "en": "Expected deliverables",
+        "zh": "预期交付物",
+    },
+    "pack.preview.verifiers": {
+        "en": "Verifiers ({n})",
+        "zh": "校验器（{n}）",
+    },
+    "pack.preview.checkbox": {
+        "en": "I reviewed this TaskGraph and approve running the pack.",
+        "zh": "我已审阅这个 TaskGraph，并确认运行该交付包。",
+    },
+    "pack.preview.run_button": {
+        "en": "🚀 Run approved pack",
+        "zh": "🚀 运行已确认的交付包",
+    },
+    "pack.preview.cancel_button": {"en": "Cancel", "zh": "取消"},
     # ── Pack execution + result (Phase 17)
     "pack.exec.running": {
         "en": "Running pack `{name}` ({stages} stages)…",

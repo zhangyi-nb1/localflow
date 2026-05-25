@@ -105,6 +105,7 @@ def main() -> None:
         preferences["naming_style"] = prefs.naming_style.value
 
     store = RunStore.create()
+    trace = TraceLogger(store.trace_path)
     task = TaskSpec(
         task_id=store.task_id,
         user_goal=goal,
@@ -149,14 +150,14 @@ def main() -> None:
             plan = skill_obj.plan(task, snapshot)
         else:
             with st.spinner(t("plan.spinner.llm")):
-                plan = skill_obj.plan_with_llm(task, snapshot)
+                plan = skill_obj.plan_with_llm(task, snapshot, trace=trace)
         skill_obj.validate(plan)
         store.save_plan(plan)
     except (SkillError, Exception) as exc:
         st.error(t("plan.error.planning_failed", err_type=type(exc).__name__, err=str(exc)))
         return
 
-    assessment = control_loop.run_risk_check(task, plan)
+    assessment = control_loop.run_risk_check(task, plan, trace=trace)
     st.session_state[SESSION_TASK_KEY] = task.task_id
 
     _render_plan_summary(task, plan, assessment, snapshot)
@@ -325,7 +326,8 @@ def _render_plan_summary(task, plan, assessment, snapshot) -> None:
 
     if plan.actions:
         yes_label = t("plan.summary.approve.yes")
-        no_label = t("plan.summary.approve.no")
+        gate_required = t("plan.summary.gate.required")
+        gate_none = t("plan.summary.gate.none")
         rows = []
         for i, a in enumerate(plan.actions, start=1):
             rows.append(
@@ -334,7 +336,10 @@ def _render_plan_summary(task, plan, assessment, snapshot) -> None:
                     t("plan.summary.col.type"): a.action_type.value,
                     t("plan.summary.col.path"): _format_path_pair(a.source_path, a.target_path),
                     t("plan.summary.col.risk"): a.risk_level.value,
-                    t("plan.summary.col.approve"): yes_label if a.requires_approval else no_label,
+                    t("plan.summary.col.will_run"): yes_label,
+                    t("plan.summary.col.approval"): (
+                        gate_required if a.requires_approval else gate_none
+                    ),
                     t("plan.summary.col.reason"): (
                         (a.reason[:80] + "…") if len(a.reason) > 80 else a.reason
                     ),

@@ -86,7 +86,7 @@ def _render_pack_card(recipe: RecipeSpec, *, workspace_ready: bool) -> None:
             key=f"home_pack_try_{recipe.name}",
             type="primary",
             disabled=not workspace_ready,
-            use_container_width=True,
+            width="stretch",
         )
         if clicked:
             st.session_state[_PACK_SELECT_KEY] = recipe.name

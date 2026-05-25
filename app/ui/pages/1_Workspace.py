@@ -67,7 +67,7 @@ def main() -> None:
             for f in shown
         ]
     )
-    st.dataframe(df, hide_index=True, use_container_width=True)
+    st.dataframe(df, hide_index=True, width="stretch")
     if len(files) > _MAX_FILES_SHOWN:
         st.caption(
             t(

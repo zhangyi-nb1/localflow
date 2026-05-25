@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from app.harness.rollback import Rollback
+from app.harness.trace import TraceLogger
 from app.storage.run_store import RunStore, localflow_home
 from app.ui._i18n import t
 from app.ui._layout import (
@@ -32,8 +33,9 @@ def main() -> None:
     store = RunStore(task_id=task_id)
     task = store.load_task()
     manifest = store.load_rollback()
+    trace = TraceLogger(store.trace_path)
 
-    rb = Rollback(workspace_root=Path(task.workspace_root), run_store=store)
+    rb = Rollback(workspace_root=Path(task.workspace_root), run_store=store, trace=trace)
 
     st.subheader(t("rollback.preview.title", task_id=task_id))
     if st.button(t("rollback.preview.button"), type="primary"):
@@ -143,9 +145,23 @@ def _pick_rollbackable_task() -> str | None:
         st.info(t("rollback.no_runs_ws"))
         return None
 
+    session_task = st.session_state.get("current_task_id")
+    default_idx = 0
+    for i, (tid, _) in enumerate(candidates):
+        if tid == session_task:
+            default_idx = i
+            break
+
     labels = [lbl for _, lbl in candidates]
-    chosen_label = st.selectbox(t("rollback.select.label"), options=labels, key="rb_task_select")
-    return candidates[labels.index(chosen_label)][0]
+    chosen_label = st.selectbox(
+        t("rollback.select.label"),
+        options=labels,
+        index=default_idx,
+        key="rb_task_select",
+    )
+    chosen = candidates[labels.index(chosen_label)][0]
+    st.session_state["current_task_id"] = chosen
+    return chosen
 
 
 def _render_outcome(outcome) -> None:

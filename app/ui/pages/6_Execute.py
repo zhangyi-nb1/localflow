@@ -7,6 +7,7 @@ from pathlib import Path
 import streamlit as st
 
 from app.harness import control_loop
+from app.harness.trace import TraceLogger
 from app.mcp.approval import ApprovalError, mint_token, validate_and_consume
 from app.schemas import ExecutionStatus
 from app.storage.run_store import RunStore, localflow_home
@@ -47,6 +48,7 @@ def main() -> None:
 
     task = store.load_task()
     plan = store.load_plan()
+    trace = TraceLogger(store.trace_path)
 
     if store.exists(store.VERIFY_JSON):
         st.success(t("execute.task.done", task_id=task_id))
@@ -54,6 +56,7 @@ def main() -> None:
         st.markdown(f"{t('execute.verifier_badge')} {status_badge(verification.passed)}")
         st.caption(verification.summary)
         st.divider()
+        _render_completed_task_actions(task_id, store)
         st.info(t("execute.task.done_hint"))
         return
 
@@ -62,9 +65,9 @@ def main() -> None:
     if st.button(t("execute.stage1.button"), type="primary"):
         with st.spinner(t("execute.stage1.spinner")):
             try:
-                assessment = control_loop.run_risk_check(task, plan)
-                md = control_loop.run_dry_run(task, plan, assessment, store)
-                token = mint_token(store, workspace_root=task.workspace_root)
+                assessment = control_loop.run_risk_check(task, plan, trace=trace)
+                md = control_loop.run_dry_run(task, plan, assessment, store, trace=trace)
+                token = mint_token(store, workspace_root=task.workspace_root, trace=trace)
                 st.session_state[SESSION_DRY_RUN_KEY] = md
                 st.session_state[SESSION_TOKEN_KEY] = token.token
                 st.session_state["_last_dry_assessment"] = {
@@ -94,7 +97,7 @@ def main() -> None:
                 for w in info["warnings"]:
                     st.warning(w)
         with st.expander(t("execute.stage1.preview_expander"), expanded=True):
-            st.markdown(st.session_state[SESSION_DRY_RUN_KEY])
+            st.markdown(_dry_run_markdown_for_ui(st.session_state[SESSION_DRY_RUN_KEY]))
     else:
         st.info(t("execute.stage1.hint"))
         return
@@ -132,7 +135,12 @@ def main() -> None:
 
         try:
             with st.spinner(t("execute.stage3.token_validate")):
-                validate_and_consume(store, token_str, workspace_root=task.workspace_root)
+                validate_and_consume(
+                    store,
+                    token_str,
+                    workspace_root=task.workspace_root,
+                    trace=trace,
+                )
             with st.spinner(t("execute.stage3.executing")):
                 snapshot = store.load_workspace()
                 if enable_semantic:
@@ -149,11 +157,25 @@ def main() -> None:
                             approved=True,
                             enable_semantic=True,
                             max_auto_repairs=max_auto_repairs,
+                            trace=trace,
                         )
                     )
                 else:
-                    outcome = control_loop.run_execute(task, plan, store, approved=True)
-                    verification = control_loop.run_verify(task, plan, store, outcome, snapshot)
+                    outcome = control_loop.run_execute(
+                        task,
+                        plan,
+                        store,
+                        approved=True,
+                        trace=trace,
+                    )
+                    verification = control_loop.run_verify(
+                        task,
+                        plan,
+                        store,
+                        outcome,
+                        snapshot,
+                        trace=trace,
+                    )
         except ApprovalError as exc:
             st.error(t("execute.stage3.approval_err", err=str(exc)))
             return
@@ -180,16 +202,11 @@ def main() -> None:
             _render_semantic_panel(semantic, repair_outcome)
 
         if verification.passed:
-            st.success(t("execute.success", task_id=task_id, path=str(store.run_dir)))
-            col_btn, _ = st.columns([1, 3])
-            if col_btn.button(
-                t("execute.button.goto_rollback"),
-                type="primary",
-                key="goto_rollback_btn",
-            ):
-                st.session_state["_nav_to_rollback"] = True
-                st.rerun()
-            st.caption(t("execute.caption.goto_rollback"))
+            st.session_state[SESSION_TASK_KEY] = task_id
+            st.session_state.pop(SESSION_TOKEN_KEY, None)
+            st.session_state.pop(SESSION_DRY_RUN_KEY, None)
+            st.session_state.pop("_last_dry_assessment", None)
+            st.rerun()
         else:
             st.error(
                 t("execute.fail.verifier")
@@ -199,6 +216,64 @@ def main() -> None:
 
         # Clear the now-consumed token from session
         st.session_state.pop(SESSION_TOKEN_KEY, None)
+
+
+def _dry_run_markdown_for_ui(md: str) -> str:
+    """Clarify that the dry-run table's gate column is per-action.
+
+    The on-disk dry-run artifact is produced by the harness; the UI
+    renders a safer label without changing the persisted trace input.
+    """
+    out: list[str] = []
+    for line in md.splitlines():
+        if line == "| # | Type | Source | Target | Risk | Approve? | Reason |":
+            out.append("| # | Type | Source | Target | Risk | Approval gate | Reason |")
+            continue
+        if line == "|---|------|--------|--------|------|----------|--------|":
+            out.append("|---|------|--------|--------|------|---------------|--------|")
+            continue
+        if not line.startswith("| "):
+            out.append(line)
+            continue
+        parts = line.split("|")
+        # ["", " # ", " Type ", ..., " Approve? ", " Reason ", ""]
+        if len(parts) == 9:
+            gate = parts[6].strip()
+            if gate == "yes":
+                parts[6] = " required "
+            elif gate == "no":
+                parts[6] = " no extra gate "
+            line = "|".join(parts)
+        out.append(line)
+    return "\n".join(out)
+
+
+def _render_completed_task_actions(task_id: str, store: RunStore) -> None:
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if store.exists(store.ROLLBACK_JSON):
+            if st.button(
+                t("execute.done.goto_rollback"),
+                key=f"execute_done_rollback_{task_id}",
+                type="primary",
+            ):
+                st.session_state[SESSION_TASK_KEY] = task_id
+                st.switch_page("pages/7_Rollback.py")
+    with col2:
+        with st.expander(t("execute.done.artifacts"), expanded=False):
+            for path in sorted(p for p in store.run_dir.iterdir() if p.is_file()):
+                st.markdown(f"- `{path.name}`")
+    with col3:
+        rows = store.read_trace_events()
+        label = t("execute.done.trace", n=len(rows))
+        with st.expander(label, expanded=False):
+            if not rows:
+                st.warning(t("execute.done.trace_missing"))
+            else:
+                import json as _json
+
+                preview = "\n".join(_json.dumps(row, ensure_ascii=False) for row in rows[-20:])
+                st.code(preview, language="json")
 
 
 def _render_semantic_panel(semantic, repair_outcome) -> None:

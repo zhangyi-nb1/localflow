@@ -46,6 +46,7 @@ from app.ui._layout import (
 )
 
 PACK_RUN_KEY = "_pack_run_request"
+PACK_PREVIEW_KEY = "_pack_preview_request"
 PACK_RESULT_KEY = "_pack_last_result"
 # Home → Pack handoff: when the landing page's "Try X" button is
 # clicked, it stashes the recipe name here so we auto-expand the
@@ -78,6 +79,11 @@ def main() -> None:
     _render_suggest_block(recipes, workspace)
     st.divider()
     _render_recipe_cards(recipes)
+
+    preview = st.session_state.get(PACK_PREVIEW_KEY)
+    if preview is not None:
+        st.divider()
+        _render_pack_preview(preview, workspace)
 
     # If a previous render queued a pack run, execute it now (after
     # the cards rendered so the user sees what's running).
@@ -178,7 +184,7 @@ def _render_suggest_block(recipes: list[RecipeSpec], workspace) -> None:
                 key="pack_goal_run_btn",
                 type="primary",
             ):
-                st.session_state[PACK_RUN_KEY] = {
+                st.session_state[PACK_PREVIEW_KEY] = {
                     "recipe_name": result.recipe_name,
                     "enable_repair": False,
                 }
@@ -220,7 +226,7 @@ def _render_suggest_block(recipes: list[RecipeSpec], workspace) -> None:
                 ]
             )
             with st.expander(t("pack.goal.router_audit_title"), expanded=False):
-                st.dataframe(df, hide_index=True, use_container_width=True)
+                st.dataframe(df, hide_index=True, width="stretch")
 
 
 def _render_recipe_cards(recipes: list[RecipeSpec]) -> None:
@@ -294,11 +300,90 @@ def _render_recipe_cards(recipes: list[RecipeSpec]) -> None:
                     key=f"pack_run_{r.name}",
                     type="primary",
                 ):
-                    st.session_state[PACK_RUN_KEY] = {
+                    st.session_state[PACK_PREVIEW_KEY] = {
                         "recipe_name": r.name,
                         "enable_repair": enable_repair,
                     }
                     st.rerun()
+
+
+def _render_pack_preview(request: dict, workspace) -> None:
+    """Render the TaskGraph contract before the user approves execution."""
+    import pandas as pd
+
+    registry = get_default_registry()
+    try:
+        recipe = registry.get(request["recipe_name"])
+        if request.get("enable_repair"):
+            recipe = recipe.model_copy(
+                update={"repair_policy": recipe.repair_policy.model_copy(update={"enabled": True})}
+            )
+        graph = recipe.compile_to_taskgraph(
+            workspace_root=str(workspace),
+            locale=current_locale(),
+        )
+    except Exception as exc:  # noqa: BLE001 — keep the UI renderable
+        st.error(t("pack.preview.failed", err_type=type(exc).__name__, err=str(exc)))
+        return
+
+    st.markdown(t("pack.preview.heading", title=recipe.title))
+    st.caption(t("pack.preview.caption"))
+    df = pd.DataFrame(
+        [
+            {
+                t("pack.preview.col_stage"): s.stage_id,
+                t("pack.preview.col_title"): s.title,
+                t("pack.preview.col_skill"): s.skill,
+                t("pack.preview.col_planner"): s.planner,
+                t("pack.preview.col_failure"): s.failure_policy.value,
+                t("pack.preview.col_outputs"): len(s.expected_outputs),
+            }
+            for s in graph.stages
+        ]
+    )
+    st.dataframe(
+        df,
+        hide_index=True,
+        width="stretch",
+        column_config={
+            t("pack.preview.col_stage"): st.column_config.TextColumn(width="medium"),
+            t("pack.preview.col_title"): st.column_config.TextColumn(width="large"),
+            t("pack.preview.col_skill"): st.column_config.TextColumn(width="medium"),
+            t("pack.preview.col_planner"): st.column_config.TextColumn(width="small"),
+            t("pack.preview.col_failure"): st.column_config.TextColumn(width="small"),
+            t("pack.preview.col_outputs"): st.column_config.NumberColumn(width="small"),
+        },
+    )
+
+    with st.expander(t("pack.preview.outputs"), expanded=False):
+        for path in recipe.expected_outputs:
+            st.markdown(f"- `{path}`")
+    with st.expander(t("pack.preview.verifiers", n=len(recipe.verifiers)), expanded=False):
+        if recipe.verifiers:
+            for verifier in recipe.verifiers:
+                st.markdown(f"- `{verifier}`")
+        else:
+            st.markdown(t("pack.cards.verifiers_none"))
+
+    approved = st.checkbox(
+        t("pack.preview.checkbox"),
+        key=f"pack_preview_approve_{recipe.name}",
+    )
+    cols = st.columns([1, 1, 3])
+    with cols[0]:
+        if st.button(
+            t("pack.preview.run_button"),
+            key=f"pack_preview_run_{recipe.name}",
+            type="primary",
+            disabled=not approved,
+        ):
+            st.session_state[PACK_RUN_KEY] = dict(request)
+            st.session_state.pop(PACK_PREVIEW_KEY, None)
+            st.rerun()
+    with cols[1]:
+        if st.button(t("pack.preview.cancel_button"), key=f"pack_preview_cancel_{recipe.name}"):
+            st.session_state.pop(PACK_PREVIEW_KEY, None)
+            st.rerun()
 
 
 def _execute_pack(request: dict, workspace) -> None:
@@ -456,7 +541,7 @@ def _render_result(result: dict) -> None:
             for s in result["stages"]
         ]
     )
-    st.dataframe(df, hide_index=True, use_container_width=True)
+    st.dataframe(df, hide_index=True, width="stretch")
 
     # Phase 21.1 — recipe-level verifier verdicts. Mirrors what
     # ``localflow pack run`` prints after stage execution.
@@ -488,7 +573,7 @@ def _render_result(result: dict) -> None:
                 for v in verification["verdicts"]
             ]
         )
-        st.dataframe(vdf, hide_index=True, use_container_width=True)
+        st.dataframe(vdf, hide_index=True, width="stretch")
 
     # Phase 21.1 — auto-repair attempts table.
     repair = result.get("repair")
@@ -530,7 +615,7 @@ def _render_result(result: dict) -> None:
                 for a in repair["attempts"]
             ]
         )
-        st.dataframe(rdf, hide_index=True, use_container_width=True)
+        st.dataframe(rdf, hide_index=True, width="stretch")
 
     st.info(t("pack.result.rollback_hint", run_id=result["task_id"]))
 
