@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pandas as pd
@@ -157,11 +158,23 @@ def _pick_rollbackable_task() -> str | None:
         t("rollback.select.label"),
         options=labels,
         index=default_idx,
-        key="rb_task_select",
+        key=_workspace_select_key("rb_task_select", current_ws),
     )
     chosen = candidates[labels.index(chosen_label)][0]
     st.session_state["current_task_id"] = chosen
     return chosen
+
+
+def _workspace_select_key(prefix: str, current_ws: str | None) -> str:
+    """Keep rollback task selectbox widget state scoped to the active workspace."""
+    if not current_ws:
+        return f"{prefix}::all"
+    try:
+        raw = str(Path(current_ws).resolve())
+    except (OSError, RuntimeError):
+        raw = current_ws
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+    return f"{prefix}::{digest}"
 
 
 def _render_outcome(outcome) -> None:

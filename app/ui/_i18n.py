@@ -644,6 +644,10 @@ _DICT: dict[str, dict[Lang, str]] = {
         "en": "I reviewed every action above and consent to commit them.",
         "zh": "我已审阅上述每个动作并同意提交。",
     },
+    "execute.stage2.approved": {
+        "en": "Approval recorded. Execute is now enabled.",
+        "zh": "已记录授权，Execute 已解锁。",
+    },
     "execute.stage3.header": {
         "en": "Stage 3 — Execute + Verify",
         "zh": "阶段 3 — Execute + Verify（执行 + 校验）",

@@ -192,3 +192,65 @@ def test_resolve_unsafe_latches_to_session_state(monkeypatch) -> None:
     fake_st.session_state = {}
     fake_st.query_params = {}
     assert _layout._resolve_unsafe() is False
+
+
+# ---------------------------------------------------- workspace switch state reset
+
+
+def test_workspace_switch_clears_workspace_scoped_ui_state(monkeypatch, tmp_path: Path) -> None:
+    """Switching workspaces must not keep a prior task/preview selected.
+
+    Regression coverage for the UI showing a new active workspace while
+    Plan / Execute / Rollback still retained task state from the old one.
+    """
+
+    class _FakeStreamlit:
+        def __init__(self) -> None:
+            self.session_state: dict = {}
+
+    from app.ui import _layout
+
+    fake_st = _FakeStreamlit()
+    old_ws = tmp_path / "sandbox" / "old"
+    new_ws = tmp_path / "sandbox" / "new"
+    old_ws.mkdir(parents=True)
+    new_ws.mkdir()
+    fake_st.session_state = {
+        _layout.SESSION_WORKSPACE_KEY: str(old_ws),
+        _layout.SESSION_TASK_KEY: "2026-05-25-001",
+        _layout.SESSION_TOKEN_KEY: "tok",
+        _layout.SESSION_DRY_RUN_KEY: "dry run",
+        "_last_dry_assessment": {"passed": True},
+        "_rb_preview": object(),
+        "approval_checkbox": True,
+        "exec_task_select": "old label",
+        "rb_task_select": "old rollback label",
+    }
+    monkeypatch.setattr(_layout, "st", fake_st)
+
+    assert _layout._sync_workspace_selection(new_ws) == new_ws
+    assert fake_st.session_state[_layout.SESSION_WORKSPACE_KEY] == str(new_ws)
+    for key in _layout.WORKSPACE_SCOPED_SESSION_KEYS:
+        assert key not in fake_st.session_state
+
+
+def test_same_workspace_preserves_workspace_scoped_ui_state(monkeypatch, tmp_path: Path) -> None:
+    """A normal rerun on the same workspace should not clear active task state."""
+
+    class _FakeStreamlit:
+        def __init__(self) -> None:
+            self.session_state: dict = {}
+
+    from app.ui import _layout
+
+    fake_st = _FakeStreamlit()
+    ws = tmp_path / "sandbox" / "same"
+    ws.mkdir(parents=True)
+    fake_st.session_state = {
+        _layout.SESSION_WORKSPACE_KEY: str(ws),
+        _layout.SESSION_TASK_KEY: "2026-05-25-001",
+    }
+    monkeypatch.setattr(_layout, "st", fake_st)
+
+    assert _layout._sync_workspace_selection(ws) == ws
+    assert fake_st.session_state[_layout.SESSION_TASK_KEY] == "2026-05-25-001"

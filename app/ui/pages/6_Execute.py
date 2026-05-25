@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import streamlit as st
@@ -109,6 +110,8 @@ def main() -> None:
         return
 
     approved = st.checkbox(t("execute.stage2.checkbox"), key="approval_checkbox")
+    if approved:
+        st.success(t("execute.stage2.approved"))
 
     # Stage 3: execute (only enabled after approval)
     st.subheader(t("execute.stage3.header"))
@@ -363,11 +366,23 @@ def _pick_task() -> str | None:
         t("execute.task.label"),
         options=labels,
         index=default_idx,
-        key="exec_task_select",
+        key=_workspace_select_key("exec_task_select", current_ws),
     )
     chosen = candidates[labels.index(chosen_label)][0]
     st.session_state[SESSION_TASK_KEY] = chosen
     return chosen
+
+
+def _workspace_select_key(prefix: str, current_ws: str | None) -> str:
+    """Keep task selectbox widget state scoped to the active workspace."""
+    if not current_ws:
+        return f"{prefix}::all"
+    try:
+        raw = str(Path(current_ws).resolve())
+    except (OSError, RuntimeError):
+        raw = current_ws
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+    return f"{prefix}::{digest}"
 
 
 main()
