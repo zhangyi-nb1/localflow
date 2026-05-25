@@ -7,8 +7,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from app.agent.client import LLMClient
-    from app.schemas import ReactConfig
+    from app.harness.approval import ApprovalDecision
+    from app.schemas import ConfirmationPolicy, ReactConfig
+    from app.schemas.action import Action
 
 from app.harness.action_validator import validate_plan_structure
 from app.harness.approval import ApprovalDecision, ask_approval
@@ -154,10 +158,12 @@ def run_execute(
     react_mode: bool = False,
     react_config: "ReactConfig | None" = None,
     llm_client: "LLMClient | None" = None,
+    confirmation_policy: "ConfirmationPolicy | None" = None,
+    action_approver: "Callable[[Action], ApprovalDecision] | None" = None,
 ) -> ExecutionOutcome:
-    """Phase 26.2 — adds opt-in react_mode passthrough. When False
-    (default), executor uses v0.23.x batch path. When True, executor
-    consults the LLM between actions; see docs/REACT_LOOP.md."""
+    """Phase 26.2 — react_mode passthrough. Phase 27.1 — also threads
+    a per-action ConfirmationPolicy + approver callback. Both default
+    None = v0.24.x batch + auto-approve behaviour."""
     executor = Executor(
         workspace_root=Path(task.workspace_root),
         run_store=run_store,
@@ -172,6 +178,8 @@ def run_execute(
         react_mode=react_mode,
         react_config=react_config,
         llm_client=llm_client,
+        confirmation_policy=confirmation_policy,
+        action_approver=action_approver,
     )
 
 

@@ -512,11 +512,14 @@ def cmd_execute(
         console.print("[yellow]Execution cancelled.[/]")
         raise typer.Exit(code=1)
 
-    # Phase 27.0 — parse + validate --confirm-policy. The schema is
-    # parsed here for early failure; the policy is logged to audit
-    # so a follow-up Phase 27.1 wiring can pick it up without
-    # ambiguity about which run used which policy.
+    # Phase 27.0 schema + Phase 27.1 per-action wiring — parse +
+    # validate --confirm-policy, then thread the policy + an
+    # interactive approver callback through run_execute to the
+    # executor's per-action gate.
+    confirm_policy_obj = None
+    action_approver = None
     if confirm_policy is not None:
+        from app.harness.approval import ask_action_approval
         from app.schemas import ConfirmationPolicy, ConfirmationPolicyType
 
         try:
@@ -534,10 +537,17 @@ def cmd_execute(
             risk_threshold=confirm_policy_obj.risk_threshold.value,
         )
         console.print(
-            f"[cyan]confirm_policy={confirm_policy_obj.policy_type.value}[/]  "
-            "(per-action enforcement lands in Phase 27.1; "
-            "see docs/PHASE_27_DESIGN.md)"
+            f"[cyan]confirm_policy={confirm_policy_obj.policy_type.value}[/] "
+            "— per-action prompts will appear for gated actions "
+            "(see docs/PHASE_27_DESIGN.md)"
         )
+
+        def action_approver(action):  # noqa: E306,F811
+            return ask_action_approval(
+                action,
+                policy=confirm_policy_obj,
+                console=console,
+            )
 
     skill_obj = get_default_registry().require(task.skill)
 
@@ -591,6 +601,8 @@ def cmd_execute(
             react_mode=react,
             react_config=react_cfg,
             llm_client=llm_client,
+            confirmation_policy=confirm_policy_obj,
+            action_approver=action_approver,
         )
         verification = control_loop.run_verify(task, plan, store, outcome, snapshot, trace=trace)
         semantic = None

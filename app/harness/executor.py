@@ -24,8 +24,11 @@ from app.schemas import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from app.agent.client import LLMClient
-    from app.schemas import ReactConfig
+    from app.harness.approval import ApprovalDecision
+    from app.schemas import ConfirmationPolicy, ReactConfig
 from app.schemas.action import Action, ActionType
 from app.schemas.compute import ComputeAction, ComputeOutcomeStatus
 from app.schemas.rollback import RollbackOpType
@@ -96,9 +99,17 @@ class Executor:
         react_mode: bool = False,
         react_config: "ReactConfig | None" = None,
         llm_client: "LLMClient | None" = None,
+        confirmation_policy: "ConfirmationPolicy | None" = None,
+        action_approver: "Callable[[Action], ApprovalDecision] | None" = None,
     ) -> ExecutionOutcome:
         if not approved:
             raise RuntimeError("Executor refused: plan not approved")
+
+        # Phase 27.1 — store policy + approver so per-action dispatch
+        # can consult them. None for both = v0.24.x behaviour
+        # (all actions auto-approved past plan-level gate).
+        self._confirmation_policy = confirmation_policy
+        self._action_approver = action_approver
 
         # Phase 26.1 — opt-in react loop dispatch. Default react_mode=False
         # preserves v0.23.x batch behaviour for all existing callers /
@@ -182,6 +193,44 @@ class Executor:
                         status=ExecutionStatus.FAILED,
                         ended_at=_utcnow(),
                         error=f"policy_violation: {err}",
+                    )
+                )
+                all_ok = False
+                continue
+
+            # Phase 27.1 — per-action approval gate. When no policy is
+            # configured (None) the call is a no-op; otherwise we
+            # consult the policy + the optional caller-supplied
+            # approver. A rejected action lands as FAILED with
+            # status=blocked and the loop continues.
+            policy_decision = self._policy_check(action)
+            if policy_decision is not None and not policy_decision.approved:
+                self.exec_log.write(
+                    "action.end",
+                    {
+                        "action_id": action.action_id,
+                        "status": ExecutionStatus.FAILED.value,
+                        "error": f"policy_rejected: {policy_decision.reason}",
+                    },
+                )
+                self._emit_trace(
+                    TraceEventType.POLICY_CHECK,
+                    status="blocked",
+                    failure_type=FailureType.POLICY_BLOCKED,
+                    action_id=action.action_id,
+                    detail=f"user rejected via confirmation_policy: {policy_decision.reason}",
+                    payload={
+                        "task_id": plan.task_id,
+                        "policy_decision": policy_decision.reason,
+                    },
+                )
+                records.append(
+                    ExecutionRecord(
+                        run_id=run_id,
+                        action_id=action.action_id,
+                        status=ExecutionStatus.FAILED,
+                        ended_at=_utcnow(),
+                        error=f"user_rejected: {policy_decision.reason}",
                     )
                 )
                 all_ok = False
@@ -741,6 +790,38 @@ class Executor:
             return abs_path.resolve().relative_to(self.workspace_root).as_posix()
         except ValueError as exc:
             raise PolicyViolation(f"path outside workspace: {abs_path}") from exc
+
+    # -- Phase 27.1 confirmation policy gate --------------------------
+
+    def _policy_check(self, action: Action):
+        """Phase 27.1 — consult ``self._confirmation_policy`` for this
+        action. Returns None when no policy is wired (no-op = v0.24.x
+        behaviour) or when the policy auto-approves; otherwise calls
+        the configured ``_action_approver`` (or a safe default that
+        auto-rejects when no approver is provided to avoid a stuck
+        non-interactive run)."""
+        policy = getattr(self, "_confirmation_policy", None)
+        if policy is None:
+            return None
+        from app.harness.approval import (
+            ApprovalDecision,
+            policy_requires_confirmation,
+        )
+
+        if not policy_requires_confirmation(action, policy):
+            return ApprovalDecision(
+                approved=True,
+                reason=f"auto-approved by policy={policy.policy_type.value}",
+            )
+        approver = getattr(self, "_action_approver", None)
+        if approver is None:
+            # No approver wired — fail closed to avoid silently
+            # accepting an action a policy explicitly wanted to gate.
+            return ApprovalDecision(
+                approved=False,
+                reason="confirmation_policy gates this action but no approver wired",
+            )
+        return approver(action)
 
     # -- Phase 9 trace emission helper --------------------------------
 
