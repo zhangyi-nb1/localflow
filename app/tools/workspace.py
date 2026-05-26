@@ -231,3 +231,36 @@ class LocalWorkspace:
             return chosen.relative_to(self._root).as_posix()
         except ValueError:
             return rel_path
+
+
+# --------------------------------------------------------------------- factory
+
+
+def parse_workspace_spec(spec: str, *, workspace_root: Path) -> "Workspace":
+    """Phase 29.2 — turn a CLI / Recipe workspace string into a
+    concrete ``Workspace`` instance.
+
+    Supported specs:
+      - ``"local"`` (default) → ``LocalWorkspace(workspace_root)``
+      - ``"docker:<image>"`` → ``DockerWorkspace(image=<image>)``;
+        caller is responsible for calling ``.start()`` / ``.close()``
+        (the CLI wraps execution in a context manager).
+
+    Raises ``ValueError`` on an unrecognised prefix so the CLI can
+    surface a clear error before any action runs.
+    """
+    if spec in ("", "local"):
+        return LocalWorkspace(workspace_root)
+    if spec.startswith("docker:"):
+        from app.tools.docker_workspace import DockerWorkspace
+
+        image = spec[len("docker:") :].strip()
+        if not image:
+            raise ValueError(
+                "docker workspace spec missing image after 'docker:' — "
+                "try 'docker:python:3.12-slim'"
+            )
+        return DockerWorkspace(image=image)
+    raise ValueError(
+        f"unrecognised workspace spec {spec!r}; supported: 'local' (default), 'docker:<image>'"
+    )

@@ -474,6 +474,18 @@ def cmd_execute(
             "rename. See docs/PHASE_27_DESIGN.md."
         ),
     ),
+    workspace_spec: Optional[str] = typer.Option(
+        None,
+        "--workspace",
+        help=(
+            "Phase 29 — workspace backend. ``local`` (default) runs "
+            "against the host filesystem. ``docker:<image>`` runs the "
+            "workspace inside a Docker container; user files stay "
+            "isolated from the host until promoted. Requires Docker "
+            "installed. Example: ``--workspace docker:python:3.12-slim``. "
+            "See docs/DOCKER_WORKSPACE.md."
+        ),
+    ),
 ) -> None:
     """Approve and execute the plan. Records every change for rollback."""
     store = RunStore(task_id=task_id)
@@ -591,20 +603,68 @@ def cmd_execute(
             console.print(
                 f"[cyan]react_mode=ON[/]  drift_budget={react_max_drift}  (see docs/REACT_LOOP.md)"
             )
-        outcome = control_loop.run_execute(
-            task,
-            plan,
-            store,
-            approved=True,
-            resume=resume,
-            trace=trace,
-            react_mode=react,
-            react_config=react_cfg,
-            llm_client=llm_client,
-            confirmation_policy=confirm_policy_obj,
-            action_approver=action_approver,
-        )
-        verification = control_loop.run_verify(task, plan, store, outcome, snapshot, trace=trace)
+
+        # Phase 29.2 — optional --workspace docker:<image> backend.
+        # When supplied, parse + lifecycle-manage the workspace; when
+        # omitted, control_loop builds a default LocalWorkspace.
+        workspace_obj = None
+        if workspace_spec is not None:
+            from app.tools.docker_workspace import (
+                DockerUnavailable,
+                DockerWorkspace,
+            )
+            from app.tools.workspace import parse_workspace_spec
+
+            try:
+                workspace_obj = parse_workspace_spec(
+                    workspace_spec,
+                    workspace_root=Path(task.workspace_root),
+                )
+            except ValueError as exc:
+                console.print(f"[red]Invalid --workspace spec:[/] {exc}")
+                raise typer.Exit(code=2) from exc
+
+            # DockerWorkspace needs explicit lifecycle; LocalWorkspace
+            # is just-a-helper-object and needs no start/close.
+            if isinstance(workspace_obj, DockerWorkspace):
+                console.print(
+                    f"[cyan]workspace={workspace_spec}[/]  "
+                    "(workspace runs inside a Docker container; "
+                    "see docs/DOCKER_WORKSPACE.md)"
+                )
+                try:
+                    workspace_obj.start()
+                except DockerUnavailable as exc:
+                    console.print(f"[red]Docker not available:[/] {exc}")
+                    raise typer.Exit(code=2) from exc
+
+        try:
+            outcome = control_loop.run_execute(
+                task,
+                plan,
+                store,
+                approved=True,
+                resume=resume,
+                trace=trace,
+                react_mode=react,
+                react_config=react_cfg,
+                llm_client=llm_client,
+                confirmation_policy=confirm_policy_obj,
+                action_approver=action_approver,
+                workspace=workspace_obj,
+            )
+            verification = control_loop.run_verify(
+                task, plan, store, outcome, snapshot, trace=trace
+            )
+        finally:
+            # Phase 29.2 — always tear down a started DockerWorkspace,
+            # even on exception, so a crashed exec doesn't leave a
+            # container running. LocalWorkspace's close is a no-op.
+            if workspace_obj is not None and hasattr(workspace_obj, "close"):
+                try:
+                    workspace_obj.close()
+                except Exception:
+                    pass
         semantic = None
         repair_outcome = None
 

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.harness.approval import ApprovalDecision
     from app.schemas import ConfirmationPolicy, ReactConfig
     from app.schemas.action import Action
+    from app.tools.workspace import Workspace
 
 from app.harness.action_validator import validate_plan_structure
 from app.harness.approval import ApprovalDecision, ask_approval
@@ -160,16 +161,19 @@ def run_execute(
     llm_client: "LLMClient | None" = None,
     confirmation_policy: "ConfirmationPolicy | None" = None,
     action_approver: "Callable[[Action], ApprovalDecision] | None" = None,
+    workspace: "Workspace | None" = None,
 ) -> ExecutionOutcome:
     """Phase 26.2 — react_mode passthrough. Phase 27.1 — also threads
-    a per-action ConfirmationPolicy + approver callback. Both default
-    None = v0.24.x batch + auto-approve behaviour."""
+    a per-action ConfirmationPolicy + approver callback. Phase 29.2 —
+    optional ``workspace=`` injection (default = LocalWorkspace on
+    task.workspace_root). All None = v0.25.x batch behaviour."""
     executor = Executor(
         workspace_root=Path(task.workspace_root),
         run_store=run_store,
         forbidden_actions=tuple(task.forbidden_actions),
         forbidden_paths=tuple(task.forbidden_paths),
         trace=trace,
+        workspace=workspace,
     )
     return executor.execute(
         plan,

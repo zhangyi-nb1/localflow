@@ -147,9 +147,11 @@ Phase 23 已经定下命名纪律，扩展到全项目：
 4. ~~Phase 27 = ConfirmationPolicy 4-tier 审批（v0.25.0）~~ ✅ 2026-05-24
 5. ~~Phase 28 = Workspace 抽象（v0.26.0）~~ ✅ 2026-05-25 —
    `LocalWorkspace` + injection seam；executor 全部 fs 写入走 facade
-6. **Phase 29 = DockerWorkspace（候选 v0.27.0）** — Docker 容器隔离运行；
-   复用 Phase 28 的 Workspace Protocol 作为 drop-in
-7. Phase 30+（候选）= RemoteWorkspace / harness 内核拆独立包
+6. ~~Phase 29 = DockerWorkspace（v0.27.0）~~ ✅ 2026-05-26 —
+   `DockerWorkspace` + CLI `--workspace docker:<image>` + 容器生命周期
+   自动管理；CI 跨 OS（macOS skip / Linux + Windows run）
+7. Phase 30+（候选）= RemoteWorkspace / harness 内核拆独立包 /
+   HTTP agent-server（DockerWorkspace 性能优化）
 
 后续 Phase 在前置 Phase 落地后再写细节计划。
 

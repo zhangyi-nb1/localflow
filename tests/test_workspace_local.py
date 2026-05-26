@@ -13,7 +13,12 @@ from pathlib import Path
 import pytest
 
 from app.harness.policy_guard import PolicyViolation
-from app.tools.workspace import LocalWorkspace, Workspace, WorkspaceStat
+from app.tools.workspace import (
+    LocalWorkspace,
+    Workspace,
+    WorkspaceStat,
+    parse_workspace_spec,
+)
 
 
 @pytest.fixture
@@ -165,3 +170,40 @@ class TestPathTraversalDefence:
     def test_read_text_rejects_escape(self, workspace: Workspace):
         with pytest.raises(PolicyViolation):
             workspace.read_text("../etc/passwd")
+
+
+class TestParseWorkspaceSpec:
+    """Phase 29.2 — CLI / Recipe ``--workspace <spec>`` parser."""
+
+    def test_empty_string_returns_local(self, tmp_path: Path):
+        ws = parse_workspace_spec("", workspace_root=tmp_path)
+        assert isinstance(ws, LocalWorkspace)
+
+    def test_local_keyword_returns_local(self, tmp_path: Path):
+        ws = parse_workspace_spec("local", workspace_root=tmp_path)
+        assert isinstance(ws, LocalWorkspace)
+        assert ws.root == tmp_path.resolve()
+
+    def test_docker_prefix_returns_docker(self, tmp_path: Path):
+        from app.tools.docker_workspace import DockerWorkspace
+
+        ws = parse_workspace_spec("docker:python:3.12-slim", workspace_root=tmp_path)
+        assert isinstance(ws, DockerWorkspace)
+        assert ws.image == "python:3.12-slim"
+
+    def test_docker_prefix_with_custom_image(self, tmp_path: Path):
+        from app.tools.docker_workspace import DockerWorkspace
+
+        ws = parse_workspace_spec("docker:alpine:latest", workspace_root=tmp_path)
+        assert isinstance(ws, DockerWorkspace)
+        assert ws.image == "alpine:latest"
+
+    def test_docker_without_image_rejected(self, tmp_path: Path):
+        with pytest.raises(ValueError) as exc:
+            parse_workspace_spec("docker:", workspace_root=tmp_path)
+        assert "missing image" in str(exc.value)
+
+    def test_unknown_prefix_rejected(self, tmp_path: Path):
+        with pytest.raises(ValueError) as exc:
+            parse_workspace_spec("remote://host/path", workspace_root=tmp_path)
+        assert "unrecognised" in str(exc.value)

@@ -21,12 +21,14 @@ plan ──► dry-run ──► approval ──► execute ──► verify ─
                                                                   ¹ planned
 ```
 
-**Branch status** — `main` is **v0.26.x-dev**. Tagged releases:
+**Branch status** — `main` is **v0.27.x-dev**. Tagged releases:
+[`v0.27.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.27.0)
+(DockerWorkspace — container-isolated runtime) ·
 [`v0.26.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.26.0)
 (Workspace abstraction) · [`v0.25.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.25.0)
 (ConfirmationPolicy) · [`v0.24.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.24.0)
 (React Loop) · [`v0.23.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.23.0)
-(Sandboxed ComputeAction). **900 tests passing.** CI across macOS / Linux /
+(Sandboxed ComputeAction). **923 tests passing.** CI across macOS / Linux /
 Windows × Python 3.11 / 3.12 / 3.13.
 
 ---
