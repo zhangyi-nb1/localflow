@@ -82,7 +82,14 @@ class DockerWorkspaceError(RuntimeError):
 
 
 def _docker_available() -> bool:
-    """Probe whether ``docker`` CLI exists AND the daemon answers."""
+    """Probe whether ``docker`` CLI exists AND the daemon answers.
+
+    Additionally returns False when the daemon is in **Windows
+    containers mode** — DockerWorkspace only ships Linux container
+    images (``python:3.12-slim`` etc.), and a Windows-mode daemon
+    will fail every ``docker pull`` with "no matching manifest for
+    windows(...)". Detect early so tests / CLI fall back / skip
+    cleanly rather than fail per-operation."""
     try:
         result = subprocess.run(
             ["docker", "version", "--format", "{{.Server.Version}}"],
@@ -92,7 +99,25 @@ def _docker_available() -> bool:
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
-    return result.returncode == 0
+    if result.returncode != 0:
+        return False
+    # Probe daemon OSType — "linux" for Linux containers mode,
+    # "windows" for Windows containers mode. DockerWorkspace requires
+    # the linux mode; surface "not available" otherwise so callers
+    # don't waste time pulling images that have no matching manifest.
+    try:
+        info = subprocess.run(
+            ["docker", "info", "--format", "{{.OSType}}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    if info.returncode != 0:
+        return False
+    os_type = info.stdout.strip().lower()
+    return os_type == "linux"
 
 
 # Same shape as policy_guard's defence but reimplemented here so the
