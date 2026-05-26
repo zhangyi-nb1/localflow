@@ -160,12 +160,33 @@ class DockerWorkspace:
                 "Docker CLI / daemon not reachable. Install Docker Desktop / "
                 "Docker Engine, or fall back to LocalWorkspace."
             )
+
+        # Phase 29.0 fix — Windows Docker daemon (and some restricted
+        # configs) do NOT auto-pull missing images on ``docker run``.
+        # Pre-pulling with an extended timeout makes container start
+        # behaviour identical across CI platforms.
+        pull_timeout = max(self.exec_timeout_sec, 180)
+        pull_result = subprocess.run(
+            ["docker", "pull", self.image],
+            capture_output=True,
+            text=True,
+            timeout=pull_timeout,
+        )
+        if pull_result.returncode != 0:
+            raise DockerWorkspaceError(
+                f"failed to pull image {self.image!r}: {pull_result.stderr.strip()}",
+                stdout=pull_result.stdout,
+                stderr=pull_result.stderr,
+            )
+
         # Generate a unique container name so concurrent runs do not
         # collide on the host-side namespace.
         name = self.container_name or f"localflow-ws-{uuid.uuid4().hex[:8]}"
         self.container_name = name
         # ``sleep infinity`` keeps the container alive so subsequent
         # ``docker exec`` calls land on the same fs. ``-d`` detaches.
+        # The inline ``mkdir -p`` ensures the workspace root exists
+        # before any later exec — no need for a second mkdir below.
         cmd = [
             "docker",
             "run",
@@ -195,8 +216,11 @@ class DockerWorkspace:
                 stderr=result.stderr,
             )
         self.container_id = result.stdout.strip()
-        # Ensure the workspace root exists inside the container.
-        self._exec(["mkdir", "-p", self.workspace_root_inside])
+        # Phase 29.0 fix — set _started BEFORE any further _exec call.
+        # Previous order called _exec(["mkdir", ...]) here which
+        # _require_started rejected because _started was still False.
+        # The container's sh -c command above already created
+        # /workspace, so the extra mkdir was redundant anyway.
         self._started = True
 
     def close(self) -> None:
