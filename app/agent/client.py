@@ -2,61 +2,28 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any
+
+# Phase 30.1 — the Protocol + exception + dataclass moved into the kernel
+# package. We re-export them here so every existing
+# ``from app.agent.client import LLMClient`` keeps working. Concrete
+# clients (AnthropicClient, FakeLLMClient) stay in this module because
+# they pull in provider SDKs (the anthropic package) and other
+# application-layer concerns.
+from localflow_kernel.llm import LLMClient, LLMClientError, StructuredResponse
+
+__all__ = [
+    "LLMClient",
+    "LLMClientError",
+    "StructuredResponse",
+    "AnthropicClient",
+    "FakeLLMClient",
+    "DEFAULT_MODEL",
+    "DEFAULT_MAX_TOKENS",
+]
 
 DEFAULT_MODEL = "claude-opus-4-7"
 DEFAULT_MAX_TOKENS = 16000
-
-
-class LLMClientError(RuntimeError):
-    """Wraps any provider error so callers depend only on this exception."""
-
-
-class LLMClient(Protocol):
-    """Provider-agnostic interface for forced-tool-call structured output.
-
-    The contract: given a system prompt, a conversation, and a tool schema,
-    return the dict the model placed in the forced tool call's ``input``.
-    Implementations are free to use tool use, JSON mode, or grammar
-    constraints — callers see only the validated dict.
-
-    If ``on_delta`` is provided, implementations SHOULD stream the
-    response and invoke the callback with each incremental chunk of the
-    tool_call.arguments JSON string. This is a UX hint — callers use it
-    to show progressive output. Implementations that don't support
-    streaming can ignore it (calling it once at the end is acceptable).
-    """
-
-    def generate_structured(
-        self,
-        *,
-        system: str,
-        messages: list[dict[str, Any]],
-        tool_name: str,
-        tool_description: str,
-        tool_schema: dict[str, Any],
-        on_delta: Callable[[str], None] | None = None,
-    ) -> "StructuredResponse": ...
-
-
-@dataclass
-class StructuredResponse:
-    """Wraps the model's forced tool call along with audit metadata."""
-
-    tool_use_id: str
-    """ID of the tool_use block — needed to thread a tool_result on repair."""
-
-    payload: dict[str, Any]
-    """The dict the model placed in the tool_use ``input`` field."""
-
-    raw_assistant_content: list[dict[str, Any]] = field(default_factory=list)
-    """The full ``response.content`` echoed back into messages on repair."""
-
-    usage: dict[str, int] = field(default_factory=dict)
-    """Token counts: input / output / cache_read / cache_creation."""
-
-    stop_reason: str | None = None
 
 
 # --------------------------------------------------------------------- Anthropic

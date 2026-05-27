@@ -9,11 +9,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from app.agent.client import LLMClient
     from app.harness.approval import ApprovalDecision
     from app.schemas import ConfirmationPolicy, ReactConfig
     from app.schemas.action import Action
     from app.tools.workspace import Workspace
+    from localflow_kernel.llm import LLMClient
 
 from app.harness.action_validator import validate_plan_structure
 from app.harness.approval import ApprovalDecision, ask_approval

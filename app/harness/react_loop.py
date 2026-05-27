@@ -34,14 +34,6 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
-from app.agent.client import LLMClient, LLMClientError
-from app.agent.react_prompts import (
-    SYSTEM_PROMPT,
-    TOOL_DESCRIPTION,
-    TOOL_NAME,
-    build_loop_decision_tool_schema,
-    render_loop_user_prompt,
-)
 from app.schemas import (
     Action,
     ActionPlan,
@@ -52,6 +44,20 @@ from app.schemas import (
 )
 from app.schemas.execution import ExecutionRecord, ExecutionStatus
 from app.schemas.trace import FailureType, TraceEventType
+
+# Phase 30.1 — LLMClient Protocol now lives in localflow_kernel.llm.
+# react_loop is kernel-resident so it imports from the canonical kernel
+# location. Concrete provider clients (AnthropicClient / FakeLLMClient)
+# still live in app.agent.client and consume the Protocol from
+# localflow_kernel via a back-compat re-export.
+from localflow_kernel.llm import LLMClient, LLMClientError
+from localflow_kernel.react_prompts import (
+    SYSTEM_PROMPT,
+    TOOL_DESCRIPTION,
+    TOOL_NAME,
+    build_loop_decision_tool_schema,
+    render_loop_user_prompt,
+)
 
 if TYPE_CHECKING:
     from app.harness.executor import ExecutionOutcome, Executor

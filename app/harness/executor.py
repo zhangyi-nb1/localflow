@@ -26,10 +26,10 @@ from app.schemas import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from app.agent.client import LLMClient
     from app.harness.approval import ApprovalDecision
     from app.schemas import ConfirmationPolicy, ReactConfig
     from app.tools.workspace import Workspace
+    from localflow_kernel.llm import LLMClient
 from app.schemas.action import Action, ActionType
 from app.schemas.compute import ComputeAction, ComputeOutcomeStatus
 from app.schemas.rollback import RollbackOpType

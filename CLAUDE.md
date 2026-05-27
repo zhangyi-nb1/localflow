@@ -150,8 +150,11 @@ Phase 23 已经定下命名纪律，扩展到全项目：
 6. ~~Phase 29 = DockerWorkspace（v0.27.0）~~ ✅ 2026-05-26 —
    `DockerWorkspace` + CLI `--workspace docker:<image>` + 容器生命周期
    自动管理；CI 跨 OS（macOS skip / Linux + Windows run）
-7. Phase 30+（候选）= RemoteWorkspace / harness 内核拆独立包 /
-   HTTP agent-server（DockerWorkspace 性能优化）
+7. ~~Phase 30 = `localflow_kernel` 独立包（v0.28.0）~~ ✅ 2026-05-27 —
+   facade + `LLMClient`/`react_prompts` 物理迁入 kernel；`tests/test_kernel_boundary.py`
+   AST 静态边界 lint 永久守住；`docs/KERNEL_PACKAGE.md` 用户手册
+8. Phase 31+（候选）= 物理迁移 kernel 实现模块 / RemoteWorkspace /
+   HTTP agent-server（DockerWorkspace 性能优化） / PyPI 拆包
 
 后续 Phase 在前置 Phase 落地后再写细节计划。
 

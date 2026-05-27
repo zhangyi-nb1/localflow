@@ -100,7 +100,11 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["app"]
+# Phase 30.1 — ship the distributable kernel package alongside the
+# application package so `pip install localflow` exposes both
+# ``app.*`` and ``localflow_kernel.*`` (the kernel package is the
+# stable embedding surface; the app package is the front-end + skills).
+packages = ["app", "localflow_kernel"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
