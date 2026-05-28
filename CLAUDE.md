@@ -157,9 +157,16 @@ Phase 23 已经定下命名纪律，扩展到全项目：
    `RemoteWorkspace` + `parse_workspace_spec` 学会 `ssh:<host>[:<port>][:<root>]`；
    mock-subprocess 44 单元 + 2 ssh-actual 集成（_skip_no_ssh）；
    `docs/REMOTE_WORKSPACE.md` 用户手册；README ASCII art "Remote planned" → "Remote shipped"
-9. Phase 32+（候选）= HTTP agent-server（Docker + Remote 性能优化共享）/
-   物理迁移 kernel 实现模块到 `localflow_kernel/` / PyPI 拆包 /
-   SSH ControlMaster 复用连接
+9. ~~Phase 32 = HTTP agent-server（v0.30.0）~~ ✅ 2026-05-28 —
+   stdlib `http.server` + `urllib` 零新依赖；`AgentServer` + `AgentServerClient` +
+   `AgentServerWorkspace`（Workspace Protocol 实现）；shared-secret bearer token
+   `secrets.compare_digest` 防 timing 攻击；64 测试（34 protocol + 15 endpoint e2e
+   + 15 Workspace contract，含完整 Executor.execute roundtrip）；
+   `docs/AGENT_SERVER.md` 用户手册；明确 deferred：Docker/Remote 集成（Phase 33）
+10. Phase 33+（候选）= DockerWorkspace 集成 agent-server（perf 10x）/
+    RemoteWorkspace 集成 agent-server（ssh tunnel）/
+    keep-alive HTTP client / TLS + 多租户 /
+    物理迁移 kernel 实现模块到 `localflow_kernel/` / PyPI 拆包
 
 后续 Phase 在前置 Phase 落地后再写细节计划。
 

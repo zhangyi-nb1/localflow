@@ -21,7 +21,9 @@ plan ──► dry-run ──► approval ──► execute ──► verify ─
                                          the kernel.
 ```
 
-**Branch status** — `main` is **v0.29.x-dev**. Tagged releases:
+**Branch status** — `main` is **v0.30.x-dev**. Tagged releases:
+[`v0.30.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.30.0)
+(HTTP agent-server — long-lived Workspace backend) ·
 [`v0.29.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.29.0)
 (RemoteWorkspace — SSH-backed Workspace) ·
 [`v0.28.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.28.0)
@@ -32,7 +34,7 @@ plan ──► dry-run ──► approval ──► execute ──► verify ─
 (Workspace abstraction) · [`v0.25.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.25.0)
 (ConfirmationPolicy) · [`v0.24.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.24.0)
 (React Loop) · [`v0.23.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.23.0)
-(Sandboxed ComputeAction). **979 tests passing.** CI across macOS / Linux /
+(Sandboxed ComputeAction). **1043 tests passing.** CI across macOS / Linux /
 Windows × Python 3.11 / 3.12 / 3.13.
 
 > **Embedding the harness in your own tool?** The kernel is now a standalone
@@ -299,7 +301,7 @@ Full threat model + per-mitigation tests:
 
 ### Strategic / direction
 - [`docs/PROJECT_DIRECTION.md`](docs/PROJECT_DIRECTION.md) — harness-first project direction, the locked Route B decision
-- [`docs/PHASES.md`](docs/PHASES.md) — full per-phase changelog + §10.7 ledger (4 deliberate kernel exceptions / 38 deliveries / 34 zero-kernel-touch)
+- [`docs/PHASES.md`](docs/PHASES.md) — full per-phase changelog + §10.7 ledger (4 deliberate kernel exceptions / 39 deliveries / 35 zero-kernel-touch)
 - [`docs/research/OPENHANDS_HARNESS_STUDY.md`](docs/research/OPENHANDS_HARNESS_STUDY.md) — the 26 KB source-evidence study that motivated v0.24+
 
 ### Per-phase design / user-facing
@@ -311,6 +313,7 @@ Full threat model + per-mitigation tests:
 - [`docs/DOCKER_WORKSPACE.md`](docs/DOCKER_WORKSPACE.md) — Phase 29 DockerWorkspace user manual
 - [`docs/PHASE_30_DESIGN.md`](docs/PHASE_30_DESIGN.md) · [`docs/KERNEL_PACKAGE.md`](docs/KERNEL_PACKAGE.md) — Phase 30 `localflow_kernel` package
 - [`docs/PHASE_31_DESIGN.md`](docs/PHASE_31_DESIGN.md) · [`docs/REMOTE_WORKSPACE.md`](docs/REMOTE_WORKSPACE.md) — Phase 31 RemoteWorkspace (SSH)
+- [`docs/PHASE_32_DESIGN.md`](docs/PHASE_32_DESIGN.md) · [`docs/AGENT_SERVER.md`](docs/AGENT_SERVER.md) — Phase 32 HTTP agent-server
 
 ### Architecture / extension
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — 5-layer breakdown + 8 iron rules + extension guide
