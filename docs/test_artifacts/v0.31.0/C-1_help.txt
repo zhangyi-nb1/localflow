@@ -1,0 +1,30 @@
+│                  re-executes + re-verifies.                                  │
+│ verify           Re-run the independent verifier against current workspace   │
+│                  state.                                                      │
+│ rollback         Undo a previously-executed run using its rollback manifest. │
+│ status           List runs in the LocalFlow store, or show one task in       │
+│                  detail.                                                     │
+│ skills           List every registered skill (built-in + external) plus the  │
+│                  Phase 4.1 external-skill discovery audit.                   │
+│ tools            List every tool in the Phase 4.2 Tool Registry.             │
+│ ui-serve         Launch the Streamlit UI for LocalFlow (Phase 8.0 / v0.7.0). │
+│ mcp-serve        Start LocalFlow as an MCP server on stdio.                  │
+│ goal             Phase 18 — natural-language entry point.                    │
+│ skills-sig       v0.16 — skill registry + external skill signing.            │
+│ mcp-clients      v0.16 — manage external MCP servers (LocalFlow as MCP       │
+│                  client).                                                    │
+│ memory           Manage persistent user preferences (forbidden paths, naming │
+│                  style).                                                     │
+│ eval             Phase 9 (v0.10.0) — run eval tasks and report task-level    │
+│                  success.                                                    │
+│ taskgraph        Phase 10 (v0.11.0) — drive multi-stage tasks via static     │
+│                  graph YAML.                                                 │
+│ pack             Phase 17 (v0.17.0) — Recipe / Pack System. Recipes are      │
+│                  product-level deliverable packs (Research Pack, Data Report │
+│                  Pack, Project Handoff Pack) that compile down to a          │
+│                  TaskGraph. Users pick a pack instead of having to know      │
+│                  individual skill names.                                     │
+│ trace            Phase 25.2 — inspect the trace.jsonl event stream for a     │
+│                  run.                                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
