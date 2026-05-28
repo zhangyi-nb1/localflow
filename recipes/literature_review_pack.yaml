@@ -1,0 +1,89 @@
+# Phase 36 (v0.34.0) — Literature Review Pack: the flagship.
+#
+# PROJECT_DIRECTION §7 differentiation #7 (verify-as-gate) made concrete:
+# a harness-constrained generation produces a review, then a claim-level
+# GROUNDING GATE decides ship-or-rollback. Every claim in the synthesised
+# review must trace to a source fragment; ungrounded claims are flagged
+# for human review and, beyond the policy threshold, the artifact is
+# gated as not-shippable (exit code 3) and the synthesise stage is
+# replayed (auto-repair).
+#
+# Honesty (rule F): the *generation* stages need an LLM (the `agent`
+# skill) and degrade to SKIPPED without a key — in which case the
+# grounding gate also skips (no summaries to ground against). The gate's
+# behaviour is proven deterministically by the demo seed:
+#
+#   python examples/literature_review_pack/seed.py --check
+#
+# Usage:
+#   localflow pack describe literature_review_pack
+#   localflow pack run literature_review_pack --workspace ./my_papers/
+
+name: literature_review_pack
+title: Literature Review Pack
+description: |
+  Turn a batch of papers (PDFs / text) into a synthesised literature
+  review whose every claim is verified to trace back to a source
+  fragment. Ungrounded claims are flagged for human review; if too many
+  claims have no traceable source the review is gated as not-shippable
+  and rolled back / re-generated. This is the "verifiable LLM-artifact
+  pipeline" flagship: verify-as-gate, not a post-hoc dashboard.
+
+tags: [research, literature, review, grounding, provenance]
+
+input_expectation:
+  file_kinds: [pdf, text]
+  min_files: 2
+  require_any: [pdf, text]
+  keywords:
+    - paper
+    - papers
+    - review
+    - literature
+    - 论文
+    - 综述
+    - 文献
+    - research
+
+stages:
+  - stage_id: s1_organize
+    title: Categorise sources (papers / notes / misc)
+    skill: folder_organizer
+    planner: rule
+    expected_outputs:
+      - papers/index.md
+
+  - stage_id: s2_synthesize
+    title: Summarise each source + synthesise a grounded review via the LLM
+    skill: agent
+    planner: llm
+    # No LLM key? This stage degrades to SKIPPED; the grounding gate then
+    # also skips (no summaries/ to ground against). The deterministic
+    # demo seed proves the gate without a key.
+    failure_policy: skip
+    expected_outputs:
+      - review.md
+      - SOURCES.md
+
+expected_outputs:
+  - papers/index.md
+  - review.md
+  - SOURCES.md
+
+# Recipe-level verifiers run AFTER the pack finishes. The claim grounding
+# gate is the flagship's load-bearing check.
+verifiers:
+  - deliverable_completeness_verifier
+  - source_ledger_verifier
+  - claim_grounding_verifier
+
+repair_policy:
+  enabled: true
+  max_rounds: 2
+
+repair_target_map:
+  # Ungrounded claims trace back to the synthesise stage's prose —
+  # replay it with the grounding gate's hint.
+  claim_grounding_verifier: s2_synthesize
+  source_ledger_verifier: s2_synthesize
+  deliverable_completeness_verifier: s2_synthesize

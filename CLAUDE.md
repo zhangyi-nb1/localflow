@@ -182,12 +182,16 @@ Phase 23 已经定下命名纪律，扩展到全项目：
     `PROJECT_DIRECTION.md` Tracking Goal + Roadmap Bias + 差异化列表更新；
     UI Workspace backend 装饰性缺口**诚实降级**（不假驱动容器，改 spec-builder +
     CLI bridge）；README 双语开篇 + research_pack 叙述前置 flagship；零 kernel 触碰
-13. **Phase 36（下一步）= flagship 垂直落地：可验证文献综述**（详见
-    `docs/PHASE_35_PLAN.md` §6）—— grounding grader → execute gate +
-    rollback-on-fail + sources ledger evidence bundle + 含刻意植入幻觉的 demo +
-    eval（幻觉召回率 / grounded 误报率）。预期零 kernel 触碰。
-14. Phase 37（候选）= 六大失败模式 benchmark + 朴素 agent baseline 对照 +
-    README 公开数字表。
+13. ~~Phase 36 = flagship 垂直落地：可验证文献综述（v0.34.0）~~ ✅ 2026-05-29 —
+    `app/eval/grounding/` 引擎（`split_claims` + 双 `ClaimJudge`：Lexical 确定性基线 /
+    LLM 生产路径 + `evaluate_grounding` 闸门）；`claim_grounding_verifier` 接进 recipe
+    gate（exit 3 + auto-repair）+ `claim_grounding.json` / `review_queue.md` evidence bundle；
+    `recipes/literature_review_pack.yaml`（组合，非新原语）；
+    `examples/literature_review_pack/seed.py --check` 植入 2 幻觉、闸门精确抓出（recall 1.0 /
+    误报 0.0）；`docs/PHASE_36_DESIGN.md`。零 kernel 触碰。+23 测试（1070 → 1093）。
+14. **Phase 37（下一步）= 六大失败模式 benchmark + 朴素 agent baseline 对照 +
+    README 公开数字表**（详见 `docs/PHASE_35_PLAN.md` §6）。grounding eval
+    （recall/误报）已是第一个可复现数字。
 
 ### 方向细化（2026-05-29）——演示层收敛
 

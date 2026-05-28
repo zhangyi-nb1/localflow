@@ -17,9 +17,39 @@ bumps never do.
 
 ## [Unreleased]
 
-Phase 36 — flagship vertical: verifiable literature review (claim-level
-grounding grader → execute gate + rollback-on-fail + sources-ledger
-evidence bundle). See `docs/PHASE_35_PLAN.md` §6.
+Phase 37 — failure-mode benchmark + public numbers (naive tool-call
+agent baseline vs LocalFlow across the six failure modes). See
+`docs/PHASE_35_PLAN.md` §6.
+
+---
+
+## [0.34.0] — 2026-05-29
+
+**Phase 36 — flagship vertical: verifiable literature review**
+
+Makes the verify-as-gate flagship concrete, demoable, and measurable: a
+synthesised review is split into claims, each checked against the
+sources it should trace to; ungrounded claims are flagged for human
+review and, beyond threshold, the artifact is gated as not-shippable
+(ship-or-rollback).
+
+- New: `app.eval.grounding` engine — `split_claims` / `ground_review` /
+  `GroundingPolicy` / two `ClaimJudge` implementations (`LexicalClaimJudge`
+  deterministic baseline + `LLMClaimJudge` production). Pure, unit-tested,
+  no API key needed for the lexical path.
+- New: `claim_grounding_verifier` recipe verifier — plugs the engine into
+  the recipe gate (`recipe_verification.json` + `pack run` exit code 3 +
+  auto-repair replay). Writes a `claim_grounding.json` evidence bundle +
+  a `review_queue.md` human-review queue.
+- New: `recipes/literature_review_pack.yaml` flagship recipe (composition
+  of existing skills; degrades gracefully without an LLM key).
+- New: `examples/literature_review_pack/` demo — `seed.py --check` plants
+  two fabricated claims; the gate flags exactly those two (recall 1.0,
+  false-positive rate 0.0) and refuses to ship.
+- Zero kernel touches; +23 tests (1070 → 1093).
+
+Docs: [`docs/PHASE_36_DESIGN.md`](docs/PHASE_36_DESIGN.md),
+[`examples/literature_review_pack/README.md`](examples/literature_review_pack/README.md).
 
 ---
 

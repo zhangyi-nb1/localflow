@@ -28,7 +28,8 @@ files, never plan internals.
 """
 
 # Import side-effect: registers every built-in verifier on package load.
-from app.eval.recipe_verifiers import semantic, structural  # noqa: E402,F401
+# Phase 36 adds ``grounding`` (claim_grounding_verifier — the flagship gate).
+from app.eval.recipe_verifiers import grounding, semantic, structural  # noqa: E402,F401
 from app.eval.recipe_verifiers._registry import (
     RecipeVerifierError,
     RecipeVerifierNotFound,
