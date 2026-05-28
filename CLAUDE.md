@@ -170,9 +170,17 @@ Phase 23 已经定下命名纪律，扩展到全项目：
     `ssh -L` tunnel + stdin pipe bundle 启动；两端三态 fallback（handshake 超时 /
     bad token / Python ImportError → 自动回落到 exec-per-op）；per-op 延迟从
     ~100-300ms 降到 ~5-20ms；+13 测试（1043 → 1056）
-11. Phase 34+（候选）= keep-alive HTTP client / Unix domain socket transport /
+11. ~~Phase 34 = UI parity + CLI papercuts（v0.32.0）~~ ✅ 2026-05-28 —
+    `localflow --version` + `trace show <task_id>` 接受 positional；Plan page
+    planner radio + no-key 友好降级；Settings 加 "🛰 Workspace backend" tab
+    (4 backend grammar + parse_workspace_spec 验证 + memory schema v5 持久化)；
+    sidebar 显示当前 backend；headed Playwright 本地可观察验证（13 张截图）；
+    +6 测试（1056 → 1062）；E2E 报告 4/4 finding 全部修复
+12. Phase 34.5+（候选）= 把持久化的 workspace_backend_spec 真接到 Plan/Execute
+    页面的 Executor 实例化（目前只保存不消费）/ Execute page React 模式 +
+    ConfirmationPolicy 选择器 / keep-alive HTTP client / Unix domain socket /
     TLS + 多租户 agent-server / 物理迁移 kernel 实现模块到 `localflow_kernel/` /
-    PyPI 拆包 / 实测 benchmark 写进文档
+    PyPI 拆包 / 实测 benchmark
 
 后续 Phase 在前置 Phase 落地后再写细节计划。
 

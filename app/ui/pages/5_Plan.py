@@ -13,6 +13,8 @@ for CLI / MCP callers but are no longer surfaced in the UI.
 
 from __future__ import annotations
 
+import os
+
 import pandas as pd
 import streamlit as st
 
@@ -83,7 +85,38 @@ def main() -> None:
         st.markdown(t("plan.goal.empty_hint"))
 
     skill_name = skill_choice.name
-    planner = planner_choice.name
+
+    # Phase 34.1 — F-4 fix. Explicit planner radio + no-key fallback.
+    # Previously the page silently called the LLM planner when
+    # autodetect said so, even without ANTHROPIC_API_KEY set, which
+    # hung the spinner indefinitely. Now:
+    #   1. Detect whether a key is set (cheap; just an env-var check).
+    #   2. If not set, force planner=rule + show a hint linking to
+    #      Settings (where users can paste a key).
+    #   3. If set, expose a radio (rule / llm) defaulting to the
+    #      autodetect choice. Users can override.
+    has_llm_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    autodetect_planner_name = planner_choice.name
+    if not has_llm_key:
+        planner = "rule"
+        st.info(
+            "🔒 No `ANTHROPIC_API_KEY` detected — defaulting to the rule planner "
+            "(fast, deterministic, no LLM call). To use the LLM planner, set "
+            "the key in your shell and reload."
+        )
+    else:
+        planner = st.radio(
+            "Planner",
+            options=["rule", "llm"],
+            index=0 if autodetect_planner_name == "rule" else 1,
+            horizontal=True,
+            help=(
+                "**rule** = deterministic, ~0.3s, no LLM. **llm** = ~20s, "
+                "Anthropic API. Autodetect suggested "
+                f"**{autodetect_planner_name}** for this goal."
+            ),
+            key="plan_planner_radio",
+        )
 
     submitted = st.button(t("plan.button.create"), type="primary", key="plan_submit")
     if not submitted:

@@ -153,10 +153,36 @@ def render_sandbox_sidebar() -> Path | None:
         if st.button(t("sidebar.refresh"), help=t("sidebar.refresh_help")):
             st.rerun()
 
+        # Phase 34.2 — F-3 fix. Surface the active Workspace backend
+        # (Local / Docker / Remote) right above the Memory summary so
+        # every page makes it obvious which executor the buttons drive.
+        _render_workspace_backend_badge()
+
         st.divider()
         _render_memory_summary()
 
     return selected
+
+
+def _render_workspace_backend_badge() -> None:
+    """Phase 34.2 — small badge that names the active Workspace
+    backend. Read-only — clicks go to Settings to change it."""
+    try:
+        from app.memory import MemoryStore
+
+        spec = MemoryStore().load().workspace_backend_spec or "local"
+    except Exception:
+        spec = "local"
+    if spec == "local":
+        label = "🖥 local"
+    elif spec.startswith("docker:"):
+        label = f"🐳 {spec}"
+    elif spec.startswith("ssh:"):
+        label = f"🛰 {spec}"
+    else:
+        label = spec
+    st.markdown(f"**Workspace backend**  \n`{label}`")
+    st.caption("Change in ⚙ Settings → 🛰 Workspace backend tab.")
 
 
 def _sync_workspace_selection(selected: Path | None) -> Path | None:

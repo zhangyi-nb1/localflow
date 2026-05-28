@@ -65,6 +65,37 @@ app = typer.Typer(
 console = Console()
 
 
+# Phase 34.0 — F-1 fix. Root-level ``--version`` callback. Sources the
+# version from ``localflow_kernel.__version__`` so the kernel package
+# is the single source of truth; the CLI just prints what the kernel
+# says it is.
+def _print_version_and_exit(value: bool) -> None:
+    if not value:
+        return
+    try:
+        from localflow_kernel import __version__ as _kernel_version
+    except Exception:
+        _kernel_version = "unknown"
+    console.print(f"localflow {_kernel_version}")
+    raise typer.Exit(0)
+
+
+@app.callback()
+def _root(
+    version: bool = typer.Option(  # noqa: B008
+        False,
+        "--version",
+        callback=_print_version_and_exit,
+        is_eager=True,
+        help="Print version and exit.",
+    ),
+) -> None:
+    """Root callback — runs before any subcommand. Hosts global flags
+    (currently just ``--version``). The Typer no_args_is_help flag set
+    on ``app`` above means bare ``localflow`` still prints help."""
+    return None
+
+
 # --------------------------------------------------------------------- inspect
 
 
@@ -2974,9 +3005,43 @@ trace_app = typer.Typer(
 app.add_typer(trace_app, name="trace")
 
 
+def _resolve_task_id(positional: Optional[str], option: Optional[str]) -> str:
+    """Phase 34.0 — F-2 helper. The trace commands accept ``task_id``
+    as either a positional argument (the convention CLI users expect)
+    OR a ``--task-id`` flag (the previous-only shape, kept for
+    backward compatibility). Caller passes both; this resolves to the
+    one that's set OR raises a clean error.
+    """
+    if positional and option:
+        if positional != option:
+            console.print(
+                f"[red]Conflicting task_id values:[/] positional {positional!r} vs --task-id {option!r}",
+            )
+            raise typer.Exit(code=2)
+        return positional
+    chosen = positional or option
+    if not chosen:
+        console.print(
+            "[red]Missing task_id.[/] Provide it positionally "
+            "(``localflow trace show <task_id>``) or via ``--task-id``.",
+        )
+        raise typer.Exit(code=2)
+    return chosen
+
+
 @trace_app.command("show")
 def cmd_trace_show(
-    task_id: str = typer.Option(..., "--task-id", help="Task ID to inspect."),
+    # Phase 34.0 — F-2 fix. Accept ``task_id`` as a positional argument
+    # OR via ``--task-id``. Typer doesn't natively support both shapes on
+    # the same parameter; we expose two parameters and resolve to one.
+    task_id_pos: Optional[str] = typer.Argument(
+        None,
+        metavar="[TASK_ID]",
+        help="Task ID to inspect. Equivalent to --task-id.",
+    ),
+    task_id_opt: Optional[str] = typer.Option(
+        None, "--task-id", help="Task ID to inspect (alias for positional argument)."
+    ),
     event_type: Optional[str] = typer.Option(
         None,
         "--event-type",
@@ -3022,6 +3087,11 @@ def cmd_trace_show(
     import json as _json
 
     from app.storage.run_store import RunStore
+
+    # Phase 34.0 — F-2 fix. Accept the task_id from either the
+    # positional argument or the ``--task-id`` flag. Conflict =
+    # explicit error so we don't silently pick the wrong one.
+    task_id = _resolve_task_id(task_id_pos, task_id_opt)
 
     store = RunStore(task_id=task_id)
     trace_path = store.trace_path
@@ -3098,7 +3168,14 @@ def cmd_trace_show(
 
 @trace_app.command("summary")
 def cmd_trace_summary(
-    task_id: str = typer.Option(..., "--task-id", help="Task ID to summarise."),
+    task_id_pos: Optional[str] = typer.Argument(
+        None,
+        metavar="[TASK_ID]",
+        help="Task ID to summarise. Equivalent to --task-id.",
+    ),
+    task_id_opt: Optional[str] = typer.Option(
+        None, "--task-id", help="Task ID to summarise (alias for positional argument)."
+    ),
 ) -> None:
     """Phase 25.2 — one-line-per-event-type histogram for a run.
 
@@ -3110,6 +3187,9 @@ def cmd_trace_summary(
     from collections import Counter
 
     from app.storage.run_store import RunStore
+
+    # Phase 34.0 — F-2 fix. Same dual-shape resolution as cmd_trace_show.
+    task_id = _resolve_task_id(task_id_pos, task_id_opt)
 
     store = RunStore(task_id=task_id)
     trace_path = store.trace_path

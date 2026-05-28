@@ -354,6 +354,51 @@ class MemoryStore:
             detail=f"max_auto_repairs: {before} → {value}",
         )
 
+    # -- mutations: workspace_backend_spec (Phase 34.2) ----------------
+
+    def set_workspace_backend_spec(self, value: str) -> MutationResult:
+        """Phase 34.2 — persist the UI's Workspace backend choice.
+
+        Accepts the same grammar as the CLI ``--workspace`` flag:
+        ``local`` / ``docker:<image>`` / ``ssh:<host>[:<port>][:<root>]``.
+        We validate via ``parse_workspace_spec`` BEFORE touching disk so
+        malformed specs never get persisted; the parser raises
+        ``ValueError`` with a helpful message that bubbles up to the
+        caller (which the UI surfaces as a red banner).
+        """
+        prefs = self.load()
+        spec = value.strip() or "local"
+        if prefs.workspace_backend_spec == spec:
+            return MutationResult(
+                event="memory.set.noop",
+                changed=False,
+                detail=f"workspace_backend_spec already {spec!r}",
+            )
+        # Validate the spec parses; we don't actually start the backend
+        # here — that happens at executor wire-up time.
+        from pathlib import Path as _Path
+
+        from app.tools.workspace import parse_workspace_spec
+
+        try:
+            parse_workspace_spec(spec, workspace_root=_Path("/tmp"))
+        except ValueError as exc:
+            raise ValueError(f"invalid workspace backend spec: {exc}") from exc
+        before = prefs.workspace_backend_spec
+        prefs.workspace_backend_spec = spec
+        self.save(prefs)
+        self._audit(
+            "memory.set",
+            key="workspace_backend_spec",
+            before=before,
+            after=spec,
+        )
+        return MutationResult(
+            event="memory.set",
+            changed=True,
+            detail=f"workspace_backend_spec: {before!r} → {spec!r}",
+        )
+
     # -- mutations: fetch_allowed_domains (v0.16) ----------------------
 
     @staticmethod
@@ -440,4 +485,10 @@ def _migrate(raw: dict[str, Any]) -> dict[str, Any]:
     if version < 4:
         raw.setdefault("fetch_allowed_domains", [])
         raw["schema_version"] = 4
+    if version < 5:
+        # Phase 34.2 — workspace_backend_spec. Empty string treated as
+        # "local" on read for back-compat with users whose prefs.json
+        # was written by a v4 release.
+        raw.setdefault("workspace_backend_spec", "local")
+        raw["schema_version"] = 5
     return raw

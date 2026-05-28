@@ -21,7 +21,10 @@ plan ──► dry-run ──► approval ──► execute ──► verify ─
                                          the kernel.
 ```
 
-**Branch status** — `main` is **v0.31.x-dev**. Tagged releases:
+**Branch status** — `main` is **v0.32.x-dev**. Tagged releases:
+[`v0.32.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.32.0)
+(UI parity with v0.31 CLI surface — Workspace backend selector,
+Plan planner toggle, `--version`, positional `trace show`) ·
 [`v0.31.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.31.0)
 (DockerWorkspace + RemoteWorkspace agent-server integration) ·
 [`v0.30.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.30.0)
@@ -36,7 +39,7 @@ plan ──► dry-run ──► approval ──► execute ──► verify ─
 (Workspace abstraction) · [`v0.25.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.25.0)
 (ConfirmationPolicy) · [`v0.24.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.24.0)
 (React Loop) · [`v0.23.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.23.0)
-(Sandboxed ComputeAction). **1056 tests passing.** CI across macOS / Linux /
+(Sandboxed ComputeAction). **1062 tests passing.** CI across macOS / Linux /
 Windows × Python 3.11 / 3.12 / 3.13.
 
 > **Embedding the harness in your own tool?** The kernel is now a standalone
@@ -303,7 +306,7 @@ Full threat model + per-mitigation tests:
 
 ### Strategic / direction
 - [`docs/PROJECT_DIRECTION.md`](docs/PROJECT_DIRECTION.md) — harness-first project direction, the locked Route B decision
-- [`docs/PHASES.md`](docs/PHASES.md) — full per-phase changelog + §10.7 ledger (4 deliberate kernel exceptions / 40 deliveries / 36 zero-kernel-touch)
+- [`docs/PHASES.md`](docs/PHASES.md) — full per-phase changelog + §10.7 ledger (4 deliberate kernel exceptions / 41 deliveries / 37 zero-kernel-touch)
 - [`docs/research/OPENHANDS_HARNESS_STUDY.md`](docs/research/OPENHANDS_HARNESS_STUDY.md) — the 26 KB source-evidence study that motivated v0.24+
 
 ### Per-phase design / user-facing
@@ -317,6 +320,7 @@ Full threat model + per-mitigation tests:
 - [`docs/PHASE_31_DESIGN.md`](docs/PHASE_31_DESIGN.md) · [`docs/REMOTE_WORKSPACE.md`](docs/REMOTE_WORKSPACE.md) — Phase 31 RemoteWorkspace (SSH)
 - [`docs/PHASE_32_DESIGN.md`](docs/PHASE_32_DESIGN.md) · [`docs/AGENT_SERVER.md`](docs/AGENT_SERVER.md) — Phase 32 HTTP agent-server
 - [`docs/PHASE_33_DESIGN.md`](docs/PHASE_33_DESIGN.md) — Phase 33 Docker/Remote agent-server integration
+- [`docs/PHASE_34_DESIGN.md`](docs/PHASE_34_DESIGN.md) · [`docs/E2E_TEST_PLAN.md`](docs/E2E_TEST_PLAN.md) — Phase 34 UI parity + E2E test report
 
 ### Architecture / extension
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — 5-layer breakdown + 8 iron rules + extension guide

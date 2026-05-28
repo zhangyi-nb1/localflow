@@ -142,9 +142,11 @@ def test_read_memory_prefs_returns_defaults(isolated_home: Path) -> None:
     # Phase 13 defaults — semantic verifier opt-in OFF; cap auto-repairs at 2.
     assert result["enable_semantic_verifier"] is False
     assert result["max_auto_repairs"] == 2
-    # v0.16 — fetch allowlist defaults empty; schema bumped to v4.
+    # v0.16 — fetch allowlist defaults empty.
     assert result["fetch_allowed_domains"] == []
-    assert result["schema_version"] == 4
+    # Phase 34.2 bumped schema to v5 (workspace_backend_spec field).
+    assert result["workspace_backend_spec"] == "local"
+    assert result["schema_version"] == 5
 
 
 def test_read_memory_audit_empty_initially(isolated_home: Path) -> None:

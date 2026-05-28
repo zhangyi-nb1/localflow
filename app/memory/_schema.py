@@ -94,8 +94,19 @@ class MemoryPreferences(BaseModel):
             "`localflow memory allow-domain <host>`."
         ),
     )
+    workspace_backend_spec: str = Field(
+        default="local",
+        description=(
+            "Phase 34.2 — the Workspace Protocol backend the UI uses for "
+            "plan/execute/verify/rollback. Mirrors the CLI ``--workspace`` "
+            "flag grammar: ``local`` (default), ``docker:<image>``, "
+            "``ssh:<host>[:<port>][:<root>]``. Validated through "
+            "``parse_workspace_spec`` on read. Empty string ≡ ``local`` for "
+            "back-compat with v4 prefs.json that didn't carry this field."
+        ),
+    )
     schema_version: int = Field(
-        default=4,
+        default=5,
         description="Bump when adding/removing fields to enable migration.",
     )
 
@@ -109,4 +120,5 @@ class MemoryPreferences(BaseModel):
             and self.enable_semantic_verifier is False
             and self.max_auto_repairs == 2
             and not self.fetch_allowed_domains
+            and self.workspace_backend_spec in ("", "local")
         )

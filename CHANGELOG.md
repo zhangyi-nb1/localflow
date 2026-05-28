@@ -17,9 +17,50 @@ bumps never do.
 
 ## [Unreleased]
 
-(none — next candidates are kept-alive HTTP / Unix socket transport,
-TLS + multi-tenancy, physical kernel module relocation, PyPI split.
-See `docs/PHASE_33_DESIGN.md` §8 for the candidate list.)
+Phase 34.5+ candidates — wire the persisted `workspace_backend_spec`
+pref into Plan/Execute pages so UI execute actually uses the chosen
+backend (not just persists the preference); Execute page React +
+ConfirmationPolicy toggles; kept-alive HTTP / Unix socket transport;
+TLS + multi-tenancy; physical kernel module relocation; PyPI split.
+
+---
+
+## [0.32.0] — 2026-05-28
+
+**Phase 34 — UI parity with v0.31 CLI surface + CLI papercut fixes**
+
+Closes all four findings from the v0.31 E2E test report
+(`docs/E2E_TEST_PLAN.md`):
+
+* **F-1 fix** — `localflow --version` now prints the kernel version.
+* **F-2 fix** — `localflow trace show <task_id>` / `trace summary
+  <task_id>` accept the task_id as either a positional argument or
+  via `--task-id`. Backwards-compatible.
+* **F-3 fix (high)** — Settings page gains a new "🛰 Workspace
+  backend" tab. Lets users pick `local` / `docker:<image>` /
+  `ssh:<host>[:<port>][:<root>]`, validates via
+  `parse_workspace_spec`, persists into a new memory pref
+  `workspace_backend_spec`. The sidebar now shows the active backend
+  on every page.
+* **F-4 fix** — Plan page learns a planner radio (rule / llm). When
+  `ANTHROPIC_API_KEY` is unset, forces rule + shows a clean info
+  block instead of stalling the LLM loader.
+
+Schema bump: `MemoryPreferences.schema_version` v4 → v5 (adds
+`workspace_backend_spec`). v4 → v5 migration backfills `"local"`.
+
+Verification: 13 screenshots in `docs/test_artifacts/v0.32.0-phase34/`
+from a headed Playwright walkthrough the human user watched live.
+
+Test count: 1056 → 1062 (+6 new MemoryStore setter tests). Zero
+kernel touches.
+
+Docs: [`docs/PHASE_34_DESIGN.md`](docs/PHASE_34_DESIGN.md).
+
+**Deliberately deferred**: wiring the persisted backend pref into
+the Plan/Execute pages' executor instantiation (Phase 34.5
+candidate); Execute page React + ConfirmationPolicy toggles
+(Phase 34.6 candidate).
 
 ---
 

@@ -43,8 +43,10 @@ def test_v2_prefs_json_auto_upgrades_to_v3(tmp_path: Path) -> None:
     assert prefs.max_auto_repairs == 2
     # v0.16 fields backfilled with defaults
     assert prefs.fetch_allowed_domains == []
+    # Phase 34.2 — v5 backfills workspace_backend_spec='local'
+    assert prefs.workspace_backend_spec == "local"
     # In-memory version reflects the latest upgrade.
-    assert prefs.schema_version == 4
+    assert prefs.schema_version == 5
 
 
 def test_load_returns_defaults_when_no_prefs_file(tmp_path: Path) -> None:
@@ -56,9 +58,11 @@ def test_load_returns_defaults_when_no_prefs_file(tmp_path: Path) -> None:
     # Phase 13 — semantic-verifier opt-in defaults.
     assert prefs.enable_semantic_verifier is False
     assert prefs.max_auto_repairs == 2
-    # v0.16 — fetch allowlist defaults to empty; schema bumped to v4.
+    # v0.16 — fetch allowlist defaults to empty.
     assert prefs.fetch_allowed_domains == []
-    assert prefs.schema_version == 4
+    # Phase 34.2 — v5 workspace_backend_spec default.
+    assert prefs.workspace_backend_spec == "local"
+    assert prefs.schema_version == 5
     assert prefs.is_default()
 
 
@@ -216,6 +220,55 @@ def test_clear_prefer_llm_planner_resets_to_false(tmp_path: Path) -> None:
     result = s.clear_prefer_llm_planner()
     assert result.changed
     assert s.load().prefer_llm_planner is False
+
+
+# -- Phase 34.2: workspace_backend_spec --------------------------------
+
+
+def test_set_workspace_backend_spec_local_default(tmp_path: Path) -> None:
+    s = _store(tmp_path)
+    assert s.load().workspace_backend_spec == "local"
+
+
+def test_set_workspace_backend_spec_docker_persists(tmp_path: Path) -> None:
+    s = _store(tmp_path)
+    result = s.set_workspace_backend_spec("docker:python:3.12-slim")
+    assert result.changed
+    assert "docker:python:3.12-slim" in result.detail
+    assert _store(tmp_path).load().workspace_backend_spec == "docker:python:3.12-slim"
+
+
+def test_set_workspace_backend_spec_ssh_persists(tmp_path: Path) -> None:
+    s = _store(tmp_path)
+    result = s.set_workspace_backend_spec("ssh:bob@example.com:2222:/srv/wkspc")
+    assert result.changed
+    reloaded = _store(tmp_path).load()
+    assert reloaded.workspace_backend_spec == "ssh:bob@example.com:2222:/srv/wkspc"
+
+
+def test_set_workspace_backend_spec_noop_when_same(tmp_path: Path) -> None:
+    s = _store(tmp_path)
+    s.set_workspace_backend_spec("docker:python:3.12-slim")
+    result = s.set_workspace_backend_spec("docker:python:3.12-slim")
+    assert not result.changed
+
+
+def test_set_workspace_backend_spec_rejects_invalid(tmp_path: Path) -> None:
+    import pytest as _pytest
+
+    s = _store(tmp_path)
+    with _pytest.raises(ValueError, match="unrecognised workspace spec"):
+        s.set_workspace_backend_spec("ftp://nope")
+    # Persistence unchanged.
+    assert _store(tmp_path).load().workspace_backend_spec == "local"
+
+
+def test_set_workspace_backend_spec_empty_becomes_local(tmp_path: Path) -> None:
+    s = _store(tmp_path)
+    s.set_workspace_backend_spec("docker:python:3.12-slim")  # change away from default
+    result = s.set_workspace_backend_spec("")
+    assert result.changed
+    assert _store(tmp_path).load().workspace_backend_spec == "local"
 
 
 def test_prefer_llm_planner_in_audit(tmp_path: Path) -> None:

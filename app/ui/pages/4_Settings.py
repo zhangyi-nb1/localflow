@@ -29,12 +29,14 @@ def main() -> None:
         st.error(t("memory.error.store", err=str(exc)))
         return
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    tab1, tab2, tab3, tab4, tab_backend, tab5 = st.tabs(
         [
             t("memory.tab.forbidden"),
             t("memory.tab.naming"),
             t("memory.tab.planner"),
             t("memory.tab.semantic"),
+            # Phase 34.2 — F-3 fix. New tab for Workspace backend.
+            "🛰 Workspace backend",
             t("memory.tab.audit"),
         ]
     )
@@ -51,8 +53,157 @@ def main() -> None:
     with tab4:
         _render_semantic_pref(store, prefs)
 
+    with tab_backend:
+        _render_workspace_backend(store, prefs)
+
     with tab5:
         _render_audit(store)
+
+
+def _render_workspace_backend(store: MemoryStore, prefs) -> None:
+    """Phase 34.2 — F-3 fix. UI exposure of the four Workspace
+    backends Phases 28-33 built (Local / Docker / Remote / +
+    AgentServer mode opt-in for Docker + Remote). Previously
+    reachable only via the CLI ``--workspace`` flag; now persists
+    into ``memory.workspace_backend_spec`` for every UI page to
+    consume on executor wire-up.
+    """
+    st.subheader("Workspace backend")
+    st.caption(
+        "Pick which Workspace Protocol backend the UI uses to plan / "
+        "execute / verify / rollback. Defaults to `local` (host fs). "
+        "Mirrors the CLI `--workspace` flag."
+    )
+
+    current_spec = prefs.workspace_backend_spec or "local"
+
+    # Parse the current spec to set the right radio + populate fields.
+    if current_spec == "local" or current_spec == "":
+        current_kind = "local"
+        current_image = "python:3.12-slim"
+        current_host = ""
+        current_ssh_port = 22
+        current_ssh_root = ""
+    elif current_spec.startswith("docker:"):
+        current_kind = "docker"
+        current_image = current_spec[len("docker:") :].strip() or "python:3.12-slim"
+        current_host = ""
+        current_ssh_port = 22
+        current_ssh_root = ""
+    elif current_spec.startswith("ssh:"):
+        current_kind = "ssh"
+        body = current_spec[len("ssh:") :].strip()
+        current_image = "python:3.12-slim"
+        # Reuse the same right-to-left parse as parse_workspace_spec.
+        current_ssh_root = ""
+        current_ssh_port = 22
+        if ":/" in body:
+            head, _, root_part = body.rpartition(":/")
+            current_ssh_root = "/" + root_part
+            body = head
+        if ":" in body:
+            head, _, last = body.rpartition(":")
+            try:
+                current_ssh_port = int(last)
+                body = head
+            except ValueError:
+                pass
+        current_host = body
+    else:
+        current_kind = "local"
+        current_image = "python:3.12-slim"
+        current_host = ""
+        current_ssh_port = 22
+        current_ssh_root = ""
+
+    kind = st.radio(
+        "Backend",
+        options=["local", "docker", "ssh"],
+        index=["local", "docker", "ssh"].index(current_kind),
+        horizontal=True,
+        help=(
+            "**local** = host fs (default; ~10μs/op). "
+            "**docker** = container-isolated (Phase 29; ~100-300ms/op, "
+            "or ~5-20ms with use_agent_server). "
+            "**ssh** = remote Linux host (Phase 31; ~100-300ms/op + RTT)."
+        ),
+        key="settings_workspace_kind",
+    )
+
+    new_spec = "local"
+    if kind == "local":
+        st.code("local", language="text")
+        new_spec = "local"
+    elif kind == "docker":
+        image = st.text_input(
+            "Docker image",
+            value=current_image,
+            help="Any OCI image with `sh` + `coreutils` + `python3`.",
+            key="settings_workspace_docker_image",
+        )
+        new_spec = f"docker:{image.strip()}"
+        st.code(new_spec, language="text")
+    elif kind == "ssh":
+        c1, c2 = st.columns([2, 1])
+        host = c1.text_input(
+            "SSH host (user@host or ~/.ssh/config alias)",
+            value=current_host,
+            placeholder="bob@example.com",
+            key="settings_workspace_ssh_host",
+        )
+        port = c2.number_input(
+            "Port",
+            min_value=1,
+            max_value=65535,
+            value=int(current_ssh_port),
+            step=1,
+            key="settings_workspace_ssh_port",
+        )
+        root = st.text_input(
+            "Remote workspace root (must start with /)",
+            value=current_ssh_root,
+            placeholder="/tmp/localflow-ws",
+            help="Absolute path on the remote. Defaults to /tmp/localflow-ws.",
+            key="settings_workspace_ssh_root",
+        )
+        parts = [host.strip()] if host.strip() else []
+        if parts:
+            if int(port) != 22:
+                parts.append(str(int(port)))
+            if root.strip():
+                if not root.strip().startswith("/"):
+                    st.warning("Remote root must start with `/` — defaulting to /tmp/localflow-ws.")
+                else:
+                    parts.append(root.strip())
+            new_spec = "ssh:" + ":".join(parts)
+        else:
+            new_spec = "ssh:"
+            st.warning("Enter an SSH host to enable the remote backend.")
+        st.code(new_spec, language="text")
+
+    st.divider()
+
+    if new_spec != current_spec:
+        col_save, col_help = st.columns([1, 3])
+        if col_save.button(
+            f"Save backend: `{current_spec}` → `{new_spec}`",
+            type="primary",
+            key="settings_workspace_save",
+        ):
+            try:
+                result = store.set_workspace_backend_spec(new_spec)
+                if result.changed:
+                    st.success(result.detail)
+                    st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
+        col_help.caption(
+            "The kernel boundary doesn't change — only the Workspace facade "
+            "the executor uses. Each backend's quirks are documented in "
+            "`docs/{WORKSPACE,DOCKER_WORKSPACE,REMOTE_WORKSPACE}.md`."
+        )
+    else:
+        st.info(f"Current backend is **`{current_spec}`** (no pending change).")
 
 
 def _render_semantic_pref(store: MemoryStore, prefs) -> None:

@@ -157,7 +157,8 @@ def test_memory_set_enable_semantic_verifier(tmp_path: Path, isolated_home: Path
     store = MemoryStore(home=isolated_home / "memory")
     prefs = store.load()
     assert prefs.enable_semantic_verifier is True
-    assert prefs.schema_version == 4
+    # Phase 34.2 bumped schema to v5 (workspace_backend_spec field).
+    assert prefs.schema_version == 5
 
 
 def test_memory_set_max_auto_repairs(tmp_path: Path, isolated_home: Path) -> None:
