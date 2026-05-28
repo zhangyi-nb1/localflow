@@ -767,12 +767,19 @@ see `docs/PHASES.md` for the precedent.
 
 ## 11. Troubleshooting
 
-### "ANTHROPIC_API_KEY not set"
+### "ANTHROPIC_API_KEY not set" / LLM steps silently skipped
 
-You're trying to use `--planner llm` or the semantic verifier
-without a key. Fix: export the key in your shell, OR switch to
-`--planner rule` (works without LLM). The UI Plan page now defaults
-to rule when no key is detected.
+You're trying to use `--planner llm`, the semantic verifier, or the
+LLM grounding judge without a resolvable key. Fix: export the key in
+your shell, OR put it in a project `.env` — since v0.34.1 the CLI
+**auto-loads `.env`** from the working directory at startup (stdlib,
+`setdefault` so a real exported var wins; opt out with
+`LOCALFLOW_NO_DOTENV=1`). `LOCALFLOW_LLM_PROVIDER` selects `openai`
+(default, reads `OPENAI_API_KEY` + `OPENAI_BASE_URL`) or `anthropic`
+(reads `ANTHROPIC_API_KEY`). Or just switch to `--planner rule` (works
+without an LLM). The UI Plan page defaults to rule when no key is
+detected, and the grounding gate falls back to the deterministic
+lexical judge.
 
 ### "ssh probe to '<host>' failed: Permission denied (publickey)"
 

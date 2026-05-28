@@ -23,6 +23,32 @@ agent baseline vs LocalFlow across the six failure modes). See
 
 ---
 
+## [0.34.1] — 2026-05-29
+
+**Fix — auto-load a project `.env` at the CLI / UI entry**
+
+LocalFlow read credentials from `os.environ` only and never loaded a
+project `.env`. A user who put `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`
+in `.env` (a common convention) would see LLM-backed runs silently
+degrade to the rule planner / lexical grounding / SKIPPED stages,
+because the var never reached the process.
+
+- New: `app.runtime_env.load_project_dotenv()` — stdlib-only `.env`
+  loader. Called from the CLI root callback (inherited by the
+  `ui-serve` / `mcp-serve` subprocesses via `os.environ`).
+- `setdefault` semantics — an explicitly-exported variable always
+  wins over `.env`.
+- Entry-point only: NOT loaded at library-import time, and skipped
+  under pytest, so the test suite stays deterministic + key-
+  independent. Opt out with `LOCALFLOW_NO_DOTENV=1`.
+- Verified the production LLM grounding path end-to-end against an
+  OpenAI-compatible provider once the key was loaded (recall 2/2 on
+  the planted-hallucination demo, 0 false positives) —
+  `docs/test_artifacts/v0.34.0/llm_path_smoke.txt`.
+- +13 tests (1093 → 1106). Zero kernel touches.
+
+---
+
 ## [0.34.0] — 2026-05-29
 
 **Phase 36 — flagship vertical: verifiable literature review**

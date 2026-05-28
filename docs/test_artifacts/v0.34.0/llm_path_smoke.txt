@@ -1,0 +1,15 @@
+LLM-path smoke (provider=openai, model=gpt-5.4-mini, 8.2s)
+gate: FAIL (3/5 grounded)
+planted-hallucination recall: 2/2
+grounded false-positives: 0
+
+[c1] grounded  Method A improved classification accuracy by 12 percent on the ImageNet benchmark.
+    reason: Supported by source summaries/paper_alpha.md, which states that Method A improved classification accuracy by 12% on the ImageNet benchmark.
+[c2] grounded  Method B reduced inference latency by half on the validation set with no accuracy loss.
+    reason: Supported by source summaries/paper_beta.md, which states that Method B reduced inference latency by half on the validation set without accuracy loss.
+[c3] grounded  Random cropping increased robustness to distribution shift by 8 points on corrupted images.
+    reason: Supported by source summaries/paper_gamma.md, which states that random cropping increased robustness to distribution shift by 8 points on the corrupted-image test set.
+[c4] UNGROUNDED  Method C reduced training cost by 40 percent across all datasets.
+    reason: No source supports Method C or a 40% training cost reduction across all datasets; the sources mention Method A accuracy, Method B inference latency, and random cropping robustness instead.
+[c5] UNGROUNDED  A transformer architecture achieved state-of-the-art results on every benchmark tested.
+    reason: None of the sources mention a transformer architecture or state-of-the-art results on every benchmark; they discuss ImageNet accuracy, inference latency, and robustness on specific tests instead.

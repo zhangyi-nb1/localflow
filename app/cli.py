@@ -92,7 +92,17 @@ def _root(
 ) -> None:
     """Root callback — runs before any subcommand. Hosts global flags
     (currently just ``--version``). The Typer no_args_is_help flag set
-    on ``app`` above means bare ``localflow`` still prints help."""
+    on ``app`` above means bare ``localflow`` still prints help.
+
+    Phase 36.x — auto-load a project ``.env`` here (the one entry point
+    that fires for every CLI command + is inherited by the ``ui-serve``
+    / ``mcp-serve`` subprocesses via ``os.environ``). ``setdefault``
+    semantics mean an already-exported var always wins; pytest runs
+    skip the load so the test suite stays key-independent. Set
+    ``LOCALFLOW_NO_DOTENV=1`` to opt out."""
+    from app.runtime_env import load_project_dotenv
+
+    load_project_dotenv()
     return None
 
 

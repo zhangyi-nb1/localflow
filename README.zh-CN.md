@@ -729,11 +729,19 @@ PR 改 `app/harness/*` 或 `localflow_kernel/*`，要按同样的标准
 
 ## 11. 故障排除
 
-### "ANTHROPIC_API_KEY not set"
+### "ANTHROPIC_API_KEY not set" / LLM 步骤被静默跳过
 
-你想用 `--planner llm` 或 semantic verifier 但没设 key。解决：
-shell 里 export key，或换 `--planner rule`（不用 LLM 也能跑）。
-UI Plan 页现在没检测到 key 时自动降到 rule。
+你想用 `--planner llm`、semantic verifier 或 LLM grounding judge 但没有
+可解析的 key。解决：shell 里 export key，**或**放进项目 `.env`——v0.34.1
+起 CLI 启动时**自动加载 `.env`**（stdlib，`setdefault` 所以已 export 的
+真实变量优先；`LOCALFLOW_NO_DOTENV=1` 关闭）。`LOCALFLOW_LLM_PROVIDER`
+选 `openai`（默认，读 `OPENAI_API_KEY` + `OPENAI_BASE_URL`）或 `anthropic`
+（读 `ANTHROPIC_API_KEY`）。或直接换 `--planner rule`（不用 LLM 也能跑）。
+UI Plan 页没检测到 key 时自动降到 rule；grounding 闸门降到确定性 lexical judge。
+
+> ⚠️ 之前的坑：LocalFlow 一度**不**自动加载 `.env`，所以即使你把 key 写进
+> `.env`，不先 `source` 的话 LLM 步骤会静默降级（你以为调了大模型其实没有）。
+> v0.34.1 修复。
 
 ### "ssh probe to '<host>' failed: Permission denied (publickey)"
 
