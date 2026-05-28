@@ -26,7 +26,10 @@ gets a direct shell.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Branch status** — `main` is **v0.32.x-dev**. Tagged releases:
+**Branch status** — `main` is **v0.33.x-dev**. Tagged releases:
+[`v0.33.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.33.0)
+(direction refinement — flagship = verifiable LLM-artifact pipeline /
+verify-as-gate; UI backend honest CLI bridge) ·
 [`v0.32.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.32.0)
 (UI parity with v0.31 CLI surface — Workspace backend selector, Plan
 planner toggle, `--version`, positional `trace show`) ·
@@ -40,7 +43,7 @@ planner toggle, `--version`, positional `trace show`) ·
 (Workspace abstraction) · [`v0.25.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.25.0)
 (ConfirmationPolicy) · [`v0.24.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.24.0)
 (React Loop) · [`v0.23.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.23.0)
-(Sandboxed ComputeAction). **1062 tests passing.** CI across macOS / Linux /
+(Sandboxed ComputeAction). **1070 tests passing.** CI across macOS / Linux /
 Windows × Python 3.11 / 3.12 / 3.13.
 
 > **Embedding the harness in your own tool?** The kernel is a standalone
@@ -71,15 +74,26 @@ Windows × Python 3.11 / 3.12 / 3.13.
 
 ## 1. TL;DR — what is LocalFlow?
 
-LocalFlow turns a natural-language goal ("organise this messy folder
-by file type", "produce a research pack from these PDFs") into a
-**typed, previewable, approvable, traceable, verifiable, and
-undoable** execution. The user always sees what's about to happen
-before any file is touched.
+LocalFlow is a local **Agent Execution Harness** whose flagship is a
+**verifiable LLM-artifact pipeline**: a harness-constrained generation
+step (typed plan → dry-run → approval → rollback) produces an artifact,
+and an **independent verifier acts as an execution gate** that decides
+whether to ship it or roll back — not a post-hoc dashboard.
 
 The model only emits a Pydantic `ActionPlan`. The kernel — and only
-the kernel — touches disk. Every safety surface is independently
-testable.
+the kernel — touches disk. Every safety surface (preview, approval,
+verify, rollback, trace) is independently testable.
+
+> **Flagship demo — literature review with provenance verification.**
+> Feed in a batch of paper PDFs; LocalFlow summarises each, synthesises
+> a review, then a **grounding gate** splits the review into individual
+> claims and checks each one traces back to a source fragment. Claims
+> that don't trace are flagged and routed to human review; if too many
+> are ungrounded, the artifact is gated as *not shippable* and rolled
+> back. (Generation can be imperfect — the harness is what makes it
+> usable, auditable, and recoverable.) This is the answer to the 2025–26
+> reality that even 3–5 expert reviewers miss fabricated citations in
+> accepted papers — see [`docs/PHASE_35_PLAN.md`](docs/PHASE_35_PLAN.md) §4.
 
 ```bash
 # Install (editable) — recommended for development
@@ -89,12 +103,17 @@ pip install -e .
 .venv/bin/localflow pack list           # list bundled deliverable packs
 .venv/bin/localflow ui-serve            # open the Streamlit UI
 
-# CLI happy path
+# CLI happy path — start with the simplest deterministic task
 .venv/bin/localflow plan ./my-folder --goal "organise by file type" --planner rule
 .venv/bin/localflow dry-run  --task-id <task_id>
 .venv/bin/localflow execute  --task-id <task_id> --yes
 .venv/bin/localflow rollback --run-id  <task_id> --yes
 ```
+
+> "Organise a messy folder by file type" is the **simplest** task to
+> learn the plan → execute → rollback loop on. It is a *starter
+> example*, not the point — the point is the harness that makes any
+> LLM-driven generation safe, gated, and undoable.
 
 ---
 
@@ -160,7 +179,7 @@ every safety surface is independently testable:
 | Filesystem backend swappable | hard-coded | ✓ `Workspace` Protocol — LocalWorkspace + DockerWorkspace + RemoteWorkspace shipped |
 
 The §10.7 ledger (`docs/PHASES.md`) tracks every kernel touch:
-**4 deliberate exceptions across 41 deliveries, 37 zero-kernel-touch**.
+**4 deliberate exceptions across 42 deliveries, 38 zero-kernel-touch**.
 That ratio is the project's identity contract.
 
 ---
@@ -554,19 +573,23 @@ A **Recipe** is a YAML / Pydantic spec describing a multi-stage
 workflow that compiles to a `TaskGraph`. A **Pack** is a recipe
 shipped with example data, an eval task, and a README.
 
-Three flagship packs ship:
+Shipped packs:
 
-- `research_pack` — turn a messy research folder into a deliverable
-  knowledge pack (per-category indexes, PDF summaries, data analysis,
-  workspace chart, top-level README, sources ledger).
+- `research_pack` — **the flagship's foundation**: turn a folder of
+  research material (PDFs, notes) into a knowledge pack with per-PDF
+  summaries, a synthesised review, and a **sources ledger** that
+  tracks every claim's provenance. Phase 36 extends this with the
+  claim-level **grounding gate** (verify-as-gate): each claim in the
+  review must trace to a source fragment, or it's flagged for human
+  review and the artifact is gated. See
+  [`docs/PHASE_35_PLAN.md`](docs/PHASE_35_PLAN.md) §5.
 - `data_report_pack` — turn CSV / Excel data into a deliverable
   report.
 - `project_handoff_pack` — turn a mid-project workspace (code, notes,
   data, images, logs) into a deliverable hand-off doc.
 
-Each pack ships with `examples/<pack>/seed.py` that plants the messy
-seed for a 1-command demo. See
-[`docs/PACK_BUILDER.md`](docs/PACK_BUILDER.md).
+Each pack ships with `examples/<pack>/seed.py` that plants the seed
+for a 1-command demo. See [`docs/PACK_BUILDER.md`](docs/PACK_BUILDER.md).
 
 ### K. MCP — LocalFlow as both client & server
 
@@ -731,8 +754,8 @@ The rollback manifest covers:
 
 ### 10.7 §10.7 kernel-touch ledger
 
-The project tracks every kernel edit. As of v0.32.0: **4 deliberate
-exceptions across 41 deliveries, 37 zero-kernel-touch (90.2%)**. If
+The project tracks every kernel edit. As of v0.33.0: **4 deliberate
+exceptions across 42 deliveries, 38 zero-kernel-touch (90.5%)**. If
 you submit a PR that touches `app/harness/*` or
 `localflow_kernel/*`, expect to defend it against the same bar —
 see `docs/PHASES.md` for the precedent.
@@ -813,7 +836,7 @@ Full per-phase changelog in [`docs/PHASES.md`](docs/PHASES.md).
 
 ### Testing & quality gates
 
-- **1062 tests passing** (CI on macOS / Linux / Windows × Python
+- **1070 tests passing** (CI on macOS / Linux / Windows × Python
   3.11 / 3.12 / 3.13).
 - Pre-push hook mirrors CI: `ruff check` + `ruff format --check` +
   `pytest --tb=no`. Activate via `git config core.hooksPath
@@ -831,7 +854,7 @@ Full per-phase changelog in [`docs/PHASES.md`](docs/PHASES.md).
 ### Strategic / direction
 
 - [`docs/PROJECT_DIRECTION.md`](docs/PROJECT_DIRECTION.md) — harness-first project direction, the locked Route B decision
-- [`docs/PHASES.md`](docs/PHASES.md) — full per-phase changelog + §10.7 ledger (4 deliberate kernel exceptions / 41 deliveries / 37 zero-kernel-touch)
+- [`docs/PHASES.md`](docs/PHASES.md) — full per-phase changelog + §10.7 ledger (4 deliberate kernel exceptions / 42 deliveries / 38 zero-kernel-touch)
 - [`docs/research/OPENHANDS_HARNESS_STUDY.md`](docs/research/OPENHANDS_HARNESS_STUDY.md) — the 26 KB source-evidence study that motivated v0.24+
 
 ### Per-phase design / user-facing

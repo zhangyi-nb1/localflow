@@ -43,15 +43,32 @@ Use this as the current Codex tracking goal for the project:
 
 > Continuously research mature Agent Harness projects, extract their
 > planning, tool-boundary, safe-execution, persistence, evaluation, and
-> failure-recovery patterns, and use that evidence to reposition and evolve
-> LocalFlow from a limited template-style local agent into a local,
-> rollback-safe, verifiable, and continuously improving Agent Harness.
+> failure-recovery patterns, and use that evidence to evolve LocalFlow into
+> a local, rollback-safe, verifiable Agent Execution Harness whose flagship
+> demonstration is a **"verifiable LLM-artifact pipeline"**: a
+> harness-constrained generation step (typed plan, dry-run, approval,
+> rollback) whose output is gated by an independent verifier —
+> ship-or-rollback, not a post-hoc dashboard.
 
 The goal is intentionally adjustable. Do not freeze the final product
 direction before the research and eval evidence justify it.
 
+> **2026-05-29 方向细化**：演示层已从"按文件类型整理乱目录"收敛为 flagship
+> 场景 **「带出处核验的文献综述」**——把一批论文 PDF 综述成笔记，综述里每条论断
+> 必须可追溯到源文档片段，追溯不到的被闸门标记并交人工复核。驱动约束：本项目首要
+> 用途是**大模型应用开发工程师简历中的 harness 作品**，因此优先把已有的强 harness
+> 能力 surface + 用一个可信场景演示 + 用 eval 数字证明，而非继续铺广度。
+> 详见 [docs/PHASE_35_PLAN.md](PHASE_35_PLAN.md)。
+
 ## Current Roadmap Bias
 
+> **2026-05-29 更新**：Phase 1–34 已 ship（32 release / 1062 测试通过）。harness 内核成熟，
+> 下一阶段把"演示层"收敛为 flagship 场景「带出处核验的文献综述」，并用 eval 数字证明。
+> 详见 [docs/PHASE_35_PLAN.md](PHASE_35_PLAN.md)。
+> - **Phase 35** = 定位收敛 + 止损（战略文档 diff、UI 装饰性缺口诚实降级、README 重写）。
+> - **Phase 36** = flagship 垂直落地（grounding grader → execute gate + rollback-on-fail，预期零 kernel）。
+> - **Phase 37** = 六大失败模式 benchmark + 公开数字。
+>
 > **2026-05-24 更新**：OpenHands 调研已完成
 > ([docs/research/OPENHANDS_HARNESS_STUDY.md](research/OPENHANDS_HARNESS_STUDY.md))。
 > Phase 24+ 锁定 **路线 B：阶段式 + 阶段内 react loop**。详见下方"架构路线"段。
@@ -78,6 +95,9 @@ OpenHands 没有但 LocalFlow 有的设计，这些是 LocalFlow 之所以是 Lo
 4. 规则化 PolicyGuard 程序化路径越界检查（OpenHands 用 LLM analyzer 评估，可被注入误导）
 5. 独立 Verifier 结构化 + 语义两层（OpenHands 只有 Critic 评分不阻塞）
 6. Skill 是 plan 生成器，不是 executor（OpenHands Tool 是 plan+execute 揉合）
+7. **Verify-as-gate**（2026-05-29 新增）：独立验证作为决定 ship / rollback 的执行闸门 +
+   可回滚 + 关键节点人工审批——对比 observability 平台的事后打分、刚发布的检测组件、
+   绑定垂直的方案，这是当前市场空位。是 Phase 36 flagship 的核心主张。
 
 ### Roadmap 步骤
 

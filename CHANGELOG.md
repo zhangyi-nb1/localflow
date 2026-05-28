@@ -17,11 +17,45 @@ bumps never do.
 
 ## [Unreleased]
 
-Phase 34.5+ candidates — wire the persisted `workspace_backend_spec`
-pref into Plan/Execute pages so UI execute actually uses the chosen
-backend (not just persists the preference); Execute page React +
-ConfirmationPolicy toggles; kept-alive HTTP / Unix socket transport;
-TLS + multi-tenancy; physical kernel module relocation; PyPI split.
+Phase 36 — flagship vertical: verifiable literature review (claim-level
+grounding grader → execute gate + rollback-on-fail + sources-ledger
+evidence bundle). See `docs/PHASE_35_PLAN.md` §6.
+
+---
+
+## [0.33.0] — 2026-05-29
+
+**Phase 35 — direction refinement: verifiable LLM-artifact pipeline**
+
+A near-zero-code phase that locks the demo layer onto a concrete,
+evidence-backed flagship and removes a UI half-finished smell. The
+harness base is unchanged (still Route B); this is about *positioning*
+and honesty.
+
+- **New flagship**: "literature review with provenance verification" —
+  every claim in a synthesised review must trace to a source fragment,
+  or it's flagged for human review and the artifact is gated
+  (ship-or-rollback). Answers the 2025–26 reality that even expert
+  reviewers miss fabricated citations.
+- **New differentiation #7 — verify-as-gate**: verification as an
+  execution gate + rollback + human approval at key nodes, vs post-hoc
+  observability dashboards. Recorded in `docs/PROJECT_DIRECTION.md`.
+- **UI backend honesty fix**: the Phase 34.2 Workspace-backend selector
+  persisted a spec the Plan/Execute pages never consumed (always
+  LocalWorkspace). Rather than fake-drive containers inside a fragile
+  Streamlit rerun, the Execute page now shows an honest notice + the
+  exact `localflow execute --workspace <spec>` CLI command for
+  docker/ssh, and the Settings tab is reframed as a validated
+  spec-builder + CLI bridge. New pure helper
+  `app.ui._workspace_backend.describe_ui_backend` + 8 tests.
+- **README (EN + zh-CN)** TL;DR + research_pack narrative refront the
+  flagship; "organise a messy folder" demoted to an explicit *starter
+  example*.
+- Zero kernel touches; +8 tests (1062 → 1070). Locally verified via
+  Playwright (`docs/test_artifacts/v0.33.0/`).
+
+Docs: [`docs/PHASE_35_PLAN.md`](docs/PHASE_35_PLAN.md),
+[`docs/PROJECT_DIRECTION.md`](docs/PROJECT_DIRECTION.md).
 
 ---
 

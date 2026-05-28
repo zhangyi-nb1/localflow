@@ -61,18 +61,23 @@ def main() -> None:
 
 
 def _render_workspace_backend(store: MemoryStore, prefs) -> None:
-    """Phase 34.2 — F-3 fix. UI exposure of the four Workspace
-    backends Phases 28-33 built (Local / Docker / Remote / +
-    AgentServer mode opt-in for Docker + Remote). Previously
-    reachable only via the CLI ``--workspace`` flag; now persists
-    into ``memory.workspace_backend_spec`` for every UI page to
-    consume on executor wire-up.
+    """Phase 34.2 → 35.2. UI exposure of the four Workspace backends
+    Phases 28-33 built (Local / Docker / Remote / + AgentServer mode).
+
+    Phase 35.2 honesty fix: the UI's real execution backend is
+    ``local`` (the flagship is local-only, and driving container /
+    remote lifecycle inside a Streamlit rerun is fragile). So this tab
+    is a **validated spec-builder + CLI bridge**: ``local`` is what the
+    UI runs; ``docker:`` / ``ssh:`` build + validate a spec and show
+    the exact ``localflow execute --workspace <spec>`` command to run.
+    No more "saved but silently ignored" mismatch (rule F).
     """
     st.subheader("Workspace backend")
     st.caption(
-        "Pick which Workspace Protocol backend the UI uses to plan / "
-        "execute / verify / rollback. Defaults to `local` (host fs). "
-        "Mirrors the CLI `--workspace` flag."
+        "The UI executes against your **local sandbox**. `local` is the UI's "
+        "execution backend; `docker:` / `ssh:` build a validated spec you run "
+        "via the CLI command shown below (mirrors the `--workspace` flag). "
+        "Each backend's quirks: `docs/{WORKSPACE,DOCKER_WORKSPACE,REMOTE_WORKSPACE}.md`."
     )
 
     current_spec = prefs.workspace_backend_spec or "local"
@@ -198,12 +203,26 @@ def _render_workspace_backend(store: MemoryStore, prefs) -> None:
             except ValueError as exc:
                 st.error(str(exc))
         col_help.caption(
-            "The kernel boundary doesn't change — only the Workspace facade "
-            "the executor uses. Each backend's quirks are documented in "
-            "`docs/{WORKSPACE,DOCKER_WORKSPACE,REMOTE_WORKSPACE}.md`."
+            "The kernel boundary doesn't change — only the Workspace facade the executor uses."
         )
     else:
         st.info(f"Current backend is **`{current_spec}`** (no pending change).")
+
+    # Phase 35.2 — CLI bridge. For a saved non-local backend, the UI
+    # can't drive it directly (it executes locally); show the exact CLI
+    # command so the chosen backend is genuinely usable, not decorative.
+    from app.ui._workspace_backend import describe_ui_backend
+
+    notice = describe_ui_backend(current_spec)
+    if not notice.executes_locally and notice.cli_command:
+        st.divider()
+        st.markdown("**Run this task on the chosen backend (via CLI):**")
+        st.code(notice.cli_command, language="bash")
+        st.caption(
+            "The Streamlit UI executes against your local sandbox by design. "
+            "Container / remote execution is first-class via the CLI above — "
+            "the persisted spec is validated, not just stored."
+        )
 
 
 def _render_semantic_pref(store: MemoryStore, prefs) -> None:

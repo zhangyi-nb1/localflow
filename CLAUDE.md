@@ -176,11 +176,26 @@ Phase 23 已经定下命名纪律，扩展到全项目：
     (4 backend grammar + parse_workspace_spec 验证 + memory schema v5 持久化)；
     sidebar 显示当前 backend；headed Playwright 本地可观察验证（13 张截图）；
     +6 测试（1056 → 1062）；E2E 报告 4/4 finding 全部修复
-12. Phase 34.5+（候选）= 把持久化的 workspace_backend_spec 真接到 Plan/Execute
-    页面的 Executor 实例化（目前只保存不消费）/ Execute page React 模式 +
-    ConfirmationPolicy 选择器 / keep-alive HTTP client / Unix domain socket /
-    TLS + 多租户 agent-server / 物理迁移 kernel 实现模块到 `localflow_kernel/` /
-    PyPI 拆包 / 实测 benchmark
+12. ~~Phase 35 = 定位收敛 + 止损（v0.33.0）~~ ✅ 2026-05-29 —
+    方向细化锁定 flagship =「可验证 LLM 产物流水线 / 带出处核验的文献综述」+
+    新增第 7 条差异化 **verify-as-gate**；`docs/PHASE_35_PLAN.md` 归档；
+    `PROJECT_DIRECTION.md` Tracking Goal + Roadmap Bias + 差异化列表更新；
+    UI Workspace backend 装饰性缺口**诚实降级**（不假驱动容器，改 spec-builder +
+    CLI bridge）；README 双语开篇 + research_pack 叙述前置 flagship；零 kernel 触碰
+13. **Phase 36（下一步）= flagship 垂直落地：可验证文献综述**（详见
+    `docs/PHASE_35_PLAN.md` §6）—— grounding grader → execute gate +
+    rollback-on-fail + sources ledger evidence bundle + 含刻意植入幻觉的 demo +
+    eval（幻觉召回率 / grounded 误报率）。预期零 kernel 触碰。
+14. Phase 37（候选）= 六大失败模式 benchmark + 朴素 agent baseline 对照 +
+    README 公开数字表。
+
+### 方向细化（2026-05-29）——演示层收敛
+
+驱动约束：本项目首要用途是**大模型应用开发工程师简历中的 harness 作品**。规划优先级 =
+"把已有的强 harness 能力 surface + 用一个可信场景演示 + 用 eval 数字证明"，**不是继续铺广度**。
+
+故意**不做**（做减法）：长任务 handoff/checkpoint/resume、更多 Workspace 后端、
+路线 A（代码域 EDIT 动作，要动 kernel，留作 flagship 立住后扩展）、继续堆窄 skill。
 
 后续 Phase 在前置 Phase 落地后再写细节计划。
 

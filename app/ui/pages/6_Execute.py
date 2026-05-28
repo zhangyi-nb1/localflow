@@ -39,6 +39,15 @@ def main() -> None:
     if task_id is None:
         return
 
+    # Phase 35.2 — honest backend notice, rendered right after task
+    # selection (before any task/plan existence guard) so it always
+    # shows regardless of task state. If the user picked a docker:/ssh:
+    # backend in Settings, the UI executes locally (the flagship is
+    # local-only + container/remote lifecycle inside a Streamlit rerun
+    # is fragile). Tell the user that + the exact CLI command to run on
+    # their chosen backend. Removes the "saved but ignored" smell (rule F).
+    _render_backend_notice(task_id)
+
     store = RunStore(task_id=task_id)
     if not store.exists(store.TASK_JSON):
         st.error(t("execute.task.missing_task", task_id=task_id))
@@ -219,6 +228,29 @@ def main() -> None:
 
         # Clear the now-consumed token from session
         st.session_state.pop(SESSION_TOKEN_KEY, None)
+
+
+def _render_backend_notice(task_id: str) -> None:
+    """Phase 35.2 — surface the active Workspace backend honestly.
+
+    For ``local`` (the UI's real execution backend) this stays quiet.
+    For ``docker:`` / ``ssh:`` it shows an info banner + the exact CLI
+    command, because the UI executes locally by design."""
+    try:
+        from app.memory import MemoryStore
+
+        spec = MemoryStore().load().workspace_backend_spec or "local"
+    except Exception:
+        spec = "local"
+
+    from app.ui._workspace_backend import describe_ui_backend
+
+    notice = describe_ui_backend(spec, task_id=task_id)
+    if notice.executes_locally:
+        return
+    st.info(f"🛰 {notice.message}")
+    if notice.cli_command:
+        st.code(notice.cli_command, language="bash")
 
 
 def _dry_run_markdown_for_ui(md: str) -> str:
