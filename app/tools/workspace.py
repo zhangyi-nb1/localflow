@@ -237,7 +237,7 @@ class LocalWorkspace:
 
 
 def parse_workspace_spec(spec: str, *, workspace_root: Path) -> "Workspace":
-    """Phase 29.2 — turn a CLI / Recipe workspace string into a
+    """Phase 29.2 / 31.1 — turn a CLI / Recipe workspace string into a
     concrete ``Workspace`` instance.
 
     Supported specs:
@@ -245,9 +245,18 @@ def parse_workspace_spec(spec: str, *, workspace_root: Path) -> "Workspace":
       - ``"docker:<image>"`` → ``DockerWorkspace(image=<image>)``;
         caller is responsible for calling ``.start()`` / ``.close()``
         (the CLI wraps execution in a context manager).
+      - ``"ssh:<host>[:<port>][:<root>]"`` → ``RemoteWorkspace(...)``.
+        Grammar:
+          * ``<host>`` — required; passed to ssh verbatim (so
+            ``~/.ssh/config`` aliases work). May include user@host.
+          * ``<port>`` — optional integer; defaults 22.
+          * ``<root>`` — optional absolute path on the remote;
+            defaults ``/tmp/localflow-ws``. Must start with ``/`` so
+            the parser can disambiguate it from ``<port>``.
 
-    Raises ``ValueError`` on an unrecognised prefix so the CLI can
-    surface a clear error before any action runs.
+    Raises ``ValueError`` on an unrecognised prefix or malformed
+    ssh spec so the CLI can surface a clear error before any action
+    runs.
     """
     if spec in ("", "local"):
         return LocalWorkspace(workspace_root)
@@ -261,6 +270,68 @@ def parse_workspace_spec(spec: str, *, workspace_root: Path) -> "Workspace":
                 "try 'docker:python:3.12-slim'"
             )
         return DockerWorkspace(image=image)
+    if spec.startswith("ssh:"):
+        from app.tools.remote_workspace import (
+            DEFAULT_REMOTE_ROOT,
+            DEFAULT_SSH_PORT,
+            RemoteWorkspace,
+        )
+
+        body = spec[len("ssh:") :].strip()
+        if not body:
+            raise ValueError(
+                "ssh workspace spec missing host after 'ssh:' — "
+                "try 'ssh:user@example.com' or 'ssh:user@example.com:22:/srv/wkspc'"
+            )
+        host, port, remote_root = _parse_ssh_spec_body(body)
+        return RemoteWorkspace(
+            host=host,
+            port=port or DEFAULT_SSH_PORT,
+            workspace_root_remote=remote_root or DEFAULT_REMOTE_ROOT,
+        )
     raise ValueError(
-        f"unrecognised workspace spec {spec!r}; supported: 'local' (default), 'docker:<image>'"
+        f"unrecognised workspace spec {spec!r}; supported: 'local' (default), "
+        "'docker:<image>', 'ssh:<host>[:<port>][:<root>]'"
     )
+
+
+def _parse_ssh_spec_body(body: str) -> tuple[str, int | None, str | None]:
+    """Parse ``<host>[:<port>][:<root>]`` (sans ``ssh:`` prefix).
+
+    Grammar is right-to-left: any trailing segment starting with ``/``
+    is the remote root; any other trailing integer segment is the
+    port. Everything before is the host. This handles:
+
+      - ``user@host``                 → (user@host, None, None)
+      - ``host:2222``                 → (host, 2222, None)
+      - ``host:/srv/ws``              → (host, None, /srv/ws)
+      - ``host:2222:/srv/ws``         → (host, 2222, /srv/ws)
+      - ``user@host:2222:/srv/ws``    → (user@host, 2222, /srv/ws)
+    """
+    remote_root: str | None = None
+    port: int | None = None
+
+    # 1. Trailing ``/<path>`` is the remote root.
+    if ":/" in body:
+        head, _, root_part = body.rpartition(":/")
+        remote_root = "/" + root_part
+        body = head
+
+    # 2. Trailing integer after a colon is the port.
+    if ":" in body:
+        head, _, last = body.rpartition(":")
+        try:
+            port = int(last)
+            body = head
+        except ValueError:
+            # last segment isn't an integer — it's part of the host
+            # (e.g. an IPv6 literal). Leave body as-is.
+            pass
+
+    host = body.strip()
+    if not host:
+        raise ValueError(
+            "ssh workspace spec missing host; try 'ssh:user@example.com' "
+            "or 'ssh:user@example.com:22:/srv/wkspc'"
+        )
+    return host, port, remote_root

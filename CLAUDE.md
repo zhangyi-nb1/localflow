@@ -153,8 +153,13 @@ Phase 23 已经定下命名纪律，扩展到全项目：
 7. ~~Phase 30 = `localflow_kernel` 独立包（v0.28.0）~~ ✅ 2026-05-27 —
    facade + `LLMClient`/`react_prompts` 物理迁入 kernel；`tests/test_kernel_boundary.py`
    AST 静态边界 lint 永久守住；`docs/KERNEL_PACKAGE.md` 用户手册
-8. Phase 31+（候选）= 物理迁移 kernel 实现模块 / RemoteWorkspace /
-   HTTP agent-server（DockerWorkspace 性能优化） / PyPI 拆包
+8. ~~Phase 31 = RemoteWorkspace via SSH（v0.29.0）~~ ✅ 2026-05-27 —
+   `RemoteWorkspace` + `parse_workspace_spec` 学会 `ssh:<host>[:<port>][:<root>]`；
+   mock-subprocess 44 单元 + 2 ssh-actual 集成（_skip_no_ssh）；
+   `docs/REMOTE_WORKSPACE.md` 用户手册；README ASCII art "Remote planned" → "Remote shipped"
+9. Phase 32+（候选）= HTTP agent-server（Docker + Remote 性能优化共享）/
+   物理迁移 kernel 实现模块到 `localflow_kernel/` / PyPI 拆包 /
+   SSH ControlMaster 复用连接
 
 后续 Phase 在前置 Phase 落地后再写细节计划。
 

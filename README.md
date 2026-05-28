@@ -16,12 +16,14 @@ plan ──► dry-run ──► approval ──► execute ──► verify ─
                                      └── react loop: LLM consulted between
                                          actions (drift budget bounded);
                                          per-action approval gate (4 tiers);
-                                         Workspace facade (Local + Docker
-                                         shipped; Remote planned)
-                                         decoupled from the kernel.
+                                         Workspace facade (Local + Docker +
+                                         Remote shipped) decoupled from
+                                         the kernel.
 ```
 
-**Branch status** — `main` is **v0.28.x-dev**. Tagged releases:
+**Branch status** — `main` is **v0.29.x-dev**. Tagged releases:
+[`v0.29.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.29.0)
+(RemoteWorkspace — SSH-backed Workspace) ·
 [`v0.28.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.28.0)
 (`localflow_kernel` — distributable kernel package) ·
 [`v0.27.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.27.0)
@@ -30,7 +32,7 @@ plan ──► dry-run ──► approval ──► execute ──► verify ─
 (Workspace abstraction) · [`v0.25.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.25.0)
 (ConfirmationPolicy) · [`v0.24.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.24.0)
 (React Loop) · [`v0.23.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.23.0)
-(Sandboxed ComputeAction). **935 tests passing.** CI across macOS / Linux /
+(Sandboxed ComputeAction). **979 tests passing.** CI across macOS / Linux /
 Windows × Python 3.11 / 3.12 / 3.13.
 
 > **Embedding the harness in your own tool?** The kernel is now a standalone
@@ -59,7 +61,7 @@ is independently testable:
 | LLM-mediated mid-execute adaptation | tool-call free-for-all | ✓ react loop with bounded drift budget; LLM decisions still pass policy_guard |
 | Sandboxed code execution | ad-hoc shell | ✓ typed `PYTHON_COMPUTE`, output-to-scratch, isolated rollback |
 | Action trace, audit-ready | partial | ✓ `trace.jsonl` per run, single rich `ActionTraceEvent` shape |
-| Filesystem backend swappable | hard-coded | ✓ `Workspace` Protocol (LocalWorkspace today; Docker / Remote planned) |
+| Filesystem backend swappable | hard-coded | ✓ `Workspace` Protocol — LocalWorkspace + DockerWorkspace + RemoteWorkspace shipped |
 
 ---
 
@@ -297,7 +299,7 @@ Full threat model + per-mitigation tests:
 
 ### Strategic / direction
 - [`docs/PROJECT_DIRECTION.md`](docs/PROJECT_DIRECTION.md) — harness-first project direction, the locked Route B decision
-- [`docs/PHASES.md`](docs/PHASES.md) — full per-phase changelog + §10.7 ledger (4 deliberate kernel exceptions / 37 deliveries / 33 zero-kernel-touch)
+- [`docs/PHASES.md`](docs/PHASES.md) — full per-phase changelog + §10.7 ledger (4 deliberate kernel exceptions / 38 deliveries / 34 zero-kernel-touch)
 - [`docs/research/OPENHANDS_HARNESS_STUDY.md`](docs/research/OPENHANDS_HARNESS_STUDY.md) — the 26 KB source-evidence study that motivated v0.24+
 
 ### Per-phase design / user-facing
@@ -308,6 +310,7 @@ Full threat model + per-mitigation tests:
 - [`docs/PHASE_28_DESIGN.md`](docs/PHASE_28_DESIGN.md) · [`docs/WORKSPACE.md`](docs/WORKSPACE.md) — Phase 28 Workspace abstraction
 - [`docs/DOCKER_WORKSPACE.md`](docs/DOCKER_WORKSPACE.md) — Phase 29 DockerWorkspace user manual
 - [`docs/PHASE_30_DESIGN.md`](docs/PHASE_30_DESIGN.md) · [`docs/KERNEL_PACKAGE.md`](docs/KERNEL_PACKAGE.md) — Phase 30 `localflow_kernel` package
+- [`docs/PHASE_31_DESIGN.md`](docs/PHASE_31_DESIGN.md) · [`docs/REMOTE_WORKSPACE.md`](docs/REMOTE_WORKSPACE.md) — Phase 31 RemoteWorkspace (SSH)
 
 ### Architecture / extension
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — 5-layer breakdown + 8 iron rules + extension guide
