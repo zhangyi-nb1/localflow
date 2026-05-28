@@ -145,6 +145,11 @@ class RemoteWorkspace:
     (the remote is user-managed; the workspace is a regular directory,
     not a container). Operations route to the remote via ``ssh``. The
     kernel sees the same Workspace Protocol it sees for LocalWorkspace.
+
+    Phase 33.2: ``use_agent_server`` makes ops go through a long-lived
+    HTTP daemon over an SSH tunnel instead of one ``ssh`` per op.
+    Defaults to False to keep Phase 31's behaviour stable. Best-effort
+    — falls back to ``ssh`` per-op on any startup failure.
     """
 
     host: str
@@ -157,7 +162,22 @@ class RemoteWorkspace:
 
     exec_timeout_sec: int = DEFAULT_EXEC_TIMEOUT_SEC
     ssh_options: tuple[str, ...] = field(default_factory=lambda: DEFAULT_SSH_OPTIONS)
+    use_agent_server: bool = False
+    """Phase 33.2 opt-in: route ops through a remote agent-server +
+    SSH tunnel instead of ``ssh`` per op."""
+
     _started: bool = False
+    _agent_proc: "subprocess.Popen | None" = None
+    """The ssh subprocess that runs the agent-server on the remote AND
+    holds the ``ssh -L`` tunnel open. Terminated on close()."""
+
+    _agent_client: "object | None" = None
+    """``AgentServerClient`` when agent mode is active. Type-erased to
+    avoid a top-level import cycle."""
+
+    _agent_host_port: int = 0
+    """Host-side port the SSH tunnel forwards to the remote
+    agent-server. 0 when no agent in flight."""
 
     @classmethod
     def is_available(cls) -> bool:
@@ -198,11 +218,169 @@ class RemoteWorkspace:
                 "Check ~/.ssh/config, key-based auth, and that the host accepts BatchMode=yes."
             ) from exc
 
+        # Phase 33.2: best-effort agent-server spawn over ssh tunnel.
+        if self.use_agent_server:
+            self._spawn_agent_server()
+
+    def _spawn_agent_server(self) -> None:
+        """Phase 33.2 — start the bundled agent-server on the remote
+        and open an ``ssh -L`` tunnel. Reads the 3 ``AGENT_SERVER_*``
+        handshake lines from the ssh subprocess's stdout, then leaves
+        the subprocess alive until ``close()``.
+
+        Best-effort: any failure logs to stderr and leaves
+        ``_agent_client = None`` so Workspace ops fall back to ssh
+        per op.
+        """
+        import secrets as _secrets
+        import socket as _socket
+        import sys as _sys
+        import time as _time
+
+        # Lazy import — keep agent_server out of the import graph for
+        # callers that only need ssh exec mode.
+        from app.tools.agent_server.bundle import build_bundle
+        from app.tools.agent_server.client import AgentServerClient
+
+        # Pick a free host port for the tunnel head. Same approach as
+        # DockerWorkspace's _pick_free_local_port helper.
+        s = _socket.socket()
+        try:
+            s.bind(("127.0.0.1", 0))
+            host_port = s.getsockname()[1]
+        finally:
+            s.close()
+        # Remote-side port is also chosen on the host (ssh -L lets us
+        # pick both sides) so the bundle binds to a known value.
+        remote_port = 8765
+        token = _secrets.token_hex(32)
+        bundle = build_bundle()
+
+        # Build the env-prefix the remote shell needs so the bundle
+        # picks up our chosen port/workspace/token. Bind to 127.0.0.1
+        # on the remote so the SSH tunnel head is the only exposed
+        # interface (matches the Docker case's loopback-only bind on
+        # the host side).
+        remote_env = (
+            f"AGENT_SERVER_WORKSPACE={shlex.quote(self.workspace_root_remote)} "
+            f"AGENT_SERVER_PORT={remote_port} "
+            f"AGENT_SERVER_TOKEN={token} "
+            f"AGENT_SERVER_HOST=127.0.0.1"
+        )
+        # Build the ssh command: open a tunnel + run the bundle on
+        # the remote via python3 -c. ssh -L forwards
+        # host:host_port -> remote:127.0.0.1:remote_port.
+        ssh_argv = [
+            "ssh",
+            *self.ssh_options,
+            "-L",
+            f"{host_port}:127.0.0.1:{remote_port}",
+        ]
+        if self.port != DEFAULT_SSH_PORT:
+            ssh_argv.extend(["-p", str(self.port)])
+        ssh_argv.extend(
+            [
+                self.host,
+                "--",
+                "env",
+                # Pass env then exec python3 -c with the bundle.
+                # The bundle is large (~26 KB) so we feed it via
+                # python3's stdin instead of as an argv string, to
+                # avoid hitting shell argv limits on weird sshds.
+                *remote_env.split(),
+                "python3",
+                "-",
+            ]
+        )
+
+        proc = subprocess.Popen(
+            ssh_argv,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        # Pipe the bundle source via stdin (python3 - reads from stdin).
+        try:
+            assert proc.stdin is not None
+            proc.stdin.write(bundle)
+            proc.stdin.close()
+        except (BrokenPipeError, OSError) as exc:
+            proc.kill()
+            _sys.stderr.write(
+                f"RemoteWorkspace agent-server stdin write failed: {exc}; "
+                f"falling back to ssh per op.\n"
+            )
+            return
+
+        # Read handshake lines with timeout.
+        deadline = _time.time() + 15.0
+        info: dict[str, str] = {}
+        while len(info) < 3:
+            if _time.time() > deadline:
+                proc.terminate()
+                self._agent_proc = None
+                self._agent_client = None
+                _sys.stderr.write(
+                    "RemoteWorkspace agent-server handshake timed out; "
+                    "falling back to ssh per op.\n"
+                )
+                return
+            if proc.poll() is not None:
+                stderr_text = ""
+                if proc.stderr is not None:
+                    try:
+                        stderr_text = proc.stderr.read() or ""
+                    except Exception:
+                        pass
+                _sys.stderr.write(
+                    f"RemoteWorkspace agent-server died early "
+                    f"(rc={proc.returncode}). stderr: {stderr_text.strip()}\n"
+                    f"Falling back to ssh per op.\n"
+                )
+                self._agent_proc = None
+                self._agent_client = None
+                return
+            assert proc.stdout is not None
+            line = proc.stdout.readline()
+            if not line:
+                _time.sleep(0.05)
+                continue
+            stripped = line.strip()
+            if "=" not in stripped:
+                continue
+            k, _, v = stripped.partition("=")
+            info[k] = v
+
+        if info.get("AGENT_SERVER_TOKEN") != token:
+            proc.terminate()
+            self._agent_proc = None
+            self._agent_client = None
+            return
+
+        self._agent_proc = proc
+        self._agent_host_port = host_port
+        self._agent_client = AgentServerClient(
+            base_url=f"http://127.0.0.1:{host_port}",
+            token=token,
+        )
+
     def close(self) -> None:
         """Release ssh resources. The remote directory is NOT removed;
         the remote is user-managed."""
-        # Currently a no-op; future control-master / connection sharing
-        # cleanup hooks here.
+        # Phase 33.2 — tear the agent tunnel + remote python proc down.
+        if self._agent_proc is not None:
+            try:
+                self._agent_proc.terminate()
+                self._agent_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self._agent_proc.kill()
+            except OSError:
+                pass
+            self._agent_proc = None
+        self._agent_client = None
+        self._agent_host_port = 0
         self._started = False
 
     def __enter__(self) -> "RemoteWorkspace":
@@ -318,8 +496,20 @@ class RemoteWorkspace:
         return result.stdout or b""
 
     # ── Workspace Protocol: reads ────────────────────────────────────
+    # Phase 33.2: each method tries the agent-client first when active;
+    # falls back to ssh exec on any failure.
+
+    def _delegate_to_agent(self):
+        """Return the AgentServerClient if active, else None."""
+        return self._agent_client
 
     def exists(self, rel_path: str) -> bool:
+        agent = self._delegate_to_agent()
+        if agent is not None:
+            try:
+                return agent.exists(rel_path)
+            except Exception:
+                pass
         try:
             rel = _validate_rel_path(rel_path)
         except RemoteWorkspaceError:
@@ -328,6 +518,20 @@ class RemoteWorkspace:
         return result.returncode == 0
 
     def stat(self, rel_path: str) -> WorkspaceStat | None:
+        agent = self._delegate_to_agent()
+        if agent is not None:
+            try:
+                payload = agent.stat(rel_path)
+                if payload is None:
+                    return None
+                return WorkspaceStat(
+                    rel_path=payload.rel_path,
+                    size_bytes=payload.size_bytes,
+                    is_file=payload.is_file,
+                    is_dir=payload.is_dir,
+                )
+            except Exception:
+                pass
         try:
             rel = _validate_rel_path(rel_path)
         except RemoteWorkspaceError:
@@ -354,6 +558,12 @@ class RemoteWorkspace:
         )
 
     def sha256(self, rel_path: str) -> str | None:
+        agent = self._delegate_to_agent()
+        if agent is not None:
+            try:
+                return agent.sha256(rel_path)
+            except Exception:
+                pass
         try:
             rel = _validate_rel_path(rel_path)
         except RemoteWorkspaceError:
@@ -370,6 +580,12 @@ class RemoteWorkspace:
         return result.stdout.split()[0] if result.stdout else None
 
     def list_dir(self, rel_path: str = "") -> list[str]:
+        agent = self._delegate_to_agent()
+        if agent is not None:
+            try:
+                return agent.list_dir(rel_path)
+            except Exception:
+                pass
         try:
             rel = _validate_rel_path(rel_path)
         except RemoteWorkspaceError:
@@ -384,6 +600,12 @@ class RemoteWorkspace:
         return sorted(line for line in result.stdout.splitlines() if line)
 
     def read_bytes(self, rel_path: str) -> bytes:
+        agent = self._delegate_to_agent()
+        if agent is not None:
+            try:
+                return agent.read_bytes(rel_path)
+            except Exception:
+                pass
         rel = _validate_rel_path(rel_path)
         return self._exec_bytes(["cat", shlex.quote(self._remote_path(rel))])
 
@@ -393,6 +615,12 @@ class RemoteWorkspace:
     # ── Workspace Protocol: writes ───────────────────────────────────
 
     def mkdir(self, rel_path: str) -> bool:
+        agent = self._delegate_to_agent()
+        if agent is not None:
+            try:
+                return agent.mkdir(rel_path)
+            except Exception:
+                pass
         rel = _validate_rel_path(rel_path)
         path = self._remote_path(rel)
         # Pre-check existence to return False on idempotent re-create —
@@ -403,6 +631,12 @@ class RemoteWorkspace:
         return True
 
     def move(self, src_rel: str, dst_rel: str) -> Path:
+        agent = self._delegate_to_agent()
+        if agent is not None:
+            try:
+                return agent.move(src_rel, dst_rel)
+            except Exception:
+                pass
         src = _validate_rel_path(src_rel)
         dst = _validate_rel_path(dst_rel)
         dst_path = self._remote_path(dst)
@@ -416,6 +650,12 @@ class RemoteWorkspace:
         return Path(dst_path)
 
     def copy(self, src_rel: str, dst_rel: str) -> Path:
+        agent = self._delegate_to_agent()
+        if agent is not None:
+            try:
+                return agent.copy(src_rel, dst_rel)
+            except Exception:
+                pass
         src = _validate_rel_path(src_rel)
         dst = _validate_rel_path(dst_rel)
         dst_path = self._remote_path(dst)
@@ -437,6 +677,12 @@ class RemoteWorkspace:
         return self.write_bytes(rel_path, content.encode("utf-8"))
 
     def write_bytes(self, rel_path: str, content: bytes) -> Path:
+        agent = self._delegate_to_agent()
+        if agent is not None:
+            try:
+                return agent.write_bytes(rel_path, content)
+            except Exception:
+                pass
         rel = _validate_rel_path(rel_path)
         path = self._remote_path(rel)
         parent = os.path.dirname(path)

@@ -163,10 +163,16 @@ Phase 23 已经定下命名纪律，扩展到全项目：
    `secrets.compare_digest` 防 timing 攻击；64 测试（34 protocol + 15 endpoint e2e
    + 15 Workspace contract，含完整 Executor.execute roundtrip）；
    `docs/AGENT_SERVER.md` 用户手册；明确 deferred：Docker/Remote 集成（Phase 33）
-10. Phase 33+（候选）= DockerWorkspace 集成 agent-server（perf 10x）/
-    RemoteWorkspace 集成 agent-server（ssh tunnel）/
-    keep-alive HTTP client / TLS + 多租户 /
-    物理迁移 kernel 实现模块到 `localflow_kernel/` / PyPI 拆包
+10. ~~Phase 33 = Docker/Remote 集成 agent-server（v0.31.0）~~ ✅ 2026-05-28 —
+    `app/tools/agent_server/bundle.py` 把 protocol+server inline 成 ~26 KB 自包含 Python
+    源串；`DockerWorkspace(use_agent_server=True)` 通过 `docker run -p` + `docker exec
+    python3 -c <bundle>` 启动；`RemoteWorkspace(use_agent_server=True)` 通过
+    `ssh -L` tunnel + stdin pipe bundle 启动；两端三态 fallback（handshake 超时 /
+    bad token / Python ImportError → 自动回落到 exec-per-op）；per-op 延迟从
+    ~100-300ms 降到 ~5-20ms；+13 测试（1043 → 1056）
+11. Phase 34+（候选）= keep-alive HTTP client / Unix domain socket transport /
+    TLS + 多租户 agent-server / 物理迁移 kernel 实现模块到 `localflow_kernel/` /
+    PyPI 拆包 / 实测 benchmark 写进文档
 
 后续 Phase 在前置 Phase 落地后再写细节计划。
 

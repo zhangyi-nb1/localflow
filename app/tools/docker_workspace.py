@@ -39,8 +39,11 @@ from __future__ import annotations
 import io
 import os
 import re
+import secrets
 import shlex
+import socket
 import subprocess
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -150,6 +153,60 @@ def _validate_rel_path(rel_path: str) -> str:
     return "/".join(parts)
 
 
+def _pick_free_local_port() -> int:
+    """Phase 33.1 — pick a free 127.0.0.1 port the kernel can later
+    forward via ``docker run -p``. We bind to ``0`` (kernel-assigned),
+    read the port, then close — there's a tiny window where someone
+    else could grab it, but ports are 64K so collisions are rare.
+    """
+    s = socket.socket()
+    try:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+    finally:
+        s.close()
+
+
+def _read_agent_handshake(proc: "subprocess.Popen", *, timeout_sec: float = 10.0) -> dict[str, str]:
+    """Phase 33.1 — parse the three ``AGENT_SERVER_*`` lines the
+    bundle writes to stdout on startup.
+
+    Raises ``TimeoutError`` if the handshake doesn't complete within
+    ``timeout_sec`` or ``RuntimeError`` if the subprocess dies first.
+    """
+    info: dict[str, str] = {}
+    deadline = time.time() + timeout_sec
+    while len(info) < 3:
+        if time.time() > deadline:
+            raise TimeoutError(f"agent-server handshake timed out after {timeout_sec}s")
+        if proc.poll() is not None:
+            stderr = ""
+            if proc.stderr is not None:
+                try:
+                    stderr = proc.stderr.read() or ""
+                except Exception:
+                    pass
+            raise RuntimeError(
+                f"agent-server subprocess exited early (rc={proc.returncode}). stderr: {stderr.strip()}"
+            )
+        # readline blocks; the dispatch above relies on the bundle
+        # writing exactly three lines back-to-back at startup. If it
+        # doesn't, the deadline cap catches it.
+        if proc.stdout is None:
+            raise RuntimeError("agent-server subprocess has no stdout")
+        line = proc.stdout.readline()
+        if not line:
+            # EOF before all three lines arrived.
+            time.sleep(0.05)
+            continue
+        line = line.strip()
+        if "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        info[k] = v
+    return info
+
+
 @dataclass
 class DockerWorkspace:
     """Workspace backed by a Docker container.
@@ -159,6 +216,15 @@ class DockerWorkspace:
     Operations between those bookends route to the container via
     ``docker exec``. The kernel sees the same Workspace Protocol it
     sees for LocalWorkspace.
+
+    Phase 33.1: ``use_agent_server`` makes ops go through a long-lived
+    HTTP daemon inside the container instead of one ``docker exec`` per
+    op. Defaults to False to keep Phase 29's behaviour stable; opt in
+    via ``DockerWorkspace(use_agent_server=True)`` or via the
+    ``localflow execute --workspace docker:<img>:agent`` CLI shorthand
+    (added in 33.2). If the agent-server fails to start, the backend
+    logs a warning and **falls back to docker exec** automatically —
+    callers never see partial state.
     """
 
     image: str = DEFAULT_IMAGE
@@ -166,7 +232,30 @@ class DockerWorkspace:
     workspace_root_inside: str = CONTAINER_WORKSPACE_ROOT
     exec_timeout_sec: int = DEFAULT_EXEC_TIMEOUT_SEC
     container_id: str | None = None
+    use_agent_server: bool = False
+    """Phase 33.1 opt-in: route ops through an in-container HTTP daemon
+    (`AgentServer`) instead of `docker exec` per op. Promotes Workspace
+    op latency from ~100-300 ms to ~5-20 ms on hot paths."""
+
+    agent_server_port_in_container: int = 8765
+    """Container-side port the agent-server binds to. We forward a
+    random host port to this fixed container port so each
+    DockerWorkspace gets its own port mapping."""
+
     _started: bool = False
+    _agent_proc: "subprocess.Popen | None" = None
+    """The ``docker exec`` subprocess that keeps the agent-server
+    alive. ``close()`` terminates it. None when use_agent_server=False
+    or when the agent failed to start (graceful fallback)."""
+
+    _agent_client: "object | None" = None
+    """``AgentServerClient`` instance when agent-server mode is active.
+    Type-erased to ``object`` here to avoid a top-level import cycle —
+    actual type is restored at the use site."""
+
+    _agent_host_port: int = 0
+    """The host-side port the agent-server's container port is
+    forwarded to. 0 when no agent in flight."""
 
     @classmethod
     def is_available(cls) -> bool:
@@ -218,13 +307,30 @@ class DockerWorkspace:
             "-d",
             "--name",
             name,
-            "--workdir",
-            self.workspace_root_inside,
-            self.image,
-            "sh",
-            "-c",
-            f"mkdir -p {shlex.quote(self.workspace_root_inside)} && sleep infinity",
         ]
+        # Phase 33.1: if agent-server mode is requested, pick a free
+        # host port + forward it to the fixed container-side port the
+        # agent-server will bind to. Picking the host port up front
+        # (via SO_REUSEADDR socket) is more reliable than asking docker
+        # for an ephemeral assignment + querying ``docker port`` after.
+        if self.use_agent_server:
+            self._agent_host_port = _pick_free_local_port()
+            cmd.extend(
+                [
+                    "-p",
+                    f"127.0.0.1:{self._agent_host_port}:{self.agent_server_port_in_container}",
+                ]
+            )
+        cmd.extend(
+            [
+                "--workdir",
+                self.workspace_root_inside,
+                self.image,
+                "sh",
+                "-c",
+                f"mkdir -p {shlex.quote(self.workspace_root_inside)} && sleep infinity",
+            ]
+        )
         try:
             result = subprocess.run(
                 cmd,
@@ -248,10 +354,115 @@ class DockerWorkspace:
         # /workspace, so the extra mkdir was redundant anyway.
         self._started = True
 
+        # Phase 33.1: spawn the in-container agent-server. Best-effort —
+        # on any failure we log + leave ``_agent_client = None`` so
+        # method dispatch falls through to docker exec.
+        if self.use_agent_server:
+            self._spawn_agent_server()
+
+    def _spawn_agent_server(self) -> None:
+        """Phase 33.1 — start the bundled agent-server inside the
+        container via ``docker exec``. Reads the 3 ``AGENT_SERVER_*``
+        handshake lines from stdout, then leaves the subprocess
+        running until ``close()``.
+
+        Best-effort: any failure (image missing python3, port already
+        bound, handshake timeout) logs a diagnostic to stderr and
+        leaves ``_agent_client = None`` so the Workspace dispatch
+        falls back to ``docker exec`` per op.
+        """
+        # Lazy import to keep agent_server out of the import graph when
+        # users only use the docker exec mode.
+        from app.tools.agent_server.bundle import build_bundle
+        from app.tools.agent_server.client import AgentServerClient
+
+        bundle = build_bundle()
+        token = secrets.token_hex(32)
+        env_args = [
+            "-e",
+            f"AGENT_SERVER_WORKSPACE={self.workspace_root_inside}",
+            "-e",
+            f"AGENT_SERVER_PORT={self.agent_server_port_in_container}",
+            "-e",
+            f"AGENT_SERVER_TOKEN={token}",
+            # Bind to 0.0.0.0 so docker's port-forward sees the listener.
+            # Defence still holds — the host-side mapping pinned the
+            # interface to 127.0.0.1 via ``-p 127.0.0.1:<host>:<ctr>``.
+            "-e",
+            "AGENT_SERVER_HOST=0.0.0.0",
+        ]
+        proc = subprocess.Popen(
+            [
+                "docker",
+                "exec",
+                "-i",
+                *env_args,
+                self.container_name or "",
+                "python3",
+                "-c",
+                bundle,
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        # Read handshake lines with a per-line timeout so a stuck
+        # container can't hang the whole start() call.
+        try:
+            handshake = _read_agent_handshake(proc, timeout_sec=10.0)
+        except (TimeoutError, RuntimeError) as exc:
+            # Bundle failed to bind / image missing python3 / etc.
+            # Tear the dangling subprocess down and fall back to exec.
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            self._agent_proc = None
+            self._agent_client = None
+            # Surface a diagnostic but don't raise — Workspace ops
+            # will use docker exec.
+            import sys as _sys
+
+            _sys.stderr.write(
+                f"DockerWorkspace agent-server start failed: {exc}; "
+                f"falling back to ``docker exec`` per op.\n"
+            )
+            return
+
+        actual_token = handshake.get("AGENT_SERVER_TOKEN")
+        if actual_token != token:
+            # Shouldn't happen — bundle honours AGENT_SERVER_TOKEN env.
+            # But if it did, treat as a startup failure.
+            proc.terminate()
+            self._agent_proc = None
+            self._agent_client = None
+            return
+
+        self._agent_proc = proc
+        self._agent_client = AgentServerClient(
+            base_url=f"http://127.0.0.1:{self._agent_host_port}",
+            token=actual_token,
+        )
+
     def close(self) -> None:
         """Stop and remove the container. Idempotent."""
         if not self._started or self.container_name is None:
             return
+        # Phase 33.1: shut the agent-server subprocess down first so
+        # the docker rm -f doesn't race with a half-alive exec.
+        if self._agent_proc is not None:
+            try:
+                self._agent_proc.terminate()
+                self._agent_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self._agent_proc.kill()
+            except OSError:
+                pass
+            self._agent_proc = None
+        self._agent_client = None
+        self._agent_host_port = 0
         subprocess.run(
             ["docker", "rm", "-f", self.container_name],
             capture_output=True,
@@ -365,7 +576,23 @@ class DockerWorkspace:
 
     # ── Workspace Protocol: reads ────────────────────────────────────
 
+    # Phase 33.1: helper that wraps each method body so when
+    # ``_agent_client`` is active, the call delegates to HTTP and never
+    # spawns a ``docker exec``. Each Workspace method below tries the
+    # delegate first; if not active OR the call raises, the existing
+    # ``docker exec`` body runs as fallback.
+
+    def _delegate_to_agent(self):
+        """Return the AgentServerClient if active, else None."""
+        return self._agent_client
+
     def exists(self, rel_path: str) -> bool:
+        agent = self._delegate_to_agent()
+        if agent is not None:
+            try:
+                return agent.exists(rel_path)
+            except Exception:
+                pass  # fall through to docker exec
         try:
             rel = _validate_rel_path(rel_path)
         except DockerWorkspaceError:
@@ -374,6 +601,20 @@ class DockerWorkspace:
         return result.returncode == 0
 
     def stat(self, rel_path: str) -> WorkspaceStat | None:
+        agent = self._delegate_to_agent()
+        if agent is not None:
+            try:
+                payload = agent.stat(rel_path)
+                if payload is None:
+                    return None
+                return WorkspaceStat(
+                    rel_path=payload.rel_path,
+                    size_bytes=payload.size_bytes,
+                    is_file=payload.is_file,
+                    is_dir=payload.is_dir,
+                )
+            except Exception:
+                pass
         try:
             rel = _validate_rel_path(rel_path)
         except DockerWorkspaceError:
@@ -401,6 +642,12 @@ class DockerWorkspace:
         )
 
     def sha256(self, rel_path: str) -> str | None:
+        agent = self._delegate_to_agent()
+        if agent is not None:
+            try:
+                return agent.sha256(rel_path)
+            except Exception:
+                pass
         try:
             rel = _validate_rel_path(rel_path)
         except DockerWorkspaceError:
@@ -418,6 +665,12 @@ class DockerWorkspace:
         return result.stdout.split()[0] if result.stdout else None
 
     def list_dir(self, rel_path: str = "") -> list[str]:
+        agent = self._delegate_to_agent()
+        if agent is not None:
+            try:
+                return agent.list_dir(rel_path)
+            except Exception:
+                pass
         try:
             rel = _validate_rel_path(rel_path)
         except DockerWorkspaceError:
@@ -429,6 +682,12 @@ class DockerWorkspace:
         return sorted(line for line in result.stdout.splitlines() if line)
 
     def read_bytes(self, rel_path: str) -> bytes:
+        agent = self._delegate_to_agent()
+        if agent is not None:
+            try:
+                return agent.read_bytes(rel_path)
+            except Exception:
+                pass
         rel = _validate_rel_path(rel_path)
         return self._exec_bytes(["cat", self._container_path(rel)])
 
@@ -438,6 +697,12 @@ class DockerWorkspace:
     # ── Workspace Protocol: writes ───────────────────────────────────
 
     def mkdir(self, rel_path: str) -> bool:
+        agent = self._delegate_to_agent()
+        if agent is not None:
+            try:
+                return agent.mkdir(rel_path)
+            except Exception:
+                pass
         rel = _validate_rel_path(rel_path)
         path = self._container_path(rel)
         # Check existence first so we return False on idempotent re-create
@@ -448,6 +713,12 @@ class DockerWorkspace:
         return True
 
     def move(self, src_rel: str, dst_rel: str) -> Path:
+        agent = self._delegate_to_agent()
+        if agent is not None:
+            try:
+                return agent.move(src_rel, dst_rel)
+            except Exception:
+                pass
         src = _validate_rel_path(src_rel)
         dst = _validate_rel_path(dst_rel)
         dst_path = self._container_path(dst)
@@ -459,6 +730,12 @@ class DockerWorkspace:
         return Path(dst_path)
 
     def copy(self, src_rel: str, dst_rel: str) -> Path:
+        agent = self._delegate_to_agent()
+        if agent is not None:
+            try:
+                return agent.copy(src_rel, dst_rel)
+            except Exception:
+                pass
         src = _validate_rel_path(src_rel)
         dst = _validate_rel_path(dst_rel)
         dst_path = self._container_path(dst)
@@ -477,6 +754,12 @@ class DockerWorkspace:
         return self.write_bytes(rel_path, content.encode("utf-8"))
 
     def write_bytes(self, rel_path: str, content: bytes) -> Path:
+        agent = self._delegate_to_agent()
+        if agent is not None:
+            try:
+                return agent.write_bytes(rel_path, content)
+            except Exception:
+                pass
         rel = _validate_rel_path(rel_path)
         path = self._container_path(rel)
         parent = os.path.dirname(path)

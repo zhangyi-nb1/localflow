@@ -138,19 +138,62 @@ executor handles this lifecycle automatically.
 
 ## Trade-offs (read this before you ship)
 
-| Property | Local | Docker | Remote (SSH) |
-|---|---|---|---|
-| Per-op latency | ~10 μs | ~100-300 ms | ~100-300 ms + network RTT |
-| Filesystem isolation from host | none | container (full) | network (full) |
-| Persistence after teardown | persistent | wiped | persistent |
-| Bootstrap cost | none | image pull (~50 MB) | manual key setup |
-| Failure mode | OS errors | docker daemon | ssh / network / sshd |
-| Best for | dev loops | risky / experimental plans | dedicated remote workers |
+| Property | Local | Docker | Remote (SSH) | Remote + agent-server |
+|---|---|---|---|---|
+| Per-op latency | ~10 μs | ~100-300 ms | ~100-300 ms + network RTT | ~5-20 ms + RTT |
+| Filesystem isolation from host | none | container (full) | network (full) | network (full) |
+| Persistence after teardown | persistent | wiped | persistent | persistent |
+| Bootstrap cost | none | image pull (~50 MB) | manual key setup | + ssh -L tunnel + agent spawn |
+| Failure mode | OS errors | docker daemon | ssh / network / sshd | + agent crash → ssh fallback |
+| Best for | dev loops | risky / experimental | dedicated remote workers | latency-sensitive remote runs |
 
-The two latency-paying backends (Docker and Remote) share the same
-performance ceiling — each op shells out one command. For plans with
-tens of actions this is fine; for hundreds, an HTTP agent-server
-(Phase 32 candidate) would lift both backends at once.
+## Phase 33.2 — agent-server mode (opt-in)
+
+For latency-sensitive workloads against a remote, opt into the
+agent-server tunnel mode:
+
+```python
+ws = RemoteWorkspace(
+    host="bob@example.com",
+    use_agent_server=True,   # ← Phase 33.2 opt-in
+)
+ws.start()
+```
+
+What it does:
+
+1. After the standard `mkdir -p` connectivity probe succeeds, a free
+   local host port is picked.
+2. `ssh -L <host_port>:127.0.0.1:8765 <host> -- env ... python3 -`
+   opens an SSH tunnel + streams the bundled agent-server (~26 KB)
+   over stdin to `python3 -` on the remote.
+3. The remote agent binds to 127.0.0.1:8765, prints
+   `AGENT_SERVER_PORT/TOKEN/WORKSPACE` to the ssh subprocess stdout.
+4. RemoteWorkspace reads those, opens an `AgentServerClient` pointed
+   at the local tunnel head, and routes every subsequent op via HTTP.
+5. **Fallback**: any startup failure (no `python3` on remote, port
+   conflict on local host, tunnel timeout) → warning to stderr, ops
+   fall through to ssh-per-op.
+6. `close()` terminates the ssh process, which collapses the tunnel
+   AND kills the remote agent (sshd reaps orphaned children).
+
+Per-op latency drops from "ssh-per-op (~100-300 ms + RTT)" to "HTTP
+over tunnel (~5-20 ms + RTT)". Most of the saving is the avoided
+fresh-ssh-connection overhead.
+
+### Requirements (in addition to the SSH ones above)
+
+- Remote has `python3` on PATH (any modern Linux distro).
+- Remote can install pydantic (or already has it via a venv).
+  The bundle errors out cleanly with "agent-server bundle requires
+  pydantic" if missing — fallback then kicks in.
+
+### Why opt-in (not default)
+
+Same reasoning as DockerWorkspace's agent-server mode: existing
+scripts depending on Phase 31 ssh-exec semantics keep working;
+operators see the fallback warning if startup fails (no silent
+perf regression).
 
 ---
 

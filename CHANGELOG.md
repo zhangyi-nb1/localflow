@@ -17,9 +17,45 @@ bumps never do.
 
 ## [Unreleased]
 
-Phase 33 candidate — DockerWorkspace + RemoteWorkspace integration with
-the agent-server shipped in v0.30.0. Performance target: ~10× per-op
-throughput on hot paths.
+(none — next candidates are kept-alive HTTP / Unix socket transport,
+TLS + multi-tenancy, physical kernel module relocation, PyPI split.
+See `docs/PHASE_33_DESIGN.md` §8 for the candidate list.)
+
+---
+
+## [0.31.0] — 2026-05-28
+
+**Phase 33 — DockerWorkspace + RemoteWorkspace agent-server integration**
+
+The Workspace facade's three remote backends (Docker / SSH / agent-
+server) finally share their hot path. Both `DockerWorkspace` and
+`RemoteWorkspace` learn `use_agent_server=True` opt-in mode that
+spawns the Phase 32 HTTP daemon inside the container / on the
+remote, then routes every Workspace op via HTTP instead of `docker
+exec` / `ssh` per op.
+
+- New: `app.tools.agent_server.bundle.build_bundle()` — assembles a
+  standalone ~26 KB Python source string from the agent-server
+  package, suitable for `python3 -c "<bundle>"` injection over any
+  shell transport
+- New: `DockerWorkspace(use_agent_server=True)` — host port → fixed
+  container port 8765 → `docker exec -i ... python3 -c` bundle spawn
+- New: `RemoteWorkspace(use_agent_server=True)` — `ssh -L
+  <local>:127.0.0.1:8765 <host> -- env ... python3 -` tunnel + stdin
+  bundle streaming
+- Per-op latency: ~5-20 ms under agent-server mode vs ~100-300 ms in
+  the Phase 29 / Phase 31 exec-per-op modes
+- **Best-effort with fallback**: any startup failure (image missing
+  python3, handshake timeout, tunnel collision) logs a warning to
+  stderr and falls back to the original exec-per-op path
+- 13 new bundle assembly + subprocess handshake tests; zero
+  regressions (1043 → 1056)
+- Zero kernel touches
+
+Docs: [`docs/PHASE_33_DESIGN.md`](docs/PHASE_33_DESIGN.md),
+[`docs/DOCKER_WORKSPACE.md`](docs/DOCKER_WORKSPACE.md) (new
+"agent-server mode" section), [`docs/REMOTE_WORKSPACE.md`](docs/REMOTE_WORKSPACE.md)
+(new "agent-server mode" section).
 
 ---
 

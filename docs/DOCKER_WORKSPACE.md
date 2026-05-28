@@ -119,11 +119,54 @@ needed, not present" and either fall back or bail.
 Each `docker exec` round-trip is ~100-300 ms (subprocess fork + docker
 client → daemon RPC → container exec → response parse). A 40-action
 plan with mostly mkdir / move / index operations runs in 5-15 seconds
-under DockerWorkspace, vs ~1 second under LocalWorkspace.
+under DockerWorkspace's default mode, vs ~1 second under LocalWorkspace.
 
-Phase 29.x can replace the per-op exec with an HTTP agent-server
-running inside the container (mirroring OpenHands' `agent-server`
-image) for ~10× speedup. Deferred until the latency actually bites.
+### Phase 33.1 — agent-server mode (opt-in)
+
+For latency-sensitive workloads, opt into the in-container HTTP
+agent-server:
+
+```python
+ws = DockerWorkspace(
+    image="python:3.12-slim",
+    use_agent_server=True,   # ← Phase 33.1 opt-in
+)
+ws.start()
+```
+
+What it does:
+
+1. On `start()`, a free host port is picked + `docker run -p
+   127.0.0.1:<host_port>:8765 ...` publishes that port mapped to the
+   container-side port 8765.
+2. After the container is up, `docker exec -i <id> python3 -c
+   "<bundle>"` spawns the bundled agent-server inside. The bundle is
+   ~26 KB of self-contained Python (no host filesystem access; pip
+   install required: only `pydantic`).
+3. The agent prints `AGENT_SERVER_PORT/TOKEN/WORKSPACE` to stdout;
+   DockerWorkspace reads them, opens an `AgentServerClient`, and
+   routes every subsequent Workspace op through HTTP instead of
+   `docker exec` per op.
+4. **Fallback**: if startup fails (image missing `python3`, port
+   conflict, handshake timeout, etc.), DockerWorkspace logs a warning
+   to stderr and silently falls through to the original `docker exec`
+   path. Callers never see partial state.
+5. `close()` terminates the agent subprocess + tears the container
+   down. The token is single-use per container lifecycle.
+
+Per-op latency drops from ~100-300 ms to ~5-20 ms (TCP loopback +
+JSON parse). On a 40-action plan that's typically 2-10× faster overall.
+
+### Why opt-in (not default)
+
+Phase 33.1 ships agent-server mode as **opt-in** instead of default so:
+
+- Existing CI / scripts depending on the Phase 29 `docker exec`-only
+  behaviour keep working.
+- Operators see the fallback warning if startup fails (instead of a
+  silent perf regression to the slow path).
+- The benchmark + maturity bar for "default on" lives behind Phase
+  33.x evidence — measured plans, real images, multi-platform CI.
 
 ## Limitations (deliberate)
 
