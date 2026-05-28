@@ -197,8 +197,11 @@ class TestEndpoints:
         client.write_bytes("source.md", b"hi")
         path = client.move("source.md", "subdir/dest.md")
         assert (workspace_root / "subdir" / "dest.md").is_file()
-        # Returned path is absolute (server-side)
-        assert str(path).endswith("subdir/dest.md")
+        # Returned path is absolute (server-side). Use Path semantic
+        # comparison so the test works on both POSIX (forward slashes)
+        # and Windows (backslashes) — server's pathlib returns the
+        # OS-native separator.
+        assert Path(path) == (workspace_root / "subdir" / "dest.md")
 
     def test_copy_file_preserves_source(self, client: AgentServerClient, workspace_root: Path):
         client.write_bytes("source.md", b"hi")
