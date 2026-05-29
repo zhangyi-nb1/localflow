@@ -26,7 +26,9 @@ gets a direct shell.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Branch status** — `main` is **v0.34.x-dev**. Tagged releases:
+**Branch status** — `main` is **v0.35.x-dev**. Tagged releases:
+[`v0.35.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.35.0)
+(failure-mode ablation benchmark — `python -m app.eval.failure_modes`) ·
 [`v0.34.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.34.0)
 (flagship vertical — verifiable literature review with a claim-level
 grounding gate) ·
@@ -46,7 +48,7 @@ planner toggle, `--version`, positional `trace show`) ·
 (Workspace abstraction) · [`v0.25.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.25.0)
 (ConfirmationPolicy) · [`v0.24.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.24.0)
 (React Loop) · [`v0.23.0`](https://github.com/zhangyi-nb1/localflow/releases/tag/v0.23.0)
-(Sandboxed ComputeAction). **1093 tests passing.** CI across macOS / Linux /
+(Sandboxed ComputeAction). **1115 tests passing.** CI across macOS / Linux /
 Windows × Python 3.11 / 3.12 / 3.13.
 
 > **Embedding the harness in your own tool?** The kernel is a standalone
@@ -182,8 +184,35 @@ every safety surface is independently testable:
 | Filesystem backend swappable | hard-coded | ✓ `Workspace` Protocol — LocalWorkspace + DockerWorkspace + RemoteWorkspace shipped |
 
 The §10.7 ledger (`docs/PHASES.md`) tracks every kernel touch:
-**4 deliberate exceptions across 43 deliveries, 39 zero-kernel-touch**.
+**4 deliberate exceptions across 44 deliveries, 40 zero-kernel-touch**.
 That ratio is the project's identity contract.
+
+### Empirical: the failure-mode ablation benchmark
+
+The table above is qualitative. The benchmark below is the **measured**
+backing — an *ablation* (each guard ON vs OFF) over the six harness
+failure modes (per `docs/research/FEISHU_HARNESS_ENGINEERING_SUMMARY.md`
+§11), with a by-construction failure injected into each. Run it
+yourself: `python -m app.eval.failure_modes` (deterministic, no API key).
+
+| # | Failure mode | LocalFlow guard | Guard OFF | Guard ON | Status |
+|---|---|---|---|---|---|
+| 1 | goal drift | react loop drift budget | ❌ ships | ✅ caught | mitigated |
+| 2 | false completion | grounding gate (verify-as-gate) | ❌ ships | ✅ caught | mitigated |
+| 3 | context rot / state loss | *(none yet)* | ❌ ships | ❌ ships | **gap (honest)** |
+| 4 | tool / env runaway | policy_guard | ❌ ships | ✅ caught | mitigated |
+| 5 | quality / entropy | deliverable verifier | ❌ ships | ✅ caught | mitigated |
+| 6 | harness self-issues | §10.7 ledger + boundary lint | n/a | n/a | process control |
+
+**The guard made the difference on 4/4 runtime failure modes.** Two
+honesty notes, deliberately on the table: **context rot is a real gap**
+— LocalFlow has no long-task handoff/checkpoint/resume, so it ships the
+failure in *both* modes; **harness self-issues** is a process control
+(the boundary lint + ledger), not a per-task number. This is an
+ablation ("what each guard buys"), not a comparison to a competitor;
+the numbers prove the guard fires when it should, on deterministic
+injected failures — not a wild-field failure rate. See
+[`docs/PHASE_37_DESIGN.md`](docs/PHASE_37_DESIGN.md).
 
 ---
 
@@ -757,8 +786,8 @@ The rollback manifest covers:
 
 ### 10.7 §10.7 kernel-touch ledger
 
-The project tracks every kernel edit. As of v0.34.0: **4 deliberate
-exceptions across 43 deliveries, 39 zero-kernel-touch (90.7%)**. If
+The project tracks every kernel edit. As of v0.35.0: **4 deliberate
+exceptions across 44 deliveries, 40 zero-kernel-touch (90.9%)**. If
 you submit a PR that touches `app/harness/*` or
 `localflow_kernel/*`, expect to defend it against the same bar —
 see `docs/PHASES.md` for the precedent.
@@ -846,7 +875,7 @@ Full per-phase changelog in [`docs/PHASES.md`](docs/PHASES.md).
 
 ### Testing & quality gates
 
-- **1093 tests passing** (CI on macOS / Linux / Windows × Python
+- **1115 tests passing** (CI on macOS / Linux / Windows × Python
   3.11 / 3.12 / 3.13).
 - Pre-push hook mirrors CI: `ruff check` + `ruff format --check` +
   `pytest --tb=no`. Activate via `git config core.hooksPath
@@ -864,7 +893,7 @@ Full per-phase changelog in [`docs/PHASES.md`](docs/PHASES.md).
 ### Strategic / direction
 
 - [`docs/PROJECT_DIRECTION.md`](docs/PROJECT_DIRECTION.md) — harness-first project direction, the locked Route B decision
-- [`docs/PHASES.md`](docs/PHASES.md) — full per-phase changelog + §10.7 ledger (4 deliberate kernel exceptions / 43 deliveries / 39 zero-kernel-touch)
+- [`docs/PHASES.md`](docs/PHASES.md) — full per-phase changelog + §10.7 ledger (4 deliberate kernel exceptions / 44 deliveries / 40 zero-kernel-touch)
 - [`docs/research/OPENHANDS_HARNESS_STUDY.md`](docs/research/OPENHANDS_HARNESS_STUDY.md) — the 26 KB source-evidence study that motivated v0.24+
 
 ### Per-phase design / user-facing

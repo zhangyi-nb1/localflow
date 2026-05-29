@@ -17,9 +17,35 @@ bumps never do.
 
 ## [Unreleased]
 
-Phase 37 — failure-mode benchmark + public numbers (naive tool-call
-agent baseline vs LocalFlow across the six failure modes). See
-`docs/PHASE_35_PLAN.md` §6.
+(none queued — the PHASE_35_PLAN flagship arc (35→36→37) is complete.
+Future candidates: long-task handoff/checkpoint/resume to close the
+context-rot gap; LLM-judge wild-field failure-rate study; Route A
+code-edit agent. None committed.)
+
+---
+
+## [0.35.0] — 2026-05-29
+
+**Phase 37 — failure-mode ablation benchmark + public numbers**
+
+The empirical backing for "why a harness": an *ablation* (each guard
+ON vs OFF) over the six harness failure modes, with a by-construction
+failure injected into each. Reproducible, deterministic, no API key.
+
+- New: `app.eval.failure_modes` — `run_benchmark()` + `render_markdown_table()`
+  + `python -m app.eval.failure_modes`.
+- Four runtime ablations call the existing guards as libraries: goal
+  drift (react loop drift budget), false completion (grounding gate),
+  tool runaway (policy_guard `..`-escape), quality entropy (deliverable
+  verifier). Guard made the difference on **4/4** runtime modes.
+- Honesty on the table: **context rot is a declared gap** (no
+  handoff/checkpoint/resume → fails in both modes); harness self-issues
+  is a **process control** (boundary lint + ledger), not a per-task
+  number. A test asserts the table never claims 6/6.
+- README (EN + zh-CN) §3 gains the results table.
+- Zero kernel touches; +9 tests (1106 → 1115).
+
+Docs: [`docs/PHASE_37_DESIGN.md`](docs/PHASE_37_DESIGN.md).
 
 ---
 

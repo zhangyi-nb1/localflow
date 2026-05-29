@@ -189,9 +189,14 @@ Phase 23 已经定下命名纪律，扩展到全项目：
     `recipes/literature_review_pack.yaml`（组合，非新原语）；
     `examples/literature_review_pack/seed.py --check` 植入 2 幻觉、闸门精确抓出（recall 1.0 /
     误报 0.0）；`docs/PHASE_36_DESIGN.md`。零 kernel 触碰。+23 测试（1070 → 1093）。
-14. **Phase 37（下一步）= 六大失败模式 benchmark + 朴素 agent baseline 对照 +
-    README 公开数字表**（详见 `docs/PHASE_35_PLAN.md` §6）。grounding eval
-    （recall/误报）已是第一个可复现数字。
+14. ~~Phase 37 = 六大失败模式 benchmark + 公开数字（v0.35.0）~~ ✅ 2026-05-29 —
+    `app/eval/failure_modes/` ablation（每条防线 开 vs 关，确定性注入失败）；4 个运行时
+    ablation（drift budget / grounding gate / policy_guard / deliverable verifier）guard 起
+    决定性作用 4/4；context_rot 诚实标 gap、harness_self 标 process control（rule F：表里
+    不伪造 6/6）；`python -m app.eval.failure_modes` 出表；README §3 实测表；零 kernel 触碰；
+    +9 测试（1106 → 1115）。**PHASE_35_PLAN 的 flagship 弧（35→36→37）至此完成。**
+15. 后续候选（未承诺，需证据驱动）= 长任务 handoff/checkpoint/resume（补 context-rot gap）/
+    LLM-judge 野外失败率研究 / 路线 A 代码域 EDIT 动作（要动 kernel，§10.7 + 用户确认）。
 
 ### 方向细化（2026-05-29）——演示层收敛
 
