@@ -64,10 +64,11 @@
 
 ### 规则 E — §10.7 ledger 是工程身份，不能稀释
 
-- 当前 kernel 改动次数（截至 v0.35.0）：**4 个 deliberate exception / 44 次交付 /
-  40 次零触碰（90.9%）**——Phase 5 `forbidden_paths`、Phase 16 `ActionType.FETCH`、
-  Phase 23 `ActionType.PYTHON_COMPUTE`、Phase 26 react-loop kwarg 线程。与 README
-  §1 / §14.3 保持一致；新增 exception 必须同步这三处数字。
+- 当前 kernel 改动次数（截至 v0.39.0）：**5 个 deliberate exception / 45 次交付 /
+  40 次零触碰（88.9%）**——Phase 5 `forbidden_paths`、Phase 16 `ActionType.FETCH`、
+  Phase 23 `ActionType.PYTHON_COMPUTE`、Phase 26 react-loop kwarg 线程、R7 react loop
+  死循环检测器（`react_loop.py`，Reflexion 无进展停机，用户 2026-06-22 显式批准）。
+  与 README §1 / §14.3 保持一致；新增 exception 必须同步这三处数字。
 - 所有 kernel 边界改动（`app/harness/*` + `app/schemas/action.py` 的 ActionType
   枚举）默认拒绝，除非有充分论证写入 `docs/ARCHITECTURE.md` §10.7。
 - 用户对"诚实记账"很在意——任何 kernel 改动**必须主动登记**，不能藏。

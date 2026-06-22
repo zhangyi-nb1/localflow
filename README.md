@@ -236,7 +236,7 @@ every safety surface is independently testable:
 | Filesystem backend swappable | hard-coded | ✓ `Workspace` Protocol — LocalWorkspace + DockerWorkspace + RemoteWorkspace shipped |
 
 The §10.7 ledger (`docs/PHASES.md`) tracks every kernel touch:
-**4 deliberate exceptions across 44 deliveries, 40 zero-kernel-touch**.
+**5 deliberate exceptions across 45 deliveries, 40 zero-kernel-touch (88.9%)**.
 That ratio is the project's identity contract.
 
 ### Empirical: the failure-mode ablation benchmark
@@ -866,8 +866,8 @@ The rollback manifest covers:
 
 ### 10.7 §10.7 kernel-touch ledger
 
-The project tracks every kernel edit. As of v0.35.0: **4 deliberate
-exceptions across 44 deliveries, 40 zero-kernel-touch (90.9%)**. If
+The project tracks every kernel edit. As of v0.39.0: **5 deliberate
+exceptions across 45 deliveries, 40 zero-kernel-touch (88.9%)**. If
 you submit a PR that touches `app/harness/*` or
 `localflow_kernel/*`, expect to defend it against the same bar —
 see `docs/PHASES.md` for the precedent.
@@ -973,7 +973,7 @@ Full per-phase changelog in [`docs/PHASES.md`](docs/PHASES.md).
 ### Strategic / direction
 
 - [`docs/PROJECT_DIRECTION.md`](docs/PROJECT_DIRECTION.md) — harness-first project direction, the locked Route B decision
-- [`docs/PHASES.md`](docs/PHASES.md) — full per-phase changelog + §10.7 ledger (4 deliberate kernel exceptions / 44 deliveries / 40 zero-kernel-touch)
+- [`docs/PHASES.md`](docs/PHASES.md) — full per-phase changelog + §10.7 ledger (5 deliberate kernel exceptions / 45 deliveries / 40 zero-kernel-touch)
 - [`docs/research/OPENHANDS_HARNESS_STUDY.md`](docs/research/OPENHANDS_HARNESS_STUDY.md) — the 26 KB source-evidence study that motivated v0.24+
 
 ### Per-phase design / user-facing
@@ -1053,7 +1053,7 @@ new policy field), the §10.7 ledger expects you to:
 3. Wire the change as a deliberate exception with the ledger row
    in `docs/PHASES.md`
 
-To date, four deliberate exceptions have been admitted:
+To date, five deliberate exceptions have been admitted:
 
 | Phase | Exception | Justification |
 |---|---|---|
@@ -1061,9 +1061,10 @@ To date, four deliberate exceptions have been admitted:
 | 16 | `ActionType.FETCH` | WebCollect needs HTTPS GET as a typed primitive |
 | 23 | `ActionType.PYTHON_COMPUTE` | LLM-authored code needs a sandboxed exec primitive |
 | 26 | react loop kwarg threading | mid-execute LLM decisions need executor hooks |
+| R7 | react loop stall-detector (`react_loop.py`) | Reflexion no-progress stop must abort *inside* the loop in real time — can't be done from a sibling module |
 
-The ratio (4 kernel exceptions / 44 deliveries — 40 zero-kernel-touch,
-90.9%) is the project's identity contract.
+The ratio (5 kernel exceptions / 45 deliveries — 40 zero-kernel-touch,
+88.9%) is the project's identity contract.
 
 ### 14.5 Pull requests
 

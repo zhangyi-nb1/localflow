@@ -94,12 +94,14 @@ def test_harness_self_ledger_ratio_matches_docs():
     """Guard the integrity row against ledger drift (rule E).
 
     The harness_self detail quotes the §10.7 kernel-touch ratio. As of
-    v0.35.0 the ledger (docs/PHASES.md) + README say 44 deliveries. This
-    is the project's honesty showpiece, so a stale number here is the
-    worst place to have one — pin it so it can never silently drift."""
+    v0.39.0 the ledger (docs/PHASES.md) + README say 5 deliberate
+    exceptions / 45 deliveries (R7 added the 5th — the react loop
+    stall-detector). This is the project's honesty showpiece, so a stale
+    number here is the worst place to have one — pin it against drift."""
     r = _by_mode(run_benchmark())["harness_self"]
-    assert "4 deliberate exceptions / 44 deliveries" in r.detail
-    # The old stale value must never reappear.
+    assert "5 deliberate exceptions / 45 deliveries" in r.detail
+    # Neither the pre-R7 (4/44) nor the original stale (43) value may reappear.
+    assert "4 deliberate exceptions / 44 deliveries" not in r.detail
     assert "43 deliveries" not in r.detail
 
 

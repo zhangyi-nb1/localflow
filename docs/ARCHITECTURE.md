@@ -259,11 +259,23 @@ require kernel modification. Tracked explicitly:
 | **5 (forbidden_paths)** | **YES** — ~25 lines, deliberate. See Phase 5 in [PHASES.md](PHASES.md) |
 | 6.1 (MCP server) | NO |
 
-**11 of 12 phases held the rule.** The single exception (Phase 5) is
-exactly the case where doing it skill-side would defeat plug-in safety:
-a forgetful skill author could silently bypass a user's "never touch X"
-rule. Kernel-side enforcement is the only design that holds under
-plug-in load.
+**11 of 12 phases held the rule** (the table above is the early-phase
+snapshot). The single exception then (Phase 5) is exactly the case where
+doing it skill-side would defeat plug-in safety: a forgetful skill author
+could silently bypass a user's "never touch X" rule. Kernel-side
+enforcement is the only design that holds under plug-in load.
+
+**Later deliberate exceptions (the live ledger — see [PHASES.md](PHASES.md)
++ README §14).** As of v0.39.0 the count is **5 deliberate exceptions /
+45 deliveries / 40 zero-kernel-touch (88.9%)**:
+
+| Phase | Exception | Why it must be kernel-side |
+|---|---|---|
+| 5 | `forbidden_paths` | universal safety primitive — kernel must enforce |
+| 16 | `ActionType.FETCH` | WebCollect needs HTTPS GET as a typed primitive |
+| 23 | `ActionType.PYTHON_COMPUTE` | LLM-authored code needs a sandboxed exec primitive |
+| 26 | react loop kwarg threading | mid-execute LLM decisions need executor hooks |
+| **R7** | react loop **stall-detector** (`react_loop.py`) | A Reflexion no-progress abort must fire **inside** the loop, in real time: it tracks each dispatched action's `(type\|source\|target\|status)` signature and force-ABORTs after `stall_limit` consecutive identical signatures. A sibling module (the `recipe_repair` / `stage_progress` pattern) can only observe *after* a run completes — it cannot stop a runaway mid-iteration. Hence the loop body itself is edited. User-approved 2026-06-22 (rule H). |
 
 ## How a request flows through the system
 

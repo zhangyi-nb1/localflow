@@ -40,7 +40,7 @@
 | R4 | react loop 真实 trace（LOOP_DECISION） | Control / goal_drift | 否（fix#1+#2 均 app 层） | medium | ✅ done | 真跑揭露 react loop 从未端到端运行；修 2 个叠加 bug；现真 LLM 驱动 10/10 决策（全 CONTINUE）；+7 测试 |
 | R5 | trace.jsonl → agent 可消费的 repair 输入 | Observe&Verify→Control | 否 | medium | ✅ done | repair hint 现注入 trace digest（失败检查+动作观测）；+8 测试；机制已坐实，repair 成功率 A/B 留作 follow-up |
 | R6 | Phase 38 stage-level checkpoint/resume/handoff | Persist / context_rot | **否（零 kernel 实测）** | large | ✅ done | context_rot **gap→mitigated**;benchmark headline **4/4→5/5**;resume facade + `taskgraph resume` CLI;+7 测试;git diff kernel primitives 为空 |
-| R7 | Reflexion 同动作死循环检测器 | Control | **是** ⚠️ | medium | 🔒 待确认 | 需 §10.7 登记 + 用户确认 |
+| R7 | Reflexion 同动作死循环检测器 | Control | **是（第 5 次 exception）** | medium | ✅ done | 用户 2026-06-22 批准;loop 内实时 ABORT;+3 测试;ledger 4/44→**5/45** 全处同步 |
 | R8 | 删 CONVERT/ANALYZE 死枚举 | Action | **是** ⚠️ | small | 🔒 待确认 | 需 §10.7 登记 + 用户确认 |
 
 图例：✅ done · ⏳ todo · 🔒 触碰 kernel，实现前需用户确认。
@@ -434,6 +434,51 @@ benchmark 第 3 行 `context_rot` 是诚实 gap(guard on/off 都 fail)。R6 给 
 
 ---
 
+## R7 — react loop Reflexion 无进展停机检测器（§10.7 第 5 次 exception）
+
+**梯队**：⚠️ 触碰 kernel。**状态：完成**(用户 2026-06-22 显式批准第 5 次 exception,rule H 满足)。
+
+### 措施
+
+react loop 此前只有**一个**停机护栏 `drift budget`(数偏离步数)。它抓不到另一种失控:
+模型连续发**同动作、得同观测**却以为在推进(LLM 幻觉式原地打转)。R7 补 Reflexion 的第二个
+停机检测器(KB `ch04 §Reflexion L165-169`),也是上轮聊的 **loop engineering 四大支柱里的
+"stopping rule"**。
+
+### 改动（文件定位）
+
+| 文件 | 改动 | 性质 |
+|---|---|---|
+| `app/schemas/react.py` | `ReactConfig` 加 `stall_limit: int = 3`(0 禁用) | schema(非 ActionType,非 kernel) |
+| `app/harness/react_loop.py` | **§10.7 exception #5**:`_LoopState.recent_sigs` + `_apply_decision` 尾部:连续 `stall_limit` 个相同 `(action_type\|source\|target\|status)` 签名 → 发 `LOOP_DECISION_APPLIED` blocked + `state.aborted=True` | **kernel primitive 编辑** |
+| `tests/test_react_loop.py` | +3 测试:同动作 INSERT→abort / `stall_limit=0` 禁用 / 不同动作不误触 | test |
+
+### 量化结果
+
+- react loop 现有**两个独立确定性停机检测器**:drift budget(偏离计数)+ R7(无进展重复)。
+- 测试:同动作 INSERT 循环在 ~3 步内 ABORT(不耗到 drift budget 20),`stall_limit=0` 正确禁用,
+  正常多动作 run 不误触;**+3 测试**,react_loop 套件全过。
+- **kernel-boundary lint 仍绿**:R7 用既有 import,没引入 app→kernel 泄漏(lint 查 import 边界,
+  不查行为编辑;行为编辑的破例靠 §10.7 ledger 人工登记)。
+- **§10.7 ledger 4/44 → 5/45**(40 零触碰不变,90.9%→**88.9%**),**全处同步**:README §1/§14(双语)、
+  CLAUDE.md rule E、PHASES.md(+ campaign ledger 行)、benchmark.py harness_self detail、R1 防漂移测试。
+
+### 知识点八股
+
+> **面试问题**:"agent 的循环怎么防止原地打转/死循环?"
+
+**答**:两个**确定性**(非 LLM 判断)停机检测器叠加:(1) drift budget 限"偏离原计划多少步";
+(2) Reflexion 式"连续 K 次同动作+同观测=无进展"→ 实时 ABORT。关键是**确定性 + 实时**——不靠模型
+自己说"我卡住了"(它往往意识不到),而是 harness 在 loop 内用签名比对当场打断。这是 loop engineering
+的 "stopping rule / guardrail" 支柱。**诚实点**:这是我项目里第 5 次、也是唯一一次为"循环控制"
+触碰 kernel——我把它登记进 §10.7 ledger(5/45),没藏。
+
+- KB 出处:`llm_app_interview_04_agent_basics.md §Reflexion`(L165-169,两个停止条件);
+  loop engineering 的 stopping-rule 支柱(LangChain《The Art of Loop Engineering》)。
+- 项目内对应:Control 层;`react_loop.py`;§10.7 第 5 次 deliberate exception。
+
+---
+
 ## 待办 backlog（R6 实现 + 其余 · 优先级序）
 
 > 详细价值/工作量/KB 出处见 `memory/harness-optimization-campaign.md` 与会话交叉分析。
@@ -447,5 +492,5 @@ benchmark 第 3 行 `context_rot` 是诚实 gap(guard on/off 都 fail)。R6 给 
   量化 digest 是否真提升修复收敛——把 R5 从"机制坐实"升级成"效果实测"。
 - **R4 后续（选做）** 构造"该偏移"场景逼出真实 REPLACE/SKIP/ABORT,把 react loop 的 drift
   路径也跑出真 trace（当前只验证了 CONTINUE 路径）。
-- **R7** ⚠️ Reflexion 同动作死循环检测器（`react_loop.py`，触碰 kernel → rule H）。KB：ch04 §Reflexion L165-169。
-- **R8** ⚠️ 删 CONVERT/ANALYZE 死枚举（`action.py` ActionType，触碰 kernel → rule H）。KB：ch10 §Action L46。
+- **R7 ✅ done**（§10.7 第 5 次 exception,用户批准）Reflexion 同动作死循环检测器（`react_loop.py`）。
+- **R8** ⚠️ 删 CONVERT/ANALYZE 死枚举（`action.py` ActionType,触碰 kernel → rule H,**需用户确认**）。KB：ch10 §Action L46。
