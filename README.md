@@ -124,9 +124,10 @@ recording tape: [`examples/literature_review_pack/`](examples/literature_review_
      ![flagship demo](examples/literature_review_pack/demo.gif) -->
 
 > Honesty (rule F): this is a **complex, multi-stage, content-heavy**
-> task — *not* a *long-running* one. A "survives long tasks / context
-> rot" claim needs stage-level checkpoint/resume (Option 2 / Phase 38,
-> not built yet); §3's benchmark reports `context_rot` as an honest gap.
+> task — *not* a *long-running* one. Phase 38 adds **stage-level**
+> (between-stage) checkpoint/resume — §3's benchmark reports `context_rot`
+> as mitigated *at the stage level*. A full "survives long-running /
+> multi-day tasks" claim is still **not** made (mid-stage resume is out of scope).
 
 ```bash
 # Install (editable) — recommended for development
@@ -250,20 +251,25 @@ yourself: `python -m app.eval.failure_modes` (deterministic, no API key).
 |---|---|---|---|---|---|
 | 1 | goal drift | react loop drift budget | ❌ ships | ✅ caught | mitigated |
 | 2 | false completion | grounding gate (verify-as-gate) | ❌ ships | ✅ caught | mitigated |
-| 3 | context rot / state loss | *(none yet)* | ❌ ships | ❌ ships | **gap (honest)** |
+| 3 | context rot / state loss | stage-level checkpoint/resume (Phase 38) | ❌ ships | ✅ caught | mitigated (stage-level) |
 | 4 | tool / env runaway | policy_guard | ❌ ships | ✅ caught | mitigated |
 | 5 | quality / entropy | deliverable verifier | ❌ ships | ✅ caught | mitigated |
 | 6 | harness self-issues | §10.7 ledger + boundary lint | n/a | n/a | process control |
 
-**The guard made the difference on 4/4 runtime failure modes.** Two
-honesty notes, deliberately on the table: **context rot is a real gap**
-— LocalFlow has no long-task handoff/checkpoint/resume, so it ships the
-failure in *both* modes; **harness self-issues** is a process control
-(the boundary lint + ledger), not a per-task number. This is an
-ablation ("what each guard buys"), not a comparison to a competitor;
-the numbers prove the guard fires when it should, on deterministic
-injected failures — not a wild-field failure rate. See
-[`docs/PHASE_37_DESIGN.md`](docs/PHASE_37_DESIGN.md).
+**The guard made the difference on 5/5 runtime failure modes.** One
+honesty note, deliberately on the table: **harness self-issues** is a
+process control (the boundary lint + ledger), not a per-task number.
+Row 3 (**context rot**) is mitigated **at the stage level** by Phase 38
+checkpoint/resume — a budget-limited session that restarts from scratch
+never finishes a multi-stage task, while resume skips completed stages and
+completes it (workspace equal to an uninterrupted run). This is
+**between-stage** resume, *not* mid-stage and *not* multi-day — so the
+project still does **not** claim "long-running". This is an ablation
+("what each guard buys"), not a comparison to a competitor; the numbers
+prove the guard fires when it should, on deterministic injected failures —
+not a wild-field failure rate. See
+[`docs/PHASE_37_DESIGN.md`](docs/PHASE_37_DESIGN.md) +
+[`docs/PHASE_38_DESIGN.md`](docs/PHASE_38_DESIGN.md).
 
 #### Drill-down: the flagship grounding gate (row 2)
 

@@ -6,9 +6,12 @@
 > single thing that lets the project honestly say it does long-ish tasks
 > (and *only* stage-level, never an unqualified "long-running" claim — rule F).
 >
-> Status: **design complete, implementation pending**. Scouted via 4 parallel
-> readers (target / stage-exec / persistence / KB recipe); this doc is the
-> synthesis. Zero kernel touch (verdict + precedent below).
+> Status: **IMPLEMENTED** (38.1 facade + 38.2 CLI + 38.4 benchmark flip; 38.3
+> long-pack demo deferred). context_rot flipped gap→mitigated, benchmark
+> headline 4/4→5/5, **zero kernel touch** (verified: git diff on primitives
+> empty). Implementation details + metrics in
+> [`docs/HARNESS_OPTIMIZATION_LOG.md`](HARNESS_OPTIMIZATION_LOG.md) §R6.
+> This doc is the original design (scouted via 4 parallel readers).
 
 ---
 
