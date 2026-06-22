@@ -70,3 +70,32 @@ exactly why the failure stayed invisible until a real run with trace inspection.
 
 Recommendation: option 1 or 2, decided with the user (rule H), then re-run and
 confirm `loop.decision.applied` events with real CONTINUE/REPLACE decisions.
+
+## RESOLVED — fix #2 landed (app-layer sanitizer, option 1)
+
+Chose option 1. Added `_force_strict_object_schema` in `app/agent/openai_client.py`:
+before every OpenAI structured call it recursively (a) forces
+`additionalProperties: false`, (b) sets `required` = all property keys, and
+(c) **drops free-form dict fields** (object schemas with no declared
+properties — e.g. `metadata`) which can't be expressed under strict mode.
+Runs on a deep copy, so the caller's schema is untouched. It only enforces
+what strict mode already requires, so it can't regress a working OpenAI path.
+
+It took three live 400s to surface all three strict rules (additionalProperties
+→ required-completeness → property-less-object); switched to **offline schema
+validation** to find the rest in one pass instead of one live call each.
+
+Re-run on a clean folder-organize plan (`trace_after_fix2_working.jsonl`):
+
+```
+loop.decision.requested : 10
+loop.decision.decided   : 10  (all status=ok)
+loop.decision.applied   : 10  (all CONTINUE)
+```
+
+The react loop now drives every action via real live-LLM consultations. All
+decisions were `CONTINUE` — correct: on a clean rule-built plan the model has
+no reason to deviate. Eliciting `REPLACE`/`SKIP`/`ABORT` needs a deviation
+scenario (a redundant/wrong planned action) and is a follow-up; the mechanism
+itself is now proven against the real provider. Full suite still green
+(1132 passed); sanitizer unit-tested in `tests/test_openai_strict_schema.py`.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import os
 from collections.abc import Callable
@@ -101,12 +102,18 @@ class OpenAIClient:
     ) -> StructuredResponse:
         chat_messages = self._to_chat_messages(system, messages)
         # chat.completions tool definition nests under "function".
+        # OpenAI strict function-calling rejects any object schema with
+        # additionalProperties != false (R4 fix#2). Some kernel-built
+        # schemas (e.g. submit_loop_decision's replacement_action.metadata)
+        # set additionalProperties:true for Anthropic's more lenient strict
+        # mode; sanitise a copy so the OpenAI path accepts them. The
+        # trade-off is that free-form dict fields can only be emitted as {}.
         tool = {
             "type": "function",
             "function": {
                 "name": tool_name,
                 "description": tool_description,
-                "parameters": tool_schema,
+                "parameters": _force_strict_object_schema(copy.deepcopy(tool_schema)),
                 "strict": True,
             },
         }
@@ -355,6 +362,68 @@ class OpenAIClient:
 
 
 # --------------------------------------------------------------------- helpers
+
+
+def _force_strict_object_schema(node: Any) -> Any:
+    """Recursively make a JSON schema OpenAI-strict-compatible.
+
+    OpenAI strict function-calling imposes two rules on every object
+    schema that Anthropic's more lenient strict mode does not:
+
+    1. ``additionalProperties`` MUST be ``false`` (no free-form dicts).
+    2. ``required`` MUST list *every* key in ``properties``.
+
+    Some kernel-built schemas (e.g. ``submit_loop_decision``) were authored
+    for Anthropic strict mode and violate both. We rewrite a copy so the
+    OpenAI path accepts them. Recurses through ``properties``, ``items``,
+    ``$defs``/``definitions`` and the ``anyOf``/``allOf``/``oneOf`` branch
+    lists. Mutates ``node`` in place and returns it.
+
+    A free-form dict field (an object schema with no declared
+    ``properties`` — e.g. an Action's ``metadata``) cannot be expressed
+    under strict mode at all: forcing ``additionalProperties:false`` leaves
+    a property-less object that OpenAI strips, leaving a dangling
+    ``required`` entry. Such fields are therefore **dropped** from the
+    request schema — the model simply won't be asked to produce them
+    (their pydantic defaults apply on parse).
+
+    Safe on the OpenAI path: a schema that violates these rules is already
+    rejected under strict mode, so enforcing them can only fix or no-op,
+    never regress. Trade-off: free-form dict fields are omitted from the
+    request, and previously-optional scalar fields become mandatory.
+    """
+    if isinstance(node, dict):
+        if node.get("type") == "object":
+            props = node.get("properties")
+            if isinstance(props, dict):
+                for key in [k for k, v in props.items() if _is_freeform_object(v)]:
+                    del props[key]
+                node["required"] = list(props.keys())
+            node["additionalProperties"] = False
+        for value in node.values():
+            _force_strict_object_schema(value)
+    elif isinstance(node, list):
+        for item in node:
+            _force_strict_object_schema(item)
+    return node
+
+
+def _is_freeform_object(schema: Any) -> bool:
+    """True when ``schema`` is (or unions) a free-form dict — an object
+    type with no declared ``properties``. These can't be expressed under
+    OpenAI strict mode and are dropped from the request schema."""
+    if not isinstance(schema, dict):
+        return False
+    if schema.get("type") == "object" and not schema.get("properties"):
+        return True
+    for branch in (schema.get("anyOf") or []) + (schema.get("oneOf") or []):
+        if (
+            isinstance(branch, dict)
+            and branch.get("type") == "object"
+            and not branch.get("properties")
+        ):
+            return True
+    return False
 
 
 def _truthy(value: str | None) -> bool:
