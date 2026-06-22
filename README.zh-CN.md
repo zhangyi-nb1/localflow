@@ -147,6 +147,25 @@ pip install -e .
   主机）。除非你显式开启带 allowlist 的 WebCollect skill，否则
   数据不出你的网络。
 
+### Harness 五层框架自评
+
+LocalFlow 是一个 **harness**，不是文件整理器。harness 的标准参照系是五层
+——*信息注入 / 执行控制 / 行动执行 / 状态持久化 / 观察与验证*。下表给出每个
+LocalFlow 机制落在哪一层，并附**诚实的成熟度标记**（规则 F——只标 gap，不标愿景）：
+
+| 层 | LocalFlow 机制 | 成熟度 |
+|---|---|---|
+| **信息注入 Context Injection**——模型每步看到什么 | content-aware planning（`file_scan` 把 PDF / 文本 / 表格预览注入 `FileMeta.text_preview`）+ `GoalInterpreter` clarify 循环 | 🟡 partial——无 compaction / token-budget / 渐进披露（任务短、单次） |
+| **执行控制 Control**——拆解 + 逐步推进 | 五段 `control_loop` + stage 内 **react loop**（`CONTINUE/REPLACE/INSERT/SKIP/ABORT` + drift budget）+ 4-tier `ConfirmationPolicy` + bounded auto-repair | 🟢 强（react loop 已接线；真实 LLM trace 待补——优化日志 R4） |
+| **行动执行 Action**——它真正能调用什么 | typed `ActionType` 原语 + `FETCH` + 沙箱化 `PYTHON_COMPUTE`；per-skill schema 收窄让越界动作*不可表示* | 🟡 partial——故意收窄的 file-org 词汇；无 Bash / Git / browser / DB |
+| **状态持久化 Persist**——跨步 / 跨 session 存活 | `RollbackManifest` + sha-256 drift + `trace.jsonl` + `Workspace` 门面（**单次运行**内持久） | 🔴 弱——无跨 session checkpoint / resume / handoff（Phase 38——优化日志 R6） |
+| **观察与验证 Observe & Verify**——证明它做对了，而非问模型 | 规则结构 `Verifier`（从不问 LLM 是否成功）+ `SemanticVerifier` + **claim-grounding gate**（verify-as-gate）+ 7 个 deliverable verifiers | 🟢 强——唯一有**真实 LLM 端到端验证**的层（抓 2/2 注入幻觉，0 误报） |
+
+**诚实自评**：两个承重强项（**Control**、**Observe & Verify**），一个故意收窄
+的层（**Action**），两个诚实偏弱的层——**Context Injection** 的 token 集合管理
+与 **Persist** 跨 session 接力。改进进程按优先级记录在
+[`docs/HARNESS_OPTIMIZATION_LOG.md`](docs/HARNESS_OPTIMIZATION_LOG.md)。
+
 ---
 
 ## 3. 为什么要 harness，不直接给 LLM 一堆工具？

@@ -100,6 +100,34 @@ verify, rollback, trace) is independently testable.
 > reality that even 3–5 expert reviewers miss fabricated citations in
 > accepted papers — see [`docs/PHASE_35_PLAN.md`](docs/PHASE_35_PLAN.md) §4.
 
+**See it catch fabrications in 30 seconds (deterministic, no API key):**
+
+```bash
+python examples/literature_review_pack/seed.py --check
+```
+
+Plants a **complex** review — 12 sources, 19 claims, 6 fabricated across
+four hallucination classes — and prints a scorecard:
+
+```
+hallucination recall   : 6/6 = 100%    grounded false-pos rate: 0/12 = 0%
+decision               : ROLLBACK / not-shippable (exit 3)
+```
+
+Run it both ways to *see* what the gate buys you:
+`localflow pack run literature_review_pack_nogate …` (guard OFF — fabrications
+ship silently, exit 0) vs `… literature_review_pack …` (guard ON — gate flags
+them, exit 3, routes to `review_queue.md`). Walkthrough + a scriptable `vhs`
+recording tape: [`examples/literature_review_pack/`](examples/literature_review_pack/).
+
+<!-- 60s demo GIF — record with `vhs examples/literature_review_pack/demo.tape`, then embed:
+     ![flagship demo](examples/literature_review_pack/demo.gif) -->
+
+> Honesty (rule F): this is a **complex, multi-stage, content-heavy**
+> task — *not* a *long-running* one. A "survives long tasks / context
+> rot" claim needs stage-level checkpoint/resume (Option 2 / Phase 38,
+> not built yet); §3's benchmark reports `context_rot` as an honest gap.
+
 ```bash
 # Install (editable) — recommended for development
 pip install -e .
@@ -158,6 +186,29 @@ pip install -e .
   (or a remote Linux host **you control**). No data leaves your
   network unless you wire the WebCollect skill explicitly with an
   allowlist.
+
+### The five-layer harness map
+
+LocalFlow narrates as a **harness**, not a file organizer. The canonical
+harness reference frame has five layers — *Context Injection / Control /
+Action / Persist / Observe & Verify*. Here is where each LocalFlow
+mechanism sits, with an **honest maturity mark** (rule F — we mark gaps,
+not aspirations):
+
+| Layer | LocalFlow mechanism | Maturity |
+|---|---|---|
+| **Context Injection** — what the model sees each step | content-aware planning (`file_scan` injects PDF / text / tabular previews into `FileMeta.text_preview`) + `GoalInterpreter` clarify loop | 🟡 partial — no compaction / token-budget / progressive disclosure (runs are short, single-shot) |
+| **Control** — decompose + advance step-by-step | 5-stage `control_loop` + in-stage **react loop** (`CONTINUE/REPLACE/INSERT/SKIP/ABORT` + drift budget) + 4-tier `ConfirmationPolicy` + bounded auto-repair | 🟢 strong (react loop wired; real-LLM trace pending — optimization log R4) |
+| **Action** — what it can actually call | typed `ActionType` primitives + `FETCH` + sandboxed `PYTHON_COMPUTE`; per-skill schema scoping makes out-of-scope actions *unrepresentable* | 🟡 partial — deliberately narrow file-org vocabulary; no Bash / Git / browser / DB |
+| **Persist** — survive across steps / sessions | `RollbackManifest` + sha-256 drift + `trace.jsonl` + `Workspace` facade (durable **per-run**) | 🔴 weak — no cross-session checkpoint / resume / handoff (Phase 38 — optimization log R6) |
+| **Observe & Verify** — prove it worked, don't ask the model | rules-based structural `Verifier` (never asks the LLM if it succeeded) + `SemanticVerifier` + **claim-grounding gate** (verify-as-gate) + 7 deliverable verifiers | 🟢 strong — the one layer with **real-LLM end-to-end proof** (caught 2/2 injected hallucinations, 0 false-positives) |
+
+**Honest self-assessment:** two load-bearing strengths (**Control**,
+**Observe & Verify**), one deliberately-narrow layer (**Action**), and two
+honestly-weak layers — **Context Injection** token-set management and
+**Persist** cross-session continuation. The improvement campaign in
+[`docs/HARNESS_OPTIMIZATION_LOG.md`](docs/HARNESS_OPTIMIZATION_LOG.md)
+works these gaps in priority order.
 
 ---
 
@@ -982,7 +1033,8 @@ To date, four deliberate exceptions have been admitted:
 | 23 | `ActionType.PYTHON_COMPUTE` | LLM-authored code needs a sandboxed exec primitive |
 | 26 | react loop kwarg threading | mid-execute LLM decisions need executor hooks |
 
-The ratio (4/41) is the project's identity contract.
+The ratio (4 kernel exceptions / 44 deliveries — 40 zero-kernel-touch,
+90.9%) is the project's identity contract.
 
 ### 14.5 Pull requests
 
