@@ -64,9 +64,10 @@
 
 ### 规则 E — §10.7 ledger 是工程身份，不能稀释
 
-- 当前 kernel 改动次数：22 个 phase shipped，2 个 deliberate exception
-  （Phase 5 `forbidden_paths`、Phase 16 `ActionType.FETCH`），Phase 23 的
-  `ActionType.PYTHON_COMPUTE` 会成为第 3 个。
+- 当前 kernel 改动次数（截至 v0.35.0）：**4 个 deliberate exception / 44 次交付 /
+  40 次零触碰（90.9%）**——Phase 5 `forbidden_paths`、Phase 16 `ActionType.FETCH`、
+  Phase 23 `ActionType.PYTHON_COMPUTE`、Phase 26 react-loop kwarg 线程。与 README
+  §1 / §14.3 保持一致；新增 exception 必须同步这三处数字。
 - 所有 kernel 边界改动（`app/harness/*` + `app/schemas/action.py` 的 ActionType
   枚举）默认拒绝，除非有充分论证写入 `docs/ARCHITECTURE.md` §10.7。
 - 用户对"诚实记账"很在意——任何 kernel 改动**必须主动登记**，不能藏。
@@ -195,16 +196,32 @@ Phase 23 已经定下命名纪律，扩展到全项目：
     决定性作用 4/4；context_rot 诚实标 gap、harness_self 标 process control（rule F：表里
     不伪造 6/6）；`python -m app.eval.failure_modes` 出表；README §3 实测表；零 kernel 触碰；
     +9 测试（1106 → 1115）。**PHASE_35_PLAN 的 flagship 弧（35→36→37）至此完成。**
-15. 后续候选（未承诺，需证据驱动）= 长任务 handoff/checkpoint/resume（补 context-rot gap）/
-    LLM-judge 野外失败率研究 / 路线 A 代码域 EDIT 动作（要动 kernel，§10.7 + 用户确认）。
+15. **flagship 弧闭合后的落地决策（2026-05-29，见 [docs/DEMO_AND_LONGTASK_GUIDE.md](docs/DEMO_AND_LONGTASK_GUIDE.md)）**：
+    - **Option 1（立即做 · 零新功能 · 当前主线）** = 把 `literature_review_pack` flagship 放到
+      一个够复杂（~10–12 源、主题连贯、内容已知）的真实任务上**真跑 + 录屏 + guard ON/OFF 并排**，
+      证明 benchmark 第 2 行 `false_completion`。落地物：scale-up `examples/literature_review_pack/seed.py`
+      （4 类幻觉 + 真实对照）、`recipes/literature_review_pack_nogate.yaml` 对照、召回率/误报率指标、
+      真 LLM 产物存 `docs/test_artifacts/`、≤60s 录屏进 README §1。措辞守住 **complex multi-stage ≠ long-running**。
+    - **Option 2（选做 · = Phase 38）** = stage-level checkpoint/resume/handoff，把 benchmark 第 3 行
+      `context_rot` 翻成 `mitigated (stage-level)`。预期零 kernel（facade 层）；真落地时拆
+      `docs/PHASE_38_DESIGN.md` + 登记 `docs/PHASES.md` ledger 行 + 修 README §14.4 stale `4/41`。
+    - **更长远候选（未承诺，需证据驱动）** = LLM-judge 野外失败率研究 / 路线 A 代码域 EDIT 动作
+      （要动 kernel，§10.7 + 用户确认）。
+    - **红线（rule F）**：benchmark 怎么标的，简历 / README 就怎么说；"long-running" 招牌只有
+      做完 Option 2 才能挂。
 
 ### 方向细化（2026-05-29）——演示层收敛
 
 驱动约束：本项目首要用途是**大模型应用开发工程师简历中的 harness 作品**。规划优先级 =
 "把已有的强 harness 能力 surface + 用一个可信场景演示 + 用 eval 数字证明"，**不是继续铺广度**。
 
-故意**不做**（做减法）：长任务 handoff/checkpoint/resume、更多 Workspace 后端、
-路线 A（代码域 EDIT 动作，要动 kernel，留作 flagship 立住后扩展）、继续堆窄 skill。
+故意**不做**（做减法）：更多 Workspace 后端、路线 A（代码域 EDIT 动作，要动 kernel，
+留作 flagship 立住后扩展）、继续堆窄 skill。
+
+> **2026-05-29 修订**：原"故意不做"清单里的"长任务 handoff/checkpoint/resume"已**移出**
+> ——Phase 37 benchmark 诚实暴露了 `context_rot` gap，按 rule D（证据驱动）它被提升为
+> **Option 2 / Phase 38（选做，stage-level）**。先做完 Option 1 演示落地，Option 2 视
+> 精力推进。详见 §5 item 15 + [docs/DEMO_AND_LONGTASK_GUIDE.md](docs/DEMO_AND_LONGTASK_GUIDE.md)。
 
 后续 Phase 在前置 Phase 落地后再写细节计划。
 

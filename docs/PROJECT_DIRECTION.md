@@ -62,6 +62,30 @@ direction before the research and eval evidence justify it.
 
 ## Current Roadmap Bias
 
+> **2026-05-29 更新（二）——flagship 弧闭合后的落地决策**：Phase 35→36→37 的
+> flagship 弧已闭合（v0.35.0 / 1115 测试通过）。harness 内核 + flagship + benchmark
+> 三者齐备，下一步**不是再加能力**，而是把已有 flagship 真正"落地"成可演示、可写进
+> 简历的证据。落地路线见 [docs/DEMO_AND_LONGTASK_GUIDE.md](DEMO_AND_LONGTASK_GUIDE.md)：
+>
+> - **Option 1（立即做 · 零新功能 · 推荐先做）**：把 `literature_review_pack` flagship
+>   放到一个**够复杂**（~10–12 源、主题连贯、内容已知）的真实任务上**真跑一遍 + 录屏**，
+>   并做 guard ON/OFF 并排对照——证明"复杂多步生成里 grounding gate 当场抓出幻觉"
+>   （benchmark 第 2 行 `false_completion`）。只需 scale-up 现有 seed/fixture + 一个
+>   `literature_review_pack_nogate.yaml` 对照 + 打印召回率/误报率 + 真 LLM 跑一份产物存档。
+> - **Option 2（选做 · = Phase 38）**：stage-level **checkpoint / resume / handoff**，
+>   把 benchmark 第 3 行 `context_rot` 从 `gap` 翻成 `mitigated (stage-level)`。预期**零
+>   kernel 触碰**（facade 层：新 `CheckpointState` schema + `taskgraph_runner`/`cli` 编排
+>   扩展 + `handoff.md` renderer）。真正落地时再拆 `docs/PHASE_38_DESIGN.md` 并登记
+>   `docs/PHASES.md` ledger 行。
+>
+> **诚实红线（rule F，贯穿全程）**：benchmark 怎么标的，简历 / README 就怎么说。
+> Option 1 演示的是"complex / multi-stage / content-heavy"任务，**不是 "long-running"**；
+> "long-running / 抗 context-rot" 这块招牌**只有做完 Option 2 才能挂**。
+>
+> 这同时**修订**了下方"演示层收敛"里"故意不做：长任务 handoff/checkpoint/resume"的措辞
+> ——它不再是"故意不做"，而是被 Phase 37 benchmark 诚实暴露的 gap 提升为 Option 2（证据
+> 驱动，rule D）；仍坚持不做的是：更多 Workspace 后端、路线 A 代码域 EDIT 动作、堆窄 skill。
+
 > **2026-05-29 更新**：Phase 1–34 已 ship（32 release / 1062 测试通过）。harness 内核成熟，
 > 下一阶段把"演示层"收敛为 flagship 场景「带出处核验的文献综述」，并用 eval 数字证明。
 > 详见 [docs/PHASE_35_PLAN.md](PHASE_35_PLAN.md)。
