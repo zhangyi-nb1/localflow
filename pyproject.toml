@@ -1,7 +1,7 @@
 [project]
 name = "localflow-agent"
-version = "0.22.0"
-description = "LocalFlow Agent: Personal Automation Agent Harness"
+version = "0.35.0"
+description = "LocalFlow: a local-first Agent Execution Harness"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "LocalFlow" }]
