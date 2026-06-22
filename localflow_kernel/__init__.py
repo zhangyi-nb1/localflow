@@ -28,7 +28,7 @@ public surface declared here is the stable contract.
 
 from __future__ import annotations
 
-__version__ = "0.38.0"
+__version__ = "0.39.0"
 
 # Re-export the small core dataclasses + Protocols at the top level so
 # the most common imports stay short:
