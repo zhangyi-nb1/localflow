@@ -29,7 +29,7 @@ The react loop adds ORCHESTRATION, not new dispatch paths.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
@@ -83,6 +83,12 @@ class _LoopState:
     """Set when LLM fails repeatedly or drift exhausts the budget; the
     runtime stops consulting the LLM and processes the rest of the
     queue as a vanilla batch."""
+    recent_sigs: list[str] = field(default_factory=list)
+    """R7 (Reflexion stop-detector) — rolling (action_type|source|target|
+    status) signatures of dispatched actions. ``stall_limit`` consecutive
+    identical signatures = the agent repeating the same action with the
+    same outcome (no progress) → force ABORT. Complements ``max_drift``,
+    which bounds deviation COUNT, not no-progress repetition."""
 
 
 def run_react_loop(
@@ -460,6 +466,36 @@ def _apply_decision(
     state.last_action_id = next_to_run.action_id
     state.last_status = "ok" if record.status == ExecutionStatus.SUCCESS else "fail"
     state.last_observation = _extract_observation(executor, next_to_run.action_id)
+
+    # R7 (§10.7 exception #5) — Reflexion stop-detector. Track a
+    # (action_type|source|target|status) signature per dispatched action.
+    # ``stall_limit`` consecutive identical signatures = the agent repeating
+    # the same action with the same outcome (no progress) → force ABORT.
+    # The drift budget only bounds deviation COUNT; it cannot catch a loop
+    # that keeps doing the SAME thing and getting the SAME result.
+    sig = (
+        f"{next_to_run.action_type.value}|{next_to_run.source_path}|"
+        f"{next_to_run.target_path}|{record.status.value}"
+    )
+    state.recent_sigs.append(sig)
+    if (
+        config.stall_limit
+        and len(state.recent_sigs) >= config.stall_limit
+        and len(set(state.recent_sigs[-config.stall_limit :])) == 1
+    ):
+        executor._emit_trace(
+            TraceEventType.LOOP_DECISION_APPLIED,
+            status="blocked",
+            failure_type=FailureType.UNKNOWN,
+            action_id=next_to_run.action_id,
+            detail=(
+                f"stall detected: {config.stall_limit} consecutive identical "
+                f"action+outcome signatures ({sig!r}); forcing ABORT "
+                "(Reflexion no-progress stop-detector)"
+            ),
+            payload={"stall_signature": sig, "stall_limit": config.stall_limit},
+        )
+        state.aborted = True
 
 
 def _extract_observation(executor: "Executor", action_id: str) -> dict[str, Any] | None:

@@ -419,3 +419,94 @@ class TestTraceEvents:
         assert "loop.decision.requested" in events
         assert "loop.decision.decided" in events
         assert "loop.decision.applied" in events
+
+
+def _stall_rows(trace_path: Path) -> list[dict]:
+    return [
+        r
+        for r in _trace_rows(trace_path)
+        if "stall detected" in str((r.get("payload") or {}).get("detail", ""))
+    ]
+
+
+class TestStallDetector:
+    """R7 (§10.7 exception #5) — Reflexion no-progress stop-detector."""
+
+    def test_identical_action_loop_aborts(self, executor_with_trace):
+        executor, ws = executor_with_trace
+        plan = _plan(executor.run_store.task_id, [_mkdir("a-1", "planned/")])
+        # The LLM keeps INSERTing the SAME action → no progress. INSERT does
+        # not pop the planned action, so without the detector this would only
+        # stop at the drift budget (20). stall_limit=3 must trip first.
+        stall_action = _mkdir("a-stall", "stall/")
+        client = _StubLLMClient(
+            decisions=[
+                LoopDecision(
+                    decision_type=LoopDecisionType.INSERT,
+                    reason="retry the same thing",
+                    replacement_action=stall_action,
+                )
+                for _ in range(10)
+            ]
+        )
+        outcome = executor.execute(
+            plan,
+            approved=True,
+            react_mode=True,
+            react_config=ReactConfig(enabled=True, max_drift=20, stall_limit=3),
+            llm_client=client,
+        )
+        # Aborted well before the 10 supplied INSERTs or the drift budget.
+        assert len(outcome.records) <= 4
+        assert len(client.calls) <= 4
+        # The planned action never ran (loop aborted first).
+        assert not (ws / "planned").exists()
+        # A stall-detection event was emitted.
+        assert _stall_rows(executor.run_store.trace_path)
+
+    def test_stall_limit_zero_disables_detector(self, executor_with_trace):
+        executor, ws = executor_with_trace
+        plan = _plan(executor.run_store.task_id, [_mkdir("a-1", "planned/")])
+        client = _StubLLMClient(
+            decisions=[
+                LoopDecision(
+                    decision_type=LoopDecisionType.INSERT,
+                    reason="x",
+                    replacement_action=_mkdir("a-stall", "stall/"),
+                )
+                for _ in range(10)
+            ]
+        )
+        executor.execute(
+            plan,
+            approved=True,
+            react_mode=True,
+            # detector off; drift budget (2) is the only bound.
+            react_config=ReactConfig(enabled=True, max_drift=2, stall_limit=0),
+            llm_client=client,
+        )
+        assert not _stall_rows(executor.run_store.trace_path)
+
+    def test_distinct_actions_do_not_trip_stall(self, executor_with_trace):
+        executor, ws = executor_with_trace
+        # Two CONTINUEs running DIFFERENT planned actions → no stall.
+        plan = _plan(
+            executor.run_store.task_id,
+            [_mkdir("a-1", "first/"), _mkdir("a-2", "second/")],
+        )
+        client = _StubLLMClient(
+            decisions=[
+                LoopDecision(decision_type=LoopDecisionType.CONTINUE, reason="ok"),
+                LoopDecision(decision_type=LoopDecisionType.CONTINUE, reason="ok"),
+            ]
+        )
+        outcome = executor.execute(
+            plan,
+            approved=True,
+            react_mode=True,
+            react_config=ReactConfig(enabled=True, max_drift=3, stall_limit=2),
+            llm_client=client,
+        )
+        assert outcome.success
+        assert (ws / "first").exists() and (ws / "second").exists()
+        assert not _stall_rows(executor.run_store.trace_path)

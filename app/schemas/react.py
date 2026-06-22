@@ -201,3 +201,18 @@ class ReactConfig(BaseModel):
             "reachability gap (see docs/PHASE_26_DESIGN.md §6)."
         ),
     )
+
+    stall_limit: int = Field(
+        default=3,
+        ge=0,
+        le=20,
+        description=(
+            "R7 (Reflexion stop-detector) — abort the loop after this many "
+            "CONSECUTIVE dispatched actions with an identical "
+            "(action_type, source, target, status) signature, i.e. the "
+            "agent repeating the same action with the same outcome and "
+            "making no progress. Complements ``max_drift`` (which bounds "
+            "deviation count, not no-progress repetition). 0 disables the "
+            "detector. Default 3."
+        ),
+    )
