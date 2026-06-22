@@ -119,6 +119,15 @@ def coverage_verifier(ctx: RecipeVerifierContext) -> RecipeVerifierVerdict:
 _LEDGER_FILE_RX = re.compile(
     r"`([A-Za-z0-9_./\-]+\.[A-Za-z0-9]+)`",  # backticked path-with-extension
 )
+# Heading-form citation: "## papers/foo.txt". LLMs (e.g. gpt-5.4-mini)
+# often cite each source as a markdown section heading rather than an
+# inline backticked path. The heading text must be purely a path with an
+# extension (no spaces), so prose headings like "## Research Papers" never
+# match.
+_LEDGER_HEADING_RX = re.compile(
+    r"^#{1,6}\s+([A-Za-z0-9_][A-Za-z0-9_./\-]*\.[A-Za-z0-9]+)\s*$",
+    re.MULTILINE,
+)
 
 
 @register("source_ledger_verifier")
@@ -144,7 +153,7 @@ def source_ledger_verifier(ctx: RecipeVerifierContext) -> RecipeVerifierVerdict:
         )
 
     text = _read_text(ledger)
-    cited = set(_LEDGER_FILE_RX.findall(text))
+    cited = set(_LEDGER_FILE_RX.findall(text)) | set(_LEDGER_HEADING_RX.findall(text))
     if not cited:
         return RecipeVerifierVerdict(
             name="source_ledger_verifier",
