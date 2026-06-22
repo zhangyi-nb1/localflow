@@ -1,0 +1,15 @@
+glm-4-air single heavy grounding call: 1.7s  (glm-4.5 was 21.9s)
+
+=== CLEAN review · glm-4-air · parallel(8) ===
+wall: 7s for 28 claims (vs ~613s glm-4.5 sequential)
+gate: FAIL  (26/28 grounded, ratio 0.93)
+   x flagged: The research consistently shows that structured reasoning approaches significantly improve
+   x flagged: **Grounding**: Even with citation requirements, 76% of claims may still lack proper ground
+
+=== DIRTY review (+2 fabrications) · glm-4-air · parallel(8) ===
+wall: 6s for 30 claims
+gate: FAIL  (26/30)  injected caught: 2/2
+   x flagged: The research consistently shows that structured reasoning approaches significantly improve
+   x flagged: **Grounding**: Even with citation requirements, 76% of claims may still lack proper ground
+   x CAUGHT(injected): Framework Helios reduced agent failure rate by 37 percent on the SWE-bench-Live split.
+   x CAUGHT(injected): Okafor and Reyes (2023) showed that memory compression doubled long-horizon throughput.

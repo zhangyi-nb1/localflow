@@ -1,0 +1,32 @@
+╭────────────────── Approval required ──────────────────╮
+│ Pack: Literature Review Pack (literature_review_pack) │
+│ Workspace: sandbox/lit_llm_on                         │
+│ Stages: 2                                             │
+│ Repair: True (max_rounds=2)                           │
+│                                                       │
+│   1.  s1_organize — folder_organizer (rule)           │
+│   2.  s2_synthesize — agent (llm)                     │
+╰───────────────────────────────────────────────────────╯
+     Pack `literature_review_pack` run: 2026-05-29-048     
+┏━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━┓
+┃ stage_id      ┃ status ┃ actions ┃ verifier ┃  duration ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━┩
+│ s1_organize   │ PASSED │      19 │ ok       │ 189232 ms │
+│ s2_synthesize │ PASSED │       2 │ ok       │  44364 ms │
+└───────────────┴────────┴─────────┴──────────┴───────────┘
+                         Deliverable verifiers: PASSED                          
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ verifier                        ┃ status  ┃ detail                           ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ deliverable_completeness_verif… │ pass    │ all 3 declared deliverable(s)    │
+│                                 │         │ present                          │
+│ source_ledger_verifier          │ pass    │ all 12 citation(s) resolve to    │
+│                                 │         │ real files                       │
+│ claim_grounding_verifier        │ skipped │ no source fragments under        │
+│                                 │         │ summaries/ to ground against;    │
+│                                 │         │ skipping (likely the summarise   │
+│                                 │         │ stage did not produce summaries) │
+└─────────────────────────────────┴─────────┴──────────────────────────────────┘
+1 verifier(s) skipped (no LLM key, no relevant artefacts, etc.)
+PASSED  pack `literature_review_pack` total 233599 ms  ·  run_id 2026-05-29-048 
+·  to undo: localflow rollback --run-id 2026-05-29-048

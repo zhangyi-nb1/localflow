@@ -1,0 +1,77 @@
+# Guard-OFF baseline — the ablation control for the flagship demo.
+#
+# This recipe is IDENTICAL to literature_review_pack.yaml EXCEPT it drops
+# the `claim_grounding_verifier` (the verify-as-gate). It exists only to
+# make the harness's value visible by contrast: run the SAME complex
+# review through both recipes and compare the deliverables.
+#
+#   Guard OFF (this recipe): fabricated claims are shipped SILENTLY into
+#     review.md, no warning, exit 0 — what a naive agent does.
+#   Guard ON  (literature_review_pack.yaml): the grounding gate flags the
+#     ungrounded claims, gates the artifact as not-shippable (exit 3), and
+#     routes them to review_queue.md for human verification.
+#
+# Honesty (rule F): this is a DEMO CONTROL, not a production recipe. Do
+# not use it for real work — it deliberately removes the load-bearing
+# check. See docs/DEMO_AND_LONGTASK_GUIDE.md §1.4.
+#
+# Usage (ablation):
+#   localflow pack run literature_review_pack_nogate --workspace ./papers/   # OFF: ships fakes
+#   localflow pack run literature_review_pack        --workspace ./papers/   # ON:  gate exit 3
+
+name: literature_review_pack_nogate
+title: Literature Review Pack (guard OFF — demo control)
+description: |
+  Ablation control for the verifiable-literature-review flagship. Same
+  pipeline as literature_review_pack but WITHOUT the claim-level grounding
+  gate, so ungrounded / fabricated claims are shipped silently. Used only
+  to show, by side-by-side contrast, what the grounding gate buys you.
+  Not for production use.
+
+tags: [research, literature, review, demo, ablation, nogate]
+
+input_expectation:
+  file_kinds: [pdf, text]
+  min_files: 2
+  require_any: [pdf, text]
+  keywords:
+    - paper
+    - papers
+    - review
+    - literature
+    - 论文
+    - 综述
+    - 文献
+    - research
+
+stages:
+  - stage_id: s1_organize
+    title: Categorise sources (papers / notes / misc)
+    skill: folder_organizer
+    planner: rule
+    expected_outputs:
+      - papers/index.md
+
+  - stage_id: s2_synthesize
+    title: Summarise each source + synthesise a review via the LLM
+    skill: agent
+    planner: llm
+    failure_policy: skip
+    expected_outputs:
+      - review.md
+      - SOURCES.md
+
+expected_outputs:
+  - papers/index.md
+  - review.md
+  - SOURCES.md
+
+# Guard OFF: the claim_grounding_verifier is deliberately ABSENT. Only the
+# structural deliverable checks remain — none of them inspect whether a
+# claim traces to a source, so fabricated claims pass straight through.
+verifiers:
+  - deliverable_completeness_verifier
+  - source_ledger_verifier
+
+repair_policy:
+  enabled: false

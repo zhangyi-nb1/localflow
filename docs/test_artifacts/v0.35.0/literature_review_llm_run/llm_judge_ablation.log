@@ -1,0 +1,19 @@
+[setup] 12 source fragments, judge=LLM(glm-4.5)
+
+=== CLEAN review (glm-4.5 output) ===
+gate: FAIL  (27/35 grounded, ratio 0.77)
+flagged (LLM judge):
+   ✗ **Scalability**: While Voyager shows promise in open-ended environments, scaling to real-world compl
+   ✗ **Grounding**: Even with citation requirements, 76% of claims may still lack proper grounding
+   ✗ Based on this synthesis, several research directions emerge:
+   ✗ **Enhanced reasoning architectures**: Combine ReAct, planning, and reflection approaches for more ro
+   ✗ **Advanced error recovery**: Extend checkpoint-rollback mechanisms to handle the six identified fail
+   ✗ **Scalable skill learning**: Extend Voyager's approach to more complex, real-world domains
+   ✗ The findings collectively point toward a future where agents can reason effectively, learn continuou
+   ✗ All findings are grounded in the source materials documented in `SOURCES.md`, spanning research from
+
+=== DIRTY review (+2 injected fabrications) ===
+gate: FAIL  (27/37 grounded)
+injected fabrications flagged: 2/2
+   ✗ CAUGHT: Framework Helios reduced agent failure rate by 37 percent on the SWE-bench-Live split.
+   ✗ CAUGHT: Okafor and Reyes (2023) showed that memory compression doubled long-horizon throughput.

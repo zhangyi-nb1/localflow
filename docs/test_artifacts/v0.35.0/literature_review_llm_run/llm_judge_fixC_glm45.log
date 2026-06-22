@@ -1,0 +1,12 @@
+[setup] 12 fragments; claims after Fix C filter = 28 (was 35)
+
+=== CLEAN review (Fix C) ===
+gate: FAIL  (26/28 grounded, ratio 0.93)
+   ✗ still flagged: **Scalability**: While Voyager shows promise in open-ended environments, scaling to real-world 
+   ✗ still flagged: **Grounding**: Even with citation requirements, 76% of claims may still lack proper grounding
+
+=== DIRTY review (+2 fabrications) ===
+gate: FAIL  (26/30)
+injected fabrications caught: 2/2
+   ✗ CAUGHT: Framework Helios reduced agent failure rate by 37 percent on the SWE-bench-Live split.
+   ✗ CAUGHT: Okafor and Reyes (2023) showed that memory compression doubled long-horizon throughput.
