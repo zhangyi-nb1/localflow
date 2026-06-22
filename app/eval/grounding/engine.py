@@ -18,6 +18,7 @@ uses the LLM judge. Both emit the same ``ClaimVerdict`` shape.
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -132,10 +133,82 @@ _FRAMING_PREFIXES: tuple[str, ...] = (
 )
 
 
+# Synthesis / recommendation / meta lead-ins. A sentence that opens with
+# one of these — and carries NO number — is the review's own opinion,
+# future-work, or closing prose, not a groundable factual claim about the
+# sources. Real reviews always have a conclusions/recommendations section;
+# without this, the gate false-flags every such sentence (observed on a
+# real run: a clean, non-hallucinated review scored 0.77 and FAILed).
+_NONFACTUAL_LEADINS: tuple[str, ...] = (
+    "based on",
+    "these findings",
+    "the findings",
+    "all findings",
+    "our findings",
+    "this synthesis",
+    "taken together",
+    "in summary",
+    "in conclusion",
+    "overall",
+    "going forward",
+    "future work",
+    "future research",
+    "research directions",
+    "we recommend",
+    "we propose",
+    "we suggest",
+    "we conclude",
+)
+
+# Recommendation imperatives — checked at the start of the groundable body
+# (after stripping an optional "**Label**:" prefix common in LLM prose).
+_RECOMMENDATION_VERBS: frozenset[str] = frozenset(
+    {
+        "combine",
+        "extend",
+        "develop",
+        "explore",
+        "adopt",
+        "leverage",
+        "build",
+        "investigate",
+        "integrate",
+        "improve",
+        "enhance",
+        "establish",
+        "expand",
+        "incorporate",
+        "prioritize",
+        "prioritise",
+        "implement",
+    }
+)
+
+_HAS_DIGIT_RE = re.compile(r"\d")
+_BOLD_LABEL_RE = re.compile(r"^\*\*[^*]+\*\*\s*[:\-—]\s*")
+
+
+def _is_nonfactual(text: str) -> bool:
+    """True for synthesis / recommendation / meta sentences that are not
+    groundable factual claims. Conservative by design: a sentence with ANY
+    digit is never treated as non-factual — a number is a checkable
+    assertion (real finding OR fabricated stat) that must face the gate."""
+    if _HAS_DIGIT_RE.search(text):
+        return False
+    low = text.strip().lower()
+    if any(low.startswith(p) for p in _NONFACTUAL_LEADINS):
+        return True
+    body = _BOLD_LABEL_RE.sub("", text.strip()).lstrip()
+    first = re.split(r"[\s,:.]", body, maxsplit=1)[0].lower()
+    return first in _RECOMMENDATION_VERBS
+
+
 def _is_claimworthy(text: str) -> bool:
     """A claim must carry a groundable factual assertion: >=4 words, not
-    a bare section lead-in ('Key findings:'), and not a self-referential
-    framing sentence ('This review synthesises…')."""
+    a bare section lead-in ('Key findings:'), not a self-referential
+    framing sentence ('This review synthesises…'), and not a
+    recommendation / future-work / meta sentence ('Extend the approach…',
+    'The findings point toward…')."""
     stripped = text.strip()
     words = stripped.split()
     if len(words) < 4:
@@ -144,6 +217,8 @@ def _is_claimworthy(text: str) -> bool:
         return False
     low = stripped.lower()
     if any(low.startswith(prefix) for prefix in _FRAMING_PREFIXES):
+        return False
+    if _is_nonfactual(stripped):
         return False
     return True
 
@@ -196,29 +271,78 @@ def split_claims(review_markdown: str) -> list[Claim]:
 
 # --------------------------------------------------------------------- source loading
 
+# Primary grounding pool: per-source summaries (the deterministic demo
+# pre-seeds these). When a real ``pack run`` does NOT produce summaries/,
+# we fall back to the organised source documents themselves — that is what
+# a review's claims should actually trace to. (Without this fallback the
+# gate silently SKIPPED on every real run; the summaries/-only pool only
+# existed in the seeded demo.)
+_PRIMARY_SOURCE_GLOBS: tuple[str, ...] = ("summaries/*.md", "summaries/*.txt")
+_FALLBACK_SOURCE_GLOBS: tuple[str, ...] = (
+    "papers/*.md",
+    "papers/*.txt",
+    "notes/*.md",
+    "notes/*.txt",
+    "sources/*.md",
+    "sources/*.txt",
+    "*.md",
+    "*.txt",
+)
+
+# Generated deliverables / index files that are NOT sources. Excluding them
+# stops a claim from "grounding" against the very review it came from
+# (circular) or against folder_organizer's auto-generated indexes.
+_EXCLUDED_SOURCE_NAMES: frozenset[str] = frozenset(
+    {
+        "review.md",
+        "sources.md",
+        "readme.md",
+        "summary.md",
+        "literature_review.md",
+        "review_queue.md",
+        "index.md",
+    }
+)
+
 
 def load_source_fragments(
     workspace_root: Path,
     *,
-    rel_globs: tuple[str, ...] = ("summaries/*.md", "summaries/*.txt"),
+    rel_globs: tuple[str, ...] = _PRIMARY_SOURCE_GLOBS,
+    fallback_globs: tuple[str, ...] = _FALLBACK_SOURCE_GLOBS,
     max_chars: int = 8000,
 ) -> list[SourceFragment]:
-    """Load candidate source fragments (per-source summaries) from the
-    workspace. Each matched file becomes one fragment, capped to
-    ``max_chars``. Sorted by path for determinism."""
-    fragments: list[SourceFragment] = []
-    seen: set[Path] = set()
-    for glob in rel_globs:
-        for path in sorted(workspace_root.glob(glob)):
-            if not path.is_file() or path in seen:
-                continue
-            seen.add(path)
-            try:
-                text = path.read_text(encoding="utf-8", errors="replace")[:max_chars]
-            except OSError:
-                continue
-            rel = path.relative_to(workspace_root).as_posix()
-            fragments.append(SourceFragment(source_id=rel, text=text))
+    """Load candidate source fragments the review's claims must trace to.
+
+    Tries ``rel_globs`` (per-source summaries) first; when that yields
+    nothing — a real ``pack run`` produces ``review.md`` / ``SOURCES.md``
+    but no ``summaries/`` — it falls back to the organised source
+    documents (``papers/``, ``notes/``, ``sources/``, workspace root),
+    excluding generated deliverables and index files. Each matched file
+    becomes one fragment capped to ``max_chars``; sorted by path for
+    determinism."""
+
+    def _collect(globs: tuple[str, ...]) -> list[SourceFragment]:
+        out: list[SourceFragment] = []
+        seen: set[Path] = set()
+        for glob in globs:
+            for path in sorted(workspace_root.glob(glob)):
+                if not path.is_file() or path in seen:
+                    continue
+                if path.name.lower() in _EXCLUDED_SOURCE_NAMES:
+                    continue
+                seen.add(path)
+                try:
+                    text = path.read_text(encoding="utf-8", errors="replace")[:max_chars]
+                except OSError:
+                    continue
+                rel = path.relative_to(workspace_root).as_posix()
+                out.append(SourceFragment(source_id=rel, text=text))
+        return out
+
+    fragments = _collect(rel_globs)
+    if not fragments and fallback_globs:
+        fragments = _collect(fallback_globs)
     return fragments
 
 
@@ -290,11 +414,17 @@ class LexicalClaimJudge:
 
 _LLM_JUDGE_SYSTEM = (
     "You are a grounding checker for a literature review. Given a CLAIM and a list "
-    "of SOURCE fragments, decide whether the claim is supported by at least one "
-    "source. Set verdict=true ONLY if a specific source materially supports the "
-    "claim's factual content (entities, numbers, findings). Set verdict=false if no "
-    "source supports it (a fabricated / hallucinated claim). In `reason`, name the "
-    "supporting source or state that none supports it."
+    "of SOURCE fragments, decide whether the claim is supported. "
+    "Set verdict=true if a specific source materially supports the claim's factual "
+    "content (entities, numbers, findings). "
+    "ALSO set verdict=true if the sentence is NOT a checkable factual claim about the "
+    "sources — i.e. a recommendation, future-work suggestion, opinion, limitation, or "
+    "meta-statement about the review itself — because there is nothing to fabricate. "
+    "Set verdict=false ONLY when the sentence makes a specific factual assertion "
+    "(a named entity, a number/statistic, or a concrete finding) that no source "
+    "supports — i.e. a fabricated / hallucinated claim. "
+    "In `reason`, name the supporting source, or say it is non-factual, or state that "
+    "no source supports the asserted fact."
 )
 
 
@@ -387,10 +517,22 @@ def ground_review(
     fragments: list[SourceFragment],
     policy: GroundingPolicy,
     judge: ClaimJudge,
+    max_workers: int = 8,
 ) -> ClaimGroundingResult:
-    """End-to-end: split → judge each claim → gate → evidence bundle."""
+    """End-to-end: split → judge each claim → gate → evidence bundle.
+
+    Claims are judged concurrently (``max_workers`` threads). The LLM
+    judge is I/O-bound — one API call per claim — so a real review's gate
+    drops from minutes to seconds. Order is preserved and each claim is
+    judged independently, so results are identical to the sequential path
+    (the lexical judge is deterministic either way). ``max_workers <= 1``
+    forces sequential."""
     claims = split_claims(review_text)
-    verdicts = [judge.judge_claim(c, fragments) for c in claims]
+    if len(claims) <= 1 or max_workers <= 1:
+        verdicts = [judge.judge_claim(c, fragments) for c in claims]
+    else:
+        with ThreadPoolExecutor(max_workers=min(max_workers, len(claims))) as ex:
+            verdicts = list(ex.map(lambda c: judge.judge_claim(c, fragments), claims))
     gate = evaluate_grounding(verdicts, policy)
     return ClaimGroundingResult(
         review_path=review_path,

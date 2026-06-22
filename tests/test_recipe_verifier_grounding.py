@@ -144,4 +144,6 @@ def test_skips_when_no_sources(tmp_path: Path) -> None:
     verdict = get("claim_grounding_verifier")(_ctx(tmp_path))
     assert verdict.passed is True
     assert verdict.skipped is True
-    assert "no source fragments" in verdict.detail
+    # review.md is excluded from the source pool, and there are no
+    # summaries/papers/notes/sources to fall back to → still skips.
+    assert "no source documents" in verdict.detail

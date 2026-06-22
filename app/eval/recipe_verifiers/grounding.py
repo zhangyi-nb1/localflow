@@ -110,8 +110,8 @@ def claim_grounding_verifier(ctx: RecipeVerifierContext) -> RecipeVerifierVerdic
         return RecipeVerifierVerdict(
             name=name,
             passed=True,
-            detail="no source fragments under summaries/ to ground against; "
-            "skipping (likely the summarise stage did not produce summaries)",
+            detail="no source documents (summaries/, papers/, notes/, sources/) "
+            "to ground against; skipping (the workspace has no source files)",
             skipped=True,
         )
 
