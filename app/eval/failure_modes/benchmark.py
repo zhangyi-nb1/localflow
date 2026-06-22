@@ -305,7 +305,7 @@ def _bench_harness_self() -> FailureModeReport:
             "Not a per-task runtime number. Mitigated by a process control: the "
             "kernel-boundary lint (tests/test_kernel_boundary.py) fails CI on any "
             "app→kernel leak, and every kernel touch is logged in the §10.7 ledger "
-            "(docs/PHASES.md). Current ratio: 4 deliberate exceptions / 43 deliveries."
+            "(docs/PHASES.md). Current ratio: 4 deliberate exceptions / 44 deliveries."
         ),
     )
 

@@ -89,6 +89,19 @@ def test_harness_self_is_process_control():
     assert r.unguarded_failed is None
 
 
+def test_harness_self_ledger_ratio_matches_docs():
+    """Guard the integrity row against ledger drift (rule E).
+
+    The harness_self detail quotes the §10.7 kernel-touch ratio. As of
+    v0.35.0 the ledger (docs/PHASES.md) + README say 44 deliveries. This
+    is the project's honesty showpiece, so a stale number here is the
+    worst place to have one — pin it so it can never silently drift."""
+    r = _by_mode(run_benchmark())["harness_self"]
+    assert "4 deliberate exceptions / 44 deliveries" in r.detail
+    # The old stale value must never reappear.
+    assert "43 deliveries" not in r.detail
+
+
 def test_exactly_four_runtime_mitigations():
     reports = run_benchmark()
     mitigated = [r for r in reports if r.guard_helps]
