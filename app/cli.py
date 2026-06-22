@@ -2452,6 +2452,81 @@ def cmd_taskgraph_replay(
     )
 
 
+@taskgraph_app.command("resume")
+def cmd_taskgraph_resume(
+    run_id: str = typer.Option(..., "--run-id", help="Existing run identifier to resume."),
+    graph: Optional[Path] = typer.Option(
+        None,
+        "--graph",
+        help="TaskGraph YAML; defaults to the taskgraph.json persisted in the run dir.",
+    ),
+    max_stages: Optional[int] = typer.Option(
+        None,
+        "--max-stages",
+        help=(
+            "Run at most N still-pending stages this session (models a context-window "
+            "budget). Default: all remaining. Re-run to continue across sessions."
+        ),
+    ),
+) -> None:
+    """Phase 38 — stage-level resume: re-enter an interrupted run, SKIP the
+    stages that already completed, and run the remaining ones on the same
+    workspace.
+
+    Unlike ``replay`` (which rolls back + redoes a stage range), resume
+    keeps completed work and continues forward. Reads the persisted
+    ``taskgraph_result.json``; writes an updated ``progress.json`` +
+    ``handoff.md``. Idempotent once the graph is complete.
+    """
+    from datetime import datetime, timezone
+
+    import yaml
+
+    from app.harness.stage_progress import read_progress, resume_taskgraph
+    from app.schemas import TaskGraph
+
+    store = RunStore(task_id=run_id)
+    if graph is not None:
+        try:
+            tg = TaskGraph.model_validate(yaml.safe_load(graph.read_text(encoding="utf-8")))
+        except Exception as exc:
+            console.print(f"[red]invalid graph YAML:[/] {exc}")
+            raise typer.Exit(code=2) from exc
+    else:
+        if not store.taskgraph_path.exists():
+            console.print(
+                f"[red]no persisted taskgraph.json for run {run_id}[/] — pass --graph <yaml>"
+            )
+            raise typer.Exit(code=2)
+        tg = store.read_model(store.taskgraph_path, TaskGraph)
+
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        resume_taskgraph(tg, store, max_stages=max_stages, now=now)
+    except ValueError as exc:  # graph-shape mismatch guard
+        console.print(f"[red]resume refused:[/] {exc}")
+        raise typer.Exit(code=2) from exc
+    except Exception as exc:
+        console.print(f"[red]resume failed:[/] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    prog = read_progress(store)
+    pending = prog.pending_ids() if prog else []
+    total = len(prog.stages) if prog else 0
+    done = total - len(pending)
+    if pending:
+        console.print(
+            f"[yellow]RESUMED[/]  run [bold]{run_id}[/]  ·  {done}/{total} stages done  ·  "
+            f"remaining: {pending}  ·  next: {prog.next_step}"
+        )
+        console.print(f"[dim]run again to continue; handoff note: {store.path('handoff.md')}[/]")
+    else:
+        console.print(
+            f"[green]COMPLETE[/]  run [bold]{run_id}[/]  ·  all {total} stages done  ·  "
+            f"see [bold]localflow status --task-id {run_id}[/]"
+        )
+
+
 # --------------------------------------------------------------------- pack (Phase 17)
 
 pack_app = typer.Typer(
