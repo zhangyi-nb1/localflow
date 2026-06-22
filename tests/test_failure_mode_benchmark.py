@@ -10,7 +10,6 @@ import pytest
 
 from app.eval.failure_modes import render_markdown_table, run_benchmark
 from app.eval.failure_modes.schema import (
-    STATUS_GAP,
     STATUS_MITIGATED,
     STATUS_PROCESS,
 )
@@ -73,13 +72,15 @@ def test_quality_entropy_verifier_flags_missing_deliverable():
     assert r.guard_helps
 
 
-def test_context_rot_is_honest_gap():
+def test_context_rot_mitigated_by_resume():
+    # Phase 38 (R6): context_rot flipped from honest gap to mitigated by
+    # stage-level checkpoint/resume. guard-off restart-from-scratch never
+    # completes within a per-session budget; guard-on resume does.
     r = _by_mode(run_benchmark())["context_rot"]
-    assert r.status == STATUS_GAP
-    # Honest: the guard does NOT help — both modes fail.
-    assert r.guarded_failed is True
-    assert r.unguarded_failed is True
-    assert not r.guard_helps
+    assert r.status == STATUS_MITIGATED
+    assert r.unguarded_failed is True  # no checkpoint → never completes → ships
+    assert r.guarded_failed is False  # resume completes the multi-stage task
+    assert r.guard_helps
 
 
 def test_harness_self_is_process_control():
@@ -102,19 +103,22 @@ def test_harness_self_ledger_ratio_matches_docs():
     assert "43 deliveries" not in r.detail
 
 
-def test_exactly_four_runtime_mitigations():
+def test_exactly_five_runtime_mitigations():
+    # Phase 38 (R6) flipped context_rot gap→mitigated, so 5 of 6 modes are
+    # now runtime-mitigated (harness_self stays a process control).
     reports = run_benchmark()
     mitigated = [r for r in reports if r.guard_helps]
-    assert len(mitigated) == 4
+    assert len(mitigated) == 5
     runtime = [r for r in reports if r.status == STATUS_MITIGATED]
-    assert len(runtime) == 4
+    assert len(runtime) == 5
 
 
-def test_render_table_includes_gap_and_process_rows():
+def test_render_table_includes_process_row_and_honest_ceiling():
     table = render_markdown_table(run_benchmark())
     assert "context_rot" in table
-    assert "gap" in table
-    assert "process" in table
-    assert "4/4" in table  # the honest headline
+    assert "process" in table  # harness_self stays a process control
+    assert "5/5" in table  # the honest headline (was 4/4 before R6)
+    # No row is an unmitigated runtime gap anymore.
+    assert "gap" not in table
     # Honesty: the table must NOT claim 6/6.
     assert "6/6" not in table
