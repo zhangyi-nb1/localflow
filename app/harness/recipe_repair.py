@@ -27,6 +27,7 @@ policy_guard. **28th** zero-kernel-touch phase target.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -58,7 +59,13 @@ class RecipeRepairAttempt(BaseModel):
     """Name of the verifier whose failure kicked off this round."""
 
     suggested_hint: str
-    """The hint we fed to the planner as ``user_hint``."""
+    """The verifier's typed hint (the curated fix suggestion)."""
+
+    trace_digest: str = ""
+    """R5 — a compact digest of execution-trace evidence (failed verifier
+    checks + recent action observations) appended to the planner's
+    ``user_hint`` so re-planning sees what actually happened, not just the
+    static suggestion. Empty when no trace was available."""
 
     target_stage: str
     """The stage_id we replayed from."""
@@ -146,6 +153,62 @@ def _aggregate_snapshot_inputs(run_store: "RunStore") -> list[str]:
     except Exception:
         return []
     return [f.path for f in snap.files]
+
+
+def _build_trace_digest(trace_path: Path, *, max_actions: int = 8, max_chars: int = 900) -> str:
+    """R5 — summarise ``trace.jsonl`` into a compact evidence digest for
+    the repair planner.
+
+    The repair loop already feeds the verifier's curated ``suggested_hint``
+    to the re-planner. This adds the *execution evidence* behind that
+    failure — the failed verifier checks and the recent action
+    observations — so the agent re-plans against what actually happened,
+    not just the static suggestion. KB ch11 §第一阶段 "可观测性被放大"
+    (L182): in the agent era the consumer of the trace is the agent.
+
+    Returns ``""`` when no trace exists or nothing relevant is found, so
+    the caller can fall back to the bare hint. Pure read; never raises.
+    """
+    if not trace_path.exists():
+        return ""
+    try:
+        text = trace_path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+    failed_checks: list[str] = []
+    actions: list[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        event = row.get("event")
+        payload = row.get("payload") or {}
+        if event == "verifier.check" and payload.get("status") == "fail":
+            detail = (payload.get("detail") or "").strip()
+            if detail:
+                failed_checks.append(detail)
+        elif event == "action.end":
+            obs = payload.get("observation") or {}
+            atype = obs.get("action_type") or "action"
+            target = obs.get("target") or obs.get("source") or ""
+            status = payload.get("status") or ""
+            actions.append(f"{atype} {target} [{status}]".strip())
+
+    lines: list[str] = []
+    if failed_checks:
+        lines.append("Failed verifier checks in the last run:")
+        lines += [f"  - {d}" for d in failed_checks[:6]]
+    if actions:
+        shown = actions[-max_actions:]
+        lines.append(f"Recent actions executed ({len(actions)} total, last {len(shown)}):")
+        lines += [f"  - {a}" for a in shown]
+
+    return "\n".join(lines).strip()[:max_chars]
 
 
 def _build_context(
@@ -304,12 +367,27 @@ def run_recipe_repair(
 
         attempted_verifiers.add(trigger.verifier_name)
         round_started = datetime.now(timezone.utc)
+
+        # R5 — enrich the planner's user_hint with execution-trace
+        # evidence (failed checks + recent action observations), so the
+        # re-plan targets what actually happened, not just the static
+        # verifier suggestion. Falls back to the bare hint when no trace.
+        trace_digest = _build_trace_digest(run_store.trace_path)
+        effective_hint = trigger.hint
+        if trace_digest:
+            effective_hint = (
+                f"{trigger.hint}\n\n"
+                "Execution-trace evidence from the failed run "
+                "(use it to target the fix):\n"
+                f"{trace_digest}"
+            )
+
         # Build a graph with the hint plumbed in for the target stage.
         hinted_graph = graph.model_copy(
             update={
                 "stage_hints": {
                     **dict(graph.stage_hints),
-                    trigger.target_stage: trigger.hint,
+                    trigger.target_stage: effective_hint,
                 }
             }
         )
@@ -318,6 +396,7 @@ def run_recipe_repair(
             attempt=round_idx,
             triggered_by_verifier=trigger.verifier_name,
             suggested_hint=trigger.hint,
+            trace_digest=trace_digest,
             target_stage=trigger.target_stage,
             pre_attempt_passed=False,
         )

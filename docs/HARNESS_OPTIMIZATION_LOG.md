@@ -38,7 +38,7 @@
 | R2 | README 五层框架自评表（EN+zh） | 全部 5 层（定位） | 否 | small | ✅ done | 5 层显式映射 0→5/5（双语一致） |
 | R3 | Option 1：guard ON/OFF ablation（确定性 + 真 LLM） | Observe&Verify / false_completion | 否 | medium | ✅ done | recall **6/6**、误报 **0/12**；真 LLM 8/8 0 误报;诚实暴露 pack-run exit 混淆 |
 | R4 | react loop 真实 trace（LOOP_DECISION） | Control / goal_drift | 否（fix#1+#2 均 app 层） | medium | ✅ done | 真跑揭露 react loop 从未端到端运行；修 2 个叠加 bug；现真 LLM 驱动 10/10 决策（全 CONTINUE）；+7 测试 |
-| R5 | trace.jsonl → agent 可消费的 repair 输入 | Observe&Verify→Control | 否 | medium | ⏳ todo | 目标：闭环 trace→hint 注入 |
+| R5 | trace.jsonl → agent 可消费的 repair 输入 | Observe&Verify→Control | 否 | medium | ✅ done | repair hint 现注入 trace digest（失败检查+动作观测）；+8 测试；机制已坐实，repair 成功率 A/B 留作 follow-up |
 | R6 | Phase 38 stage-level checkpoint/resume/handoff | Persist / context_rot | 否（facade） | large | ⏳ todo | 目标：context_rot gap→mitigated(stage) |
 | R7 | Reflexion 同动作死循环检测器 | Control | **是** ⚠️ | medium | 🔒 待确认 | 需 §10.7 登记 + 用户确认 |
 | R8 | 删 CONVERT/ANALYZE 死枚举 | Action | **是** ⚠️ | small | 🔒 待确认 | 需 §10.7 登记 + 用户确认 |
@@ -311,20 +311,61 @@ schema/provider 兼容性的硬要求。
 
 ---
 
-## 待办 backlog（R5–R8 · 优先级序）
+## R5 — trace.jsonl 变成 agent 可消费的 repair 输入
+
+**梯队**：🟡 第二梯队（把已有能力坐实成证据）。**状态：完成**。零 kernel。
+
+### 措施
+
+KB 的核心观点(ch11 L182):agent 时代可观测性的消费者从工程师变成 **agent**。LocalFlow
+有丰富 trace,但 recipe auto-repair 此前只把验证器的静态 `suggested_hint` 喂给重规划器——
+trace 本身没进闭环。R5 让 repair 把 trace 证据也注入 `user_hint`。
+
+### 改动
+
+| 文件 | 改动 |
+|---|---|
+| `app/harness/recipe_repair.py` | 新增 `_build_trace_digest(trace_path)`(抽取失败 `verifier.check` + 最近 `action.end` 观测,压成紧凑 digest);`run_recipe_repair` 把 digest 追加进 `effective_hint` → `stage_hints[target]`;`RecipeRepairAttempt` 加 `trace_digest` 字段记录 |
+| `tests/test_recipe_repair.py` | `_FakeRunStore` 加 `trace_path`(指向 /dev/null → digest 空 → 旧行为不变) |
+| `tests/test_recipe_repair_trace_digest.py` | +8 测试:digest 抽取/截断/容错 + 注入(捕获 replay 的 graph,断言 stage_hint 含 verifier hint + trace 证据) |
+
+### 量化结果
+
+- repair planner 的 `user_hint`:**从"仅验证器建议串"→"验证器建议 + 执行证据(失败检查 + 动作观测)"**。
+- 注入路径**确定性可验证**:测试捕获 `replay_from_stage` 收到的 graph,断言 `stage_hints[target]`
+  同时含 verifier hint(`add the missing section`)与 trace 证据(`cov: missing section`、
+  `summarize review.md [ok]`);`attempt.trace_digest` 独立留痕。
+- 回归:**1144 passed / 0 failed**;+8 测试;旧 repair 测试零回归(digest 空时 = 旧行为)。
+- **诚实声明(rule F)**:本轮量化的是**机制坐实**(证据进了 hint),**不是** repair 成功率提升——
+  后者需要 guard-on/off 的 repair A/B 研究(live LLM),列为 follow-up,不在本轮 oversell。
+
+### 知识点八股
+
+> **面试问题**:"agent 时代,日志/trace 的角色有什么变化?"
+
+**答**:消费者从**工程师**变成**agent**。传统 trace 是给人事后审计的;agent harness 里,trace 要
+能被 agent 自己读回去**定位问题、验证修复**,形成 observe→re-plan 闭环。我把这点落到 repair:
+验证器 FAIL 时,不只把静态建议喂回重规划器,还把 trace 里的**失败检查 + 实际动作观测**摘成
+digest 一起注入——让重规划基于"真实发生了什么"而非"我猜该改什么"。这也是 verify→repair 闭环
+(Observe&Verify → Control)的加强。
+
+- KB 出处:`llm_app_interview_11_harness_core_workflow.md §第一阶段 可观测性被放大`(L182);
+  `llm_app_interview_10_harness_engineering.md §Observe & Verify "运行结果如何反馈给模型"`(L330)。
+- 项目内对应:`recipe_repair` + `trace.jsonl`;差异化"基于 trace 的持续改进"。
+
+---
+
+## 待办 backlog（R6–R8 · 优先级序）
 
 > 详细价值/工作量/KB 出处见 `memory/harness-optimization-campaign.md` 与会话交叉分析。
 > R3–R6 零 kernel；R7/R8 触碰 §10.7，**实现前需用户确认**。
 
-- **R5（下一步主推）** trace→agent 自纠输入：验证器 FAIL 时把相关 trace 行摘要成
-  `user_hint` 注入 auto-repair / react REPLACE。KB：ch11 §可观测性被放大 L182。
-  （react loop 现已能跑,前置已满足）
-- **R4 后续（选做）** 构造"该偏移"场景(冗余/错误动作)逼出真实 REPLACE/SKIP/ABORT 决策,
-  把 react loop 的 drift 路径也跑出真 trace（当前只验证了 CONTINUE 路径）。
-- **R5** trace→agent 自纠输入：验证器 FAIL 时把相关 trace 行摘要成 `user_hint` 注入
-  auto-repair / react REPLACE。KB：ch11 §可观测性被放大 L182。
-- **R6** Phase 38 stage-level checkpoint/resume/handoff（progress file + feature-list
-  状态机）→ 把 context_rot 翻成 mitigated(stage-level)，唯一能挂"long-running"的事。
-  KB：ch12 §跨 window 接力 L297-329 + §仅靠 compaction 不够 L331-353。
-- **R7** ⚠️ Reflexion 同动作死循环检测器（`react_loop.py`，触碰 kernel）。KB：ch04 §Reflexion L165-169。
-- **R8** ⚠️ 删 CONVERT/ANALYZE 死枚举（`action.py` ActionType，触碰 kernel）。KB：ch10 §Action L46。
+- **R6（大 · 下一步主推）** Phase 38 stage-level checkpoint/resume/handoff → 把
+  context_rot gap 翻成 mitigated(stage-level),唯一能挂"long-running"的事。预期零 kernel
+  (facade)。KB：ch12 §跨 window 接力 L297-329 + §仅靠 compaction 不够 L331-353。
+- **R5 后续（选做）** repair 成功率 A/B:guard-on(注入 trace digest)vs guard-off,live LLM
+  量化 digest 是否真提升修复收敛——把 R5 从"机制坐实"升级成"效果实测"。
+- **R4 后续（选做）** 构造"该偏移"场景逼出真实 REPLACE/SKIP/ABORT,把 react loop 的 drift
+  路径也跑出真 trace（当前只验证了 CONTINUE 路径）。
+- **R7** ⚠️ Reflexion 同动作死循环检测器（`react_loop.py`，触碰 kernel → rule H）。KB：ch04 §Reflexion L165-169。
+- **R8** ⚠️ 删 CONVERT/ANALYZE 死枚举（`action.py` ActionType，触碰 kernel → rule H）。KB：ch10 §Action L46。

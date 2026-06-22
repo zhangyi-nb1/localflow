@@ -389,3 +389,9 @@ class _FakeRunStore:
     @property
     def rollback_path(self) -> Path:
         return Path("/dev/null")
+
+    @property
+    def trace_path(self) -> Path:
+        # R5 — run_recipe_repair reads this to build a trace digest.
+        # /dev/null reads as empty → digest "" → bare hint (legacy behaviour).
+        return Path("/dev/null")
