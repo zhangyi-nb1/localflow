@@ -8,7 +8,6 @@ produces a workspace equivalent to an uninterrupted run.
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import pytest
