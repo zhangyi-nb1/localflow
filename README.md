@@ -265,6 +265,29 @@ the numbers prove the guard fires when it should, on deterministic
 injected failures — not a wild-field failure rate. See
 [`docs/PHASE_37_DESIGN.md`](docs/PHASE_37_DESIGN.md).
 
+#### Drill-down: the flagship grounding gate (row 2)
+
+Row 2 (`false_completion`) is the flagship. On the scaled literature-review
+demo (12 sources / 19 claims, **6 fabricated + 1 hard-case contradiction**),
+the claim-grounding gate is ablated guard ON vs OFF. Reproduce with
+`python examples/literature_review_pack/seed.py --check` (deterministic, no
+key — uses the lexical judge); evidence in
+[`docs/test_artifacts/v0.36.0/grounding_ablation/`](docs/test_artifacts/v0.36.0/grounding_ablation/).
+
+| metric | guard ON (`literature_review_pack`) | guard OFF (`..._nogate`) |
+|---|---|---|
+| hallucination recall | **6/6 = 100%** flagged | 0/6 — `claim_grounding_verifier` absent → ships |
+| grounded false-positive rate | **0/12 = 0%** | n/a |
+| hard-case contradiction (same-vocabulary 92%→29%) | MISSED by lexical judge; **caught by the LLM judge** | ships |
+| gate verdict | `not-shippable` → exit 3 + auto-repair | shipped |
+
+A live-LLM run (`judge llm`, ~103 s) on genuinely-grounded synthesis output
+passes **8/8, 0 false-positives** — the gate doesn't over-flag real output.
+**Honesty note:** the clean ablation signal is at the *verifier* level
+(`seed.py --check`); the end-to-end `pack run` exit code does **not** isolate
+the gate (a live synthesis stage regenerates the review, and
+`deliverable_completeness` fires independently) — see the artifact README.
+
 ---
 
 ## 4. Five-minute tour

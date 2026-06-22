@@ -1,0 +1,44 @@
+Seeded /Users/zhangronglei/Desktop/XIANGMU/localflow/examples/literature_review_pack/workspace
+  sources/   12 papers + notes
+  summaries/ 12 summaries
+  review.md  19 claims (6 fabricated + 1 hard-case contradiction)
+
+Grounding gate (judge: lexical)
+========================================================================
+  [c1] grounded   ✓ kept      On SWE-bench-Verified, a baseline agent resolved 41 percent of issues.
+  [c2] grounded   ✓ kept      ReAct interleaving of reasoning and acting cut hallucinated actions by 30 percent on ALFWorld.
+  [c3] FABRICATED ✗ FLAGGED   Framework Helios reduced agent failure rate by 37 percent on the SWE-bench-Live split.
+  [c4] grounded   ✓ kept      Reflexion verbal reinforcement improved success rate by 11 points on HotpotQA.
+  [c5] grounded   ✓ kept      Toolformer self-supervised API calls improved zero-shot accuracy by 9 percent on math tasks.
+  [c6] FABRICATED ✗ FLAGGED   Okafor and Reyes (2023) showed that memory compression doubled long-horizon throughput.
+  [c7] grounded   ✓ kept      Voyager skill-library reuse increased novel item discovery 3.3 times in Minecraft.
+  [c8] grounded   ✓ kept      Container isolation of agent actions reduced host side-effects to zero across 1000 trials.
+  [c9] FABRICATED ✗ FLAGGED   The Atlas planner reached a 95 percent task-completion rate on the GAIA benchmark.
+  [c10] grounded   ✓ kept      Rollback on failed verification recovered 92 percent of corrupted runs.
+  [c11] HARD-CASE  ✓ kept      Rollback on failed verification recovered 29 percent of corrupted runs.
+  [c12] grounded   ✓ kept      On HumanEval, the evaluated code model reached 67 percent pass at 1.
+  [c13] FABRICATED ✗ FLAGGED   Reflexion guarantees correct completion on every conceivable benchmark.
+  [c14] grounded   ✓ kept      Plan-then-execute decomposition reduced step errors by 18 percent on WebArena.
+  [c15] grounded   ✓ kept      Requiring source citations cut unsupported claims by 24 percent in generated reports.
+  [c16] FABRICATED ✗ FLAGGED   Quantized 4-bit agents matched full-precision accuracy while using 80 percent less memory.
+  [c17] grounded   ✓ kept      Agent evaluation should report recall and false-positive rate rather than model self-assessment.
+  [c18] grounded   ✓ kept      Six common agent failure modes include goal drift, false completion, and context rot.
+  [c19] FABRICATED ✗ FLAGGED   Following Tanaka et al. (2022), retrieval augmentation eliminated all factual errors.
+========================================================================
+Scorecard
+  claims total          : 19
+  kept (grounded)        : 13
+  flagged (ungrounded)   : 6
+  hallucination recall   : 6/6 = 100%   (target 100%)
+  grounded false-pos rate: 0/12 = 0%   (target < 10%)
+  hard-case contradiction: MISSED (expected — lexical blind spot); caught only by the LLM judge
+  decision               : ROLLBACK / not-shippable (exit 3)
+========================================================================
+
+routed to human review (6):
+  - Framework Helios reduced agent failure rate by 37 percent on the SWE-bench-Live split.
+  - Okafor and Reyes (2023) showed that memory compression doubled long-horizon throughput.
+  - The Atlas planner reached a 95 percent task-completion rate on the GAIA benchmark.
+  - Reflexion guarantees correct completion on every conceivable benchmark.
+  - Quantized 4-bit agents matched full-precision accuracy while using 80 percent less memory.
+  - Following Tanaka et al. (2022), retrieval augmentation eliminated all factual errors.

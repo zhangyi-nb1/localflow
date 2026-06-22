@@ -36,7 +36,7 @@
 |---|---|---|---|---|---|---|
 | R1 | 修 §10.7 ledger 数字漂移 `4/43→4/44` | harness_self（诚信） | 否 | small | ✅ done | 文档矛盾 1→0；+1 回归测试守护 |
 | R2 | README 五层框架自评表（EN+zh） | 全部 5 层（定位） | 否 | small | ✅ done | 5 层显式映射 0→5/5（双语一致） |
-| R3 | Option 1：guard ON/OFF 真 LLM ablation | Observe&Verify / false_completion | 否 | medium | ⏳ todo | 目标：recall/误报数字进 README §3 |
+| R3 | Option 1：guard ON/OFF ablation（确定性 + 真 LLM） | Observe&Verify / false_completion | 否 | medium | ✅ done | recall **6/6**、误报 **0/12**；真 LLM 8/8 0 误报;诚实暴露 pack-run exit 混淆 |
 | R4 | react loop 真实 trace（LOOP_DECISION/drift ABORT） | Control / goal_drift | 否 | medium | ⏳ todo | 目标：≥1 条真实 trace artifact |
 | R5 | trace.jsonl → agent 可消费的 repair 输入 | Observe&Verify→Control | 否 | medium | ⏳ todo | 目标：闭环 trace→hint 注入 |
 | R6 | Phase 38 stage-level checkpoint/resume/handoff | Persist / context_rot | 否（facade） | large | ⏳ todo | 目标：context_rot gap→mitigated(stage) |
@@ -177,16 +177,69 @@ Persist 跨 session 和 Context 的 token 管理是我诚实承认的弱项**。
 
 ---
 
-## 待办 backlog（R3–R8 · 优先级序）
+## R3 — guard ON/OFF grounding-gate ablation（确定性 + 真实 LLM）
+
+**梯队**：🟡 第二梯队（把已有能力坐实成证据）。CLAUDE.md §5 的 Option 1。
+
+### 措施
+
+flagship 的 verify-as-gate（claim-grounding gate）是简历最强项,但此前只有 benchmark
+的"确定性注入"和一次 REPORT.md 真跑。R3 要把它坐实成**可复现的 guard ON/OFF ablation**:
+开了 gate 抓多少幻觉、误报多少、关了会 ship 什么,数字进 README §3。
+
+### 改动
+
+| 文件 | 改动 |
+|---|---|
+| `docs/test_artifacts/v0.36.0/grounding_ablation/` | 新增证据包:`seed_check_deterministic.log`(确定性 scorecard)、`pack_run_gate_ON_liveLLM.log`、`pack_run_nogate_OFF_liveLLM.log`、`README.md`(3 个数据点 + 混淆发现) |
+| `README.md` §3 / `README.zh-CN.md` §3 | benchmark 表后新增"下钻:flagship grounding gate"小节(开/关对照表 + 诚信说明) |
+
+> 注:R3 **不改 app/ 代码**,只加 docs + 证据。"测试"= ablation 跑本身。
+
+### 量化结果（三个真实数据点）
+
+1. **确定性 ablation（`seed.py --check`,无 key,可复现）**:dirty 综述(6 个 planted
+   fabrication)→ 幻觉召回 **6/6 = 100%**、grounded 误报 **0/12 = 0%**、hard-case 矛盾
+   (同词汇 92%→29%)被 lexical judge **漏**(已知盲点)、gate 裁决 = not-shippable
+   (`g.passed==False` → 生产环境 exit 3 + auto-repair)。
+   - `seed.py --check` 进程 exit 0 = **自检通过**(gate 行为符合设计);scorecard 里的
+     `(exit 3)` 是 gate 的**生产裁决**,两者别混。
+2. **真实 LLM gate（`judge llm`,~103s）**:在真正 grounded 的 synthesis 输出上 gate
+   **8/8 grounded、0 误报** —— 证明 gate 不会对真实输出过度 flag。
+3. **诚实发现(rule F)**:端到端 `pack run` 的 exit code **无法隔离 grounding gate**——
+   ① 真实 synthesis 会重生成综述,覆盖 dirty seed;② `deliverable_completeness` 独立触发
+   (OFF 跑 exit 3 是因为 2/3 deliverable,不是 grounding)。所以 ablation 的干净信号在
+   **verifier 层**(`seed.py --check`),不是 pack exit code。这跟当初 silent-skip bug 是
+   同一条 build-verify-run 教训:真跑一遍,并且测量你真正控制的变量。
+
+### 知识点八股
+
+> **面试问题**:"你怎么证明 agent 真的完成了,而不是它自己声称完成?"
+
+**答**:把"完成"变成**可外部验证的事实而非模型自报**——综述里每个 claim 绑定到 source
+fragment,未 grounded 的就 gate fail、not-shippable、auto-repair。我用 by-construction
+ground truth 量化过:planted 幻觉召回 100%、grounded 误报 0%。而且我**确定性优先、语义兜底**:
+lexical judge 免费在 CI 证明 gate 接线正确(但它抓不到 negation/矛盾——我主动点名这个盲点),
+LLM judge 是生产语义路径,正好补上 lexical 的洞。**最关键的一课**:我真跑端到端 ablation 时
+发现 pack exit code 被 deliverable verifier + 实时 synthesis 重生成**混淆**了,于是把测量挪到
+真正隔离变量的 verifier 层——测试通过 ≠ 你测的就是你以为的那个变量。
+
+- KB 出处:`llm_app_interview_12_harness_scenarios.md §过早把 feature 标成完成`(L150-202)+
+  `§无法自证`(L233-267,"research = 引用来源 + 证据链");
+  `llm_app_interview_11_harness_core_workflow.md §第二阶段 计算型 vs 推理型工具`
+  (L246-250,确定性优先 / 语义兜底)。
+- 项目内对应:差异化 #7 verify-as-gate;`app/eval/grounding/` + `claim_grounding_verifier`。
+
+---
+
+## 待办 backlog（R4–R8 · 优先级序）
 
 > 详细价值/工作量/KB 出处见 `memory/harness-optimization-campaign.md` 与会话交叉分析。
 > R3–R6 零 kernel；R7/R8 触碰 §10.7，**实现前需用户确认**。
 
-- **R3（下一步主推）** Option 1 真 LLM ablation：`literature_review_pack` vs
-  `literature_review_pack_nogate.yaml` 在 ~10-12 源真实语料上并排跑，recall/误报进
-  README §3。KB：ch12 §过早标完成 L150-202 + §无法自证 L233-267。
-- **R4** react loop 真实 trace：flagship 开 `react_mode` 抓含 `LOOP_DECISION_REPLACE` /
-  drift `ABORT` 的 trace.jsonl，存 `docs/test_artifacts/`。KB：ch04 §ReAct L135-163。
+- **R4（下一步主推）** react loop 真实 trace：flagship 开 `react_mode` 抓含
+  `LOOP_DECISION_REPLACE` / drift `ABORT` 的 trace.jsonl，存 `docs/test_artifacts/`。
+  KB：ch04 §ReAct L135-163。
 - **R5** trace→agent 自纠输入：验证器 FAIL 时把相关 trace 行摘要成 `user_hint` 注入
   auto-repair / react REPLACE。KB：ch11 §可观测性被放大 L182。
 - **R6** Phase 38 stage-level checkpoint/resume/handoff（progress file + feature-list

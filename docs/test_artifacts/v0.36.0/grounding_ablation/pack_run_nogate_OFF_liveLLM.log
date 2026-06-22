@@ -1,0 +1,32 @@
+╭───────────────────────────── Approval required ──────────────────────────────╮
+│ Pack: Literature Review Pack (guard OFF — demo control)                      │
+│ (literature_review_pack_nogate)                                              │
+│ Workspace: examples/literature_review_pack/workspace                         │
+│ Stages: 2                                                                    │
+│ Repair: False (max_rounds=1)                                                 │
+│                                                                              │
+│   1.  s1_organize — folder_organizer (rule)                                  │
+│   2.  s2_synthesize — agent (llm)                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ Pack `literature_review_pack_nogate` run: 2026-06-22-009 
+┏━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┓
+┃ stage_id      ┃ status ┃ actions ┃ verifier ┃ duration ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━┩
+│ s1_organize   │ PASSED │      27 │ ok       │   103 ms │
+│ s2_synthesize │ PASSED │       2 │ ok       │ 25817 ms │
+└───────────────┴────────┴─────────┴──────────┴──────────┘
+                       Deliverable verifiers: FAILED (1)                        
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ verifier                         ┃ status ┃ detail                           ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ deliverable_completeness_verifi… │ fail   │ 2/3 deliverables present;        │
+│                                  │        │ missing: papers/index.md         │
+│ source_ledger_verifier           │ pass   │ all 25 citation(s) resolve to    │
+│                                  │        │ real files                       │
+└──────────────────────────────────┴────────┴──────────────────────────────────┘
+
+  Hint for `deliverable_completeness_verifier`: Re-run the stage that owns the 
+missing files (s1_organize) so each deliverable is produced; if a stage is 
+intentionally skipped, mark its outputs as optional in the recipe.
+PASSED  pack `literature_review_pack_nogate` total 25927 ms  ·  run_id 
+2026-06-22-009  ·  to undo: localflow rollback --run-id 2026-06-22-009
