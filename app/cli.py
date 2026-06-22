@@ -489,8 +489,8 @@ def cmd_execute(
             "Phase 26 — opt into the execute-stage react loop. The "
             "executor consults the LLM between actions and may apply "
             "REPLACE / INSERT / SKIP within a 3-step drift budget. "
-            "Requires the same Anthropic API key as the llm planner; "
-            "see docs/REACT_LOOP.md for the safety model."
+            "Uses the configured LLM provider (LOCALFLOW_LLM_PROVIDER, "
+            "openai by default); see docs/REACT_LOOP.md for the safety model."
         ),
     ),
     react_max_drift: int = typer.Option(
@@ -632,15 +632,23 @@ def cmd_execute(
         react_cfg = None
         llm_client = None
         if react:
-            from app.agent.client import AnthropicClient
+            from app.agent.judge import get_default_client_or_none
             from app.schemas import ReactConfig
 
             react_cfg = ReactConfig(enabled=True, max_drift=react_max_drift)
-            try:
-                llm_client = AnthropicClient()
-            except Exception as exc:  # pragma: no cover — env-dependent
-                console.print(f"[red]--react requires a working Anthropic client:[/] {exc}")
-                raise typer.Exit(code=2) from exc
+            # Provider-aware: honour LOCALFLOW_LLM_PROVIDER (openai by
+            # default) like every other LLM path. The previous hard-coded
+            # AnthropicClient() made --react unreachable in any non-Anthropic
+            # setup — it raised "ANTHROPIC_API_KEY not set" even when an
+            # OpenAI-compatible client was configured. (R4 finding.)
+            llm_client = get_default_client_or_none()
+            if llm_client is None:
+                console.print(
+                    "[red]--react requires a working LLM client[/] "
+                    "(set LOCALFLOW_LLM_PROVIDER + the provider's API key, "
+                    "or drop --react to use the deterministic batch executor)."
+                )
+                raise typer.Exit(code=2)
             console.print(
                 f"[cyan]react_mode=ON[/]  drift_budget={react_max_drift}  (see docs/REACT_LOOP.md)"
             )
