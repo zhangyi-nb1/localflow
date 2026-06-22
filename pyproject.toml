@@ -1,6 +1,6 @@
 [project]
 name = "localflow-agent"
-version = "0.37.0"
+version = "0.38.0"
 description = "LocalFlow: a local-first Agent Execution Harness"
 readme = "README.md"
 requires-python = ">=3.11"
