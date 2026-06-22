@@ -37,6 +37,9 @@ htmlcov/
 .idea/
 *.swp
 
+# Claude Code — machine-local settings (per-developer permissions etc.)
+.claude/settings.local.json
+
 # OS
 .DS_Store
 Thumbs.db
